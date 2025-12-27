@@ -1,0 +1,51 @@
+[project]
+name = "colin"
+dynamic = ["version"]
+description = "A context compiler for the AI era"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "jinja2>=3.1.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-frontmatter>=1.0.0",
+    "cyclopts>=4.0.0",
+    "rich>=14.2.0",
+    "tomli>=2.3.0",
+    "tomli-w>=1.2.0",
+]
+
+[project.scripts]
+cbt = "colin.cli:main"
+
+[dependency-groups]
+dev = [
+    "ipython>=8.0.0",
+    "pdbpp>=0.11.7",
+    "prek>=0.0.25",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+    "ty>=0.0.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/colin"]
