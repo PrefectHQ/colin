@@ -33,7 +33,7 @@ def _get_icon(op: OperationState) -> RenderableType:
 
     # DONE - pick icon based on cached flag and operation type
     if op.cached:
-        return Text("⚡", style="green")
+        return Text("»", style="green")
 
     op_type = op.name.split(":")[0] if ":" in op.name else ""
     if op_type in ("ref", "mcp"):
