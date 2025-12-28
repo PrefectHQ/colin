@@ -39,6 +39,13 @@ def _truncate(text: str, max_len: int = 40) -> str:
     return f"'{collapsed[: max_len - 3]}...'"
 
 
+def _strip_scheme(uri: str) -> str:
+    """Strip URI scheme prefix for cleaner display."""
+    if "://" in uri:
+        return uri.split("://", 1)[1]
+    return uri
+
+
 class CompileContext:
     """Tracks state during document compilation.
 
@@ -122,7 +129,7 @@ class CompileContext:
             desc_val = compiled.frontmatter.metadata.get("description")
             # Track as completed ref (no processing needed for in-memory)
             if is_first_ref and self.doc_state is not None:
-                op = self.doc_state.child(f"ref:{uri}")
+                op = self.doc_state.child("ref", detail=_strip_scheme(uri))
                 op.status = Status.DONE
             return RefResult(
                 name=name_val if isinstance(name_val, str) else uri.split("/")[-1],
@@ -135,7 +142,7 @@ class CompileContext:
 
         # Fall back to fetching from disk
         if is_first_ref and self.doc_state is not None:
-            with self.doc_state.child(f"ref:{uri}"):
+            with self.doc_state.child("ref", detail=_strip_scheme(uri)):
                 result = await self.input_plugin.fetch(uri)
                 return result
         else:
@@ -171,7 +178,8 @@ class CompileContext:
         if cached_call:
             self.llm_calls[effective_id] = cached_call  # Preserve in manifest
             if self.doc_state is not None:
-                self.doc_state.child("extract").mark_cached()
+                op = self.doc_state.child("ctx", detail=f"extract({_truncate(prompt)})")
+                op.mark_cached()
             return cached_call.output
 
         # Get previous output for stability
@@ -185,7 +193,11 @@ class CompileContext:
         full_prompt = render_extract_prompt(content, prompt, previous_output)
 
         # Call LLM (with state tracking if enabled)
-        op = self.doc_state.child("extract", detail=_truncate(prompt)) if self.doc_state else None
+        op = (
+            self.doc_state.child("ctx", detail=f"extract({_truncate(prompt)})")
+            if self.doc_state
+            else None
+        )
         with op if op else _nullcontext():
             # Only allow UseExisting if there's a previous output to use
             output_type: list[type] = [UseExisting, str] if previous_output else [str]
@@ -239,7 +251,8 @@ class CompileContext:
         if cached_call:
             self.llm_calls[effective_id] = cached_call  # Preserve in manifest
             if self.doc_state is not None:
-                self.doc_state.child("llm").mark_cached()
+                op = self.doc_state.child("ctx", detail=f"llm({_truncate(body)})")
+                op.mark_cached()
             return cached_call.output
 
         # Get previous output for stability
@@ -253,7 +266,11 @@ class CompileContext:
         full_prompt = render_complete_prompt(body, previous_output)
 
         # Call LLM (with state tracking if enabled)
-        op = self.doc_state.child("llm", detail=_truncate(body)) if self.doc_state else None
+        op = (
+            self.doc_state.child("ctx", detail=f"llm({_truncate(body)})")
+            if self.doc_state
+            else None
+        )
         with op if op else _nullcontext():
             # Only allow UseExisting if there's a previous output to use
             output_type: list[type] = [UseExisting, str] if previous_output else [str]
@@ -329,7 +346,11 @@ class CompileContext:
         if self.mcp_manager is None:
             raise ValueError("No MCP servers configured")
 
-        op = self.doc_state.child(f"mcp:{server}", detail=uri) if self.doc_state else None
+        op = (
+            self.doc_state.child("mcp", detail=f"{server}.resource({_strip_scheme(uri)})")
+            if self.doc_state
+            else None
+        )
         with op if op else _nullcontext():
             return await self.mcp_manager.read_resource(server, uri)
 
@@ -355,6 +376,10 @@ class CompileContext:
         if self.mcp_manager is None:
             raise ValueError("No MCP servers configured")
 
-        op = self.doc_state.child(f"mcp:{server}", detail=name) if self.doc_state else None
+        op = (
+            self.doc_state.child("mcp", detail=f"{server}.prompt({name})")
+            if self.doc_state
+            else None
+        )
         with op if op else _nullcontext():
             return await self.mcp_manager.get_prompt(server, name, arguments)

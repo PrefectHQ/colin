@@ -8,13 +8,12 @@ from typing import Annotated, cast
 import cyclopts
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
 from colin import api
-from colin.api.compile import CompileResult
-from colin.cli.utilities import spinner
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
@@ -29,7 +28,7 @@ def _get_icon(op: OperationState) -> RenderableType:
     if op.status == Status.SKIPPED:
         return Text("○", style="yellow")
     if op.status == Status.PROCESSING:
-        return spinner
+        return Spinner("dots", style="dim")
     if op.status == Status.PENDING:
         return Text("○", style="dim")
 
@@ -37,9 +36,11 @@ def _get_icon(op: OperationState) -> RenderableType:
     if op.cached:
         return Text("»", style="green")
 
-    op_type = op.name.split(":")[0] if ":" in op.name else ""
-    if op_type in ("ref", "mcp"):
-        return Text("→", style="cyan")
+    # Sources get left arrow, transforms get checkmark
+    if op.name in ("ref", "mcp"):
+        return Text("←", style="cyan")
+    if op.name == "ctx":
+        return Text("→", style="green")
     return Text("✓", style="green")
 
 
@@ -82,19 +83,13 @@ def render_state(state: CompilationState) -> RenderableType:
         for child in doc_state.children:
             child_icon = _get_icon(child)
 
-            # Format operation name for display
-            op_name = child.name
-            if op_name.startswith("ref:"):
-                # Show refs as ref(uri)
-                op_name = f"ref({op_name[4:]})"
-
             # Build label with optional dim detail
             if child.detail:
                 label = Text()
-                label.append(op_name)
+                label.append(child.name)
                 label.append(f" {child.detail}", style="dim")
             else:
-                label = Text(op_name)
+                label = Text(child.name)
 
             doc_tree.add(_make_label(child_icon, label))
 
@@ -184,9 +179,13 @@ async def run(
         # Print project info before starting
         print_project_info(project_file, project_name, target_dir)
 
-        # Compile with live progress (transient=True clears display when done)
-        async def compile_with_live(live: Live) -> CompileResult:
-            """Run compilation while updating live display."""
+        with Live(
+            # render_state(state),
+            console=console,
+            refresh_per_second=10,
+            auto_refresh=False,
+            vertical_overflow="ellipsis",
+        ) as live:
             task = asyncio.create_task(
                 api.compile_project(
                     project_dir=project,
@@ -196,24 +195,17 @@ async def run(
                     state=state,
                 )
             )
-            # Update display while waiting
             while not task.done():
-                live.update(render_state(state))
+                live.update(render_state(state), refresh=True)
                 await asyncio.sleep(0.1)
-            # Cast is safe because dry_run=False means CompileResult is returned
-            return cast(CompileResult, await task)
+            # Final update before exiting Live context
+            live.update(render_state(state), refresh=True)
 
-        with Live(Text(""), console=console, refresh_per_second=10) as live:
-            await compile_with_live(live)
-            # Final update to show completed state
-            live.update(render_state(state))
+        # Re-raise any exception from the task
+        await task
 
     except MultipleCompilationErrors as e:
-        # Note: Live display already shows final state, no need to print again
-        console.print()
-
-        err_console.print("[red bold]Compilation failed[/]")
-        err_console.print()
+        err_console.print("\n[red bold]Compilation failed[/]\n")
 
         # Only show actual errors, not skipped documents
         doc_items = list(e.errors.items())

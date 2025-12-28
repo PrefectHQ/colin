@@ -51,8 +51,8 @@ def test_mcp_access_shown_in_output(
     cli("run", "--target", str(target_dir))
 
     captured = capfd.readouterr()
-    # MCP access should be shown in output (mcp:greeter with URI detail)
-    assert "mcp:greeter" in captured.out
+    # MCP access should be shown in output (mcp with server.resource(uri) detail)
+    assert "mcp greeter.resource" in captured.out
 
 
 def test_mcp_test_command(greeter_server: Path, cli: Callable[..., None], capfd):
@@ -88,6 +88,6 @@ def test_mcp_prompt_shown_in_output(
     cli("run", "--target", str(target_dir))
 
     captured = capfd.readouterr()
-    # MCP prompt access should be shown in output (unified as mcp:server)
-    assert "mcp:greeter" in captured.out
+    # MCP prompt access should be shown in output (mcp with server.prompt(name) detail)
+    assert "mcp greeter.prompt" in captured.out
     assert "greet" in captured.out  # Prompt name shown in detail
