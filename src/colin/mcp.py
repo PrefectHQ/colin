@@ -59,6 +59,28 @@ class MCPManager:
             return contents[0].text or ""
         return ""
 
+    async def get_prompt(
+        self, server: str, name: str, arguments: dict[str, str] | None = None
+    ) -> str:
+        """Get a prompt from an MCP server.
+
+        Args:
+            server: Server name.
+            name: Prompt name.
+            arguments: Optional prompt arguments.
+
+        Returns:
+            Rendered prompt content as string.
+        """
+        client = await self._get_client(server)
+        result = await client.get_prompt(name, arguments or {})
+        # Extract text content from prompt messages
+        parts = []
+        for msg in result.messages:
+            if hasattr(msg.content, "text"):
+                parts.append(msg.content.text)
+        return "\n".join(parts)
+
     async def close(self) -> None:
         """Close all connected clients."""
         for client in self._clients.values():
