@@ -118,4 +118,3 @@ class TestDependencyGraph:
 
         uris = graph.get_all_uris()
         assert uris == {"a", "b", "c", "d"}
-

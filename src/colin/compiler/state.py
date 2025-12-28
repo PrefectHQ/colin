@@ -110,4 +110,3 @@ class CompilationState:
             The document state, or None if not found.
         """
         return self.documents.get(uri)
-

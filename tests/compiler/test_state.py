@@ -144,4 +144,3 @@ class TestCompilationState:
         assert doc1.children[0].status == Status.REF
         assert doc1.children[1].status == Status.DONE
         assert doc2.children[0].status == Status.CACHED
-

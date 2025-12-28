@@ -179,4 +179,3 @@ Just this one.
 
         assert uris.index("a") < uris.index("b")
         assert uris.index("b") < uris.index("c")
-

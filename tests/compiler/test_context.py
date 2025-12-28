@@ -138,4 +138,3 @@ class TestCompileContext:
         )
 
         assert "block-1" in context.llm_calls
-
