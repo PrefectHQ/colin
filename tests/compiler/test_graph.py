@@ -49,9 +49,12 @@ class TestDependencyGraph:
         graph.add_edge("c", "b")
         graph.add_edge("b", "a")
 
+        # a → b → c (each in its own level)
         result = graph.topological_sort({"a", "b", "c"})
-        assert result.index("a") < result.index("b")
-        assert result.index("b") < result.index("c")
+        assert len(result) == 3
+        assert result[0] == ["a"]
+        assert result[1] == ["b"]
+        assert result[2] == ["c"]
 
     def test_topological_sort_diamond(self) -> None:
         graph = DependencyGraph()
@@ -60,16 +63,19 @@ class TestDependencyGraph:
         graph.add_edge("b", "a")
         graph.add_edge("c", "a")
 
+        # a first, then b and c (same level, parallel), then d
         result = graph.topological_sort({"a", "b", "c", "d"})
-        assert result.index("a") < result.index("b")
-        assert result.index("a") < result.index("c")
-        assert result.index("b") < result.index("d")
-        assert result.index("c") < result.index("d")
+        assert len(result) == 3
+        assert result[0] == ["a"]
+        assert set(result[1]) == {"b", "c"}  # b and c can run in parallel
+        assert result[2] == ["d"]
 
     def test_topological_sort_independent(self) -> None:
         graph = DependencyGraph()
         result = graph.topological_sort({"a", "b", "c"})
-        assert set(result) == {"a", "b", "c"}
+        # All independent nodes in a single level (can run in parallel)
+        assert len(result) == 1
+        assert set(result[0]) == {"a", "b", "c"}
 
     def test_topological_sort_cycle_detection(self) -> None:
         graph = DependencyGraph()

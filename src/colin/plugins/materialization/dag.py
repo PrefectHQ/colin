@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ class DAGMaterializationPlugin:
 
     This is the default materialization strategy. It compiles documents
     in topological order so dependencies are compiled before dependents.
+    Documents in the same level are compiled in parallel.
     Fails if there are cycles in the graph.
     """
 
@@ -54,13 +56,13 @@ class DAGMaterializationPlugin:
         if not affected:
             return []
 
-        # Get compilation order (dependencies first)
+        # Get compilation order grouped by level (dependencies first)
         compile_order = graph.topological_sort(affected)
 
-        # Compile each document in order
+        # Compile each level in parallel
         compiled_uris: list[str] = []
-        for uri in compile_order:
-            await compile_fn(uri)
-            compiled_uris.append(uri)
+        for level in compile_order:
+            await asyncio.gather(*[compile_fn(uri) for uri in level])
+            compiled_uris.extend(level)
 
         return compiled_uris

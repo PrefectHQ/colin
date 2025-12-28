@@ -1,13 +1,13 @@
 {
   "version": "1",
-  "compiled_at": "2025-12-28T02:40:51.973587Z",
+  "compiled_at": "2025-12-28T18:31:14.260450Z",
   "documents": {
     "greeting": {
       "uri": "greeting",
       "source_path": "/Users/jlowin/Developer/colin/examples/hello_world/models/greeting.md",
       "source_hash": "f77ef6d46db20428",
       "output_hash": "0ecab7e96184f7ba",
-      "compiled_at": "2025-12-28T02:40:51.967634Z",
+      "compiled_at": "2025-12-28T18:31:14.258602Z",
       "refs_evaluated": [],
       "llm_calls": {},
       "total_cost_usd": 0.0
@@ -15,9 +15,9 @@
     "summary": {
       "uri": "summary",
       "source_path": "/Users/jlowin/Developer/colin/examples/hello_world/models/summary.md",
-      "source_hash": "e09a8bbbcca6da04",
-      "output_hash": "292842fec44fb9f3",
-      "compiled_at": "2025-12-28T02:40:51.972947Z",
+      "source_hash": "d4cc0db7ef88bc46",
+      "output_hash": "ce4165993a44f289",
+      "compiled_at": "2025-12-28T18:31:14.260353Z",
       "refs_evaluated": [
         "greeting"
       ],
@@ -25,29 +25,20 @@
         "auto:5757eb58002f7bdc": {
           "call_id": "auto:5757eb58002f7bdc",
           "input_hash": "09986e1d08521661",
-          "output_hash": "c62076af04562dba",
-          "output": "The main message is: \"Hello! Welcome to Colin.\"",
+          "output_hash": "c5828f1a38a76698",
+          "output": "The main message in one sentence is: \"Hello! Welcome to Colin.\"",
           "model": "anthropic:claude-sonnet-4-5",
           "cost_usd": 0.0,
-          "created_at": "2025-12-28T02:40:28.694605Z"
+          "created_at": "2025-12-28T18:30:41.298582Z"
         },
         "auto:c746bb1fa7d47bf1": {
           "call_id": "auto:c746bb1fa7d47bf1",
           "input_hash": "c746bb1fa7d47bf1",
-          "output_hash": "f9344530d7fa3f2f",
-          "output": "Here's a haiku about being welcomed:\n\nDoors open with warmth\nGentle voices call me in\nHome found in kind words\n\nThis haiku captures the essence of welcome - the opening gesture (doors), the warm reception (gentle voices), and the emotional comfort that comes from being genuinely welcomed (finding home in kindness).",
+          "output_hash": "43643ff24e19d794",
+          "output": "Here's a haiku about being welcomed:\n\nOpen door awaits\nWarm hearts embrace the stranger\nHome found in kind words\n\nThis haiku captures the essence of welcome\u2014the openness, warmth, and sense of belonging that comes from being greeted with kindness, much like the simple yet friendly greeting in Colin's document.",
           "model": "anthropic:claude-sonnet-4-5",
           "cost_usd": 0.0,
-          "created_at": "2025-12-28T02:40:32.762966Z"
-        },
-        "auto:437aa5444c5f3d9d": {
-          "call_id": "auto:437aa5444c5f3d9d",
-          "input_hash": "437aa5444c5f3d9d",
-          "output_hash": "b4575c06b8878c04",
-          "output": "The translation to French would be:\n\n**Bonjour ! Bienvenue chez Colin.**\n\n**Ceci est un document simple que d'autres documents peuvent r\u00e9f\u00e9rencer.**\n\nNote: \"Colin\" is kept as is since it's a proper name. The translation of \"Welcome to Colin\" uses \"Bienvenue chez Colin\" which is the most natural way to express this in French, though depending on context, \"Bienvenue sur Colin\" could also be used if Colin refers to a platform or website.",
-          "model": "anthropic:claude-sonnet-4-5",
-          "cost_usd": 0.0,
-          "created_at": "2025-12-28T02:40:37.182557Z"
+          "created_at": "2025-12-28T18:30:44.709020Z"
         }
       },
       "total_cost_usd": 0.0
@@ -55,13 +46,23 @@
     "welcome": {
       "uri": "welcome",
       "source_path": "/Users/jlowin/Developer/colin/examples/hello_world/models/welcome.md",
-      "source_hash": "a14f1dffde43648b",
-      "output_hash": "9ebc9728796da752",
-      "compiled_at": "2025-12-28T02:40:51.973579Z",
+      "source_hash": "c255821bc1b413a0",
+      "output_hash": "760d6ea9f1b7bd94",
+      "compiled_at": "2025-12-28T18:31:14.260445Z",
       "refs_evaluated": [
         "greeting"
       ],
-      "llm_calls": {},
+      "llm_calls": {
+        "auto:1c15ef29815e9341": {
+          "call_id": "auto:1c15ef29815e9341",
+          "input_hash": "1c15ef29815e9341",
+          "output_hash": "76f1a9013baec33f",
+          "output": "Here's a natural French translation that maintains a welcoming yet professional tone suitable for a technical audience:\n\n**Bonjour ! Bienvenue sur Colin.**\n\n**Ceci est un document simple que d'autres documents peuvent r\u00e9f\u00e9rencer.**\n\n---\n\n**Notes on the translation:**\n- \"Bonjour !\" is the standard French greeting, appropriate for all contexts\n- \"Bienvenue sur Colin\" uses \"sur\" (on) which is the natural preposition for welcoming someone to a platform/library in French\n- \"Ceci est un document simple\" maintains the straightforward, technical tone\n- \"que d'autres documents peuvent r\u00e9f\u00e9rencer\" is the natural way to express \"that other documents can reference\" in French\n- The overall tone remains warm yet professional, suitable for technical documentation",
+          "model": "anthropic:claude-sonnet-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-28T18:30:44.177549Z"
+        }
+      },
       "total_cost_usd": 0.0
     }
   }

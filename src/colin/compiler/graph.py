@@ -55,8 +55,11 @@ class DependencyGraph:
         """
         return self.dependents.get(uri, [])
 
-    def topological_sort(self, uris: set[str]) -> list[str]:
-        """Return URIs in compilation order (dependencies first).
+    def topological_sort(self, uris: set[str]) -> list[list[str]]:
+        """Return URIs in compilation order, grouped by level.
+
+        Documents in the same level have no dependencies on each other
+        and can be compiled in parallel.
 
         Uses Kahn's algorithm for topological sort.
 
@@ -64,7 +67,7 @@ class DependencyGraph:
             uris: Set of URIs to sort.
 
         Returns:
-            List of URIs in topological order.
+            List of levels, where each level is a list of URIs.
 
         Raises:
             CyclicDependencyError: If a cycle is detected.
@@ -79,22 +82,27 @@ class DependencyGraph:
 
         # Start with nodes that have no dependencies
         queue = [uri for uri, degree in in_degree.items() if degree == 0]
-        result = []
+        result: list[list[str]] = []
+        processed = 0
 
         while queue:
-            uri = queue.pop(0)
-            result.append(uri)
+            # All items in queue form one level (no inter-dependencies)
+            result.append(queue)
+            processed += len(queue)
+            next_queue = []
 
-            # Reduce in-degree for dependents
-            for dependent in self.dependents.get(uri, []):
-                if dependent in uris:
-                    in_degree[dependent] -= 1
-                    if in_degree[dependent] == 0:
-                        queue.append(dependent)
+            for uri in queue:
+                for dependent in self.dependents.get(uri, []):
+                    if dependent in uris:
+                        in_degree[dependent] -= 1
+                        if in_degree[dependent] == 0:
+                            next_queue.append(dependent)
 
-        if len(result) != len(uris):
+            queue = next_queue
+
+        if processed != len(uris):
             # Cycle detected
-            remaining = uris - set(result)
+            remaining = uris - {uri for level in result for uri in level}
             raise CyclicDependencyError(f"Cyclic dependency involving: {remaining}")
 
         return result

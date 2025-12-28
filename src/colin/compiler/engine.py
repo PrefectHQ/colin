@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
@@ -79,36 +80,45 @@ class CompileEngine:
         # Phase 4: Add all documents to state (if tracking)
         doc_states: dict[str, OperationState] = {}
         if self.state is not None:
-            for uri in compile_order:
-                doc_states[uri] = self.state.add_document(uri)
+            for level in compile_order:
+                for uri in level:
+                    doc_states[uri] = self.state.add_document(uri)
 
-        # Phase 5: Compile in order, collecting all errors
+        # Phase 5: Compile levels in parallel, collecting all errors
         compiled: list[CompiledDocument] = []
         compiled_outputs: dict[str, CompiledDocument] = {}  # For in-memory ref lookup
         doc_map = {doc.uri: doc for doc in documents}
         errors: dict[str, list[Exception]] = {}
 
+        async def compile_one(uri: str) -> tuple[str, CompiledDocument | Exception]:
+            """Compile a single document, catching exceptions."""
+            doc = doc_map[uri]
+            doc_state = doc_states.get(uri)
+            try:
+                with doc_state if doc_state else _nullcontext():
+                    result = await self._compile_document(
+                        doc, compiled_outputs, mcp_manager, doc_state
+                    )
+                    return (uri, result)
+            except Exception as e:
+                return (uri, e)
+
         # Create MCP manager for resource access
         mcp_manager = MCPManager(self.mcp_config)
         try:
-            for uri in compile_order:
-                doc = doc_map[uri]
-                doc_state = doc_states.get(uri)
+            for level in compile_order:
+                # Compile all documents in this level in parallel
+                results = await asyncio.gather(*[compile_one(uri) for uri in level])
 
-                try:
-                    with doc_state if doc_state else _nullcontext():
-                        result = await self._compile_document(
-                            doc, compiled_outputs, mcp_manager, doc_state
-                        )
+                # Process results
+                for uri, result in results:
+                    if isinstance(result, Exception):
+                        errors.setdefault(uri, []).append(result)
+                    else:
                         compiled.append(result)
                         compiled_outputs[uri] = result
                         self._write_output(result)
                         self._update_manifest(result)
-                except Exception as e:
-                    # Context manager already marked as failed
-                    if uri not in errors:
-                        errors[uri] = []
-                    errors[uri].append(e)
         finally:
             await mcp_manager.close()
 
