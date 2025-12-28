@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 
-from colin.compiler.state import OperationState
+from colin.compiler.state import OperationState, Status
 from colin.exceptions import RefNotFoundError
 from colin.llm.prompts import render_complete_prompt, render_extract_prompt
 from colin.llm.types import LLMOutput, UseExisting
@@ -97,22 +98,20 @@ class CompileContext:
                     f"Schemaless refs must resolve within the project boundary."
                 )
 
-        # Record the dependency (and track in state tree on first occurrence)
-        ref_op = None
-        if uri not in self.refs_evaluated:
+        # Record the dependency (only track first ref to each URI)
+        is_first_ref = uri not in self.refs_evaluated
+        if is_first_ref:
             self.refs_evaluated.append(uri)
-            # Only track first ref to each URI
-            if self.doc_state is not None:
-                ref_op = self.doc_state.child(f"ref:{uri}")
-                ref_op.start()
 
         # Check in-memory compiled outputs first (from current compile run)
         if uri in self.compiled_outputs:
             compiled = self.compiled_outputs[uri]
             name_val = compiled.frontmatter.metadata.get("name")
             desc_val = compiled.frontmatter.metadata.get("description")
-            if ref_op is not None:
-                ref_op.ref()
+            # Track as completed ref (no processing needed for in-memory)
+            if is_first_ref and self.doc_state is not None:
+                op = self.doc_state.child(f"ref:{uri}")
+                op.status = Status.DONE
             return RefResult(
                 name=name_val if isinstance(name_val, str) else uri.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,
@@ -123,15 +122,15 @@ class CompileContext:
             )
 
         # Fall back to fetching from disk
-        try:
-            result = await self.input_plugin.fetch(uri)
-            if ref_op is not None:
-                ref_op.ref()
-            return result
-        except FileNotFoundError as e:
-            if ref_op is not None:
-                ref_op.fail(str(e))
-            raise RefNotFoundError(f"Referenced document not found: {uri}") from e
+        if is_first_ref and self.doc_state is not None:
+            with self.doc_state.child(f"ref:{uri}"):
+                result = await self.input_plugin.fetch(uri)
+                return result
+        else:
+            try:
+                return await self.input_plugin.fetch(uri)
+            except FileNotFoundError as e:
+                raise RefNotFoundError(f"Referenced document not found: {uri}") from e
 
     async def extract(
         self,
@@ -159,10 +158,8 @@ class CompileContext:
         cached_call = self._get_cached_llm_call(effective_id, content)
         if cached_call:
             self.llm_calls[effective_id] = cached_call  # Preserve in manifest
-            # Track cached call in state tree
             if self.doc_state is not None:
-                op_state = self.doc_state.child(f"extract:{effective_id}")
-                op_state.cached()
+                self.doc_state.child(f"extract:{effective_id}").mark_cached()
             return cached_call.output
 
         # Get previous output for stability
@@ -175,52 +172,39 @@ class CompileContext:
         # Render prompt from template
         full_prompt = render_extract_prompt(content, prompt, previous_output)
 
-        # Create state for this operation
-        op_state = None
-        if self.doc_state is not None:
-            op_state = self.doc_state.child(f"extract:{effective_id}", detail=effective_model)
-            op_state.start()
-
-        # Call LLM with structured output
-        agent: Agent[None, LLMOutput] = Agent(
-            effective_model,
-            output_type=[UseExisting, str],  # type: ignore[arg-type]
+        # Call LLM (with state tracking if enabled)
+        op = (
+            self.doc_state.child(f"extract:{effective_id}", detail=effective_model)
+            if self.doc_state
+            else None
         )
-        result = await agent.run(full_prompt)
+        with op if op else _nullcontext():
+            agent: Agent[None, LLMOutput] = Agent(
+                effective_model,
+                output_type=[UseExisting, str],  # type: ignore[arg-type]
+            )
+            result = await agent.run(full_prompt)
 
-        # Handle UseExisting
-        if isinstance(result.output, UseExisting):
-            if previous_output is None:
-                raise ValueError("LLM returned UseExisting but no previous output exists")
-            output_text = previous_output
-        else:
-            output_text = str(result.output)
+            # Handle UseExisting
+            if isinstance(result.output, UseExisting):
+                if previous_output is None:
+                    raise ValueError("LLM returned UseExisting but no previous output exists")
+                output_text = previous_output
+            else:
+                output_text = str(result.output)
 
-        # Get cost from result
-        cost = 0.0
-        usage = result.usage()
-        if usage:
-            # Pydantic AI provides token counts, we'd need a pricing table
-            # For now, use 0.0 - can add cost calculation later
-            pass
+            # Record call
+            llm_call = LLMCall(
+                call_id=effective_id,
+                input_hash=self._hash(content),
+                output_hash=self._hash(output_text),
+                output=output_text,
+                model=effective_model,
+                cost_usd=0.0,
+            )
+            self.llm_calls[effective_id] = llm_call
 
-        # Record call
-        llm_call = LLMCall(
-            call_id=effective_id,
-            input_hash=self._hash(content),
-            output_hash=self._hash(output_text),
-            output=output_text,
-            model=effective_model,
-            cost_usd=cost,
-        )
-        self.llm_calls[effective_id] = llm_call
-        self.total_cost += cost
-
-        # Mark operation as done
-        if op_state is not None:
-            op_state.done()
-
-        return output_text
+            return output_text
 
     async def call_llm_block(
         self,
@@ -245,10 +229,8 @@ class CompileContext:
         cached_call = self._get_cached_llm_call(effective_id, body)
         if cached_call:
             self.llm_calls[effective_id] = cached_call  # Preserve in manifest
-            # Track cached call in state tree
             if self.doc_state is not None:
-                op_state = self.doc_state.child(f"llm:{effective_id}")
-                op_state.cached()
+                self.doc_state.child(f"llm:{effective_id}").mark_cached()
             return cached_call.output
 
         # Get previous output for stability
@@ -261,51 +243,39 @@ class CompileContext:
         # Render prompt from template
         full_prompt = render_complete_prompt(body, previous_output)
 
-        # Create state for this operation
-        op_state = None
-        if self.doc_state is not None:
-            op_state = self.doc_state.child(f"llm:{effective_id}", detail=effective_model)
-            op_state.start()
-
-        # Call LLM with structured output
-        agent: Agent[None, LLMOutput] = Agent(
-            effective_model,
-            output_type=[UseExisting, str],  # type: ignore[arg-type]
+        # Call LLM (with state tracking if enabled)
+        op = (
+            self.doc_state.child(f"llm:{effective_id}", detail=effective_model)
+            if self.doc_state
+            else None
         )
-        result = await agent.run(full_prompt)
+        with op if op else _nullcontext():
+            agent: Agent[None, LLMOutput] = Agent(
+                effective_model,
+                output_type=[UseExisting, str],  # type: ignore[arg-type]
+            )
+            result = await agent.run(full_prompt)
 
-        # Handle UseExisting
-        if isinstance(result.output, UseExisting):
-            if previous_output is None:
-                raise ValueError("LLM returned UseExisting but no previous output exists")
-            output_text = previous_output
-        else:
-            output_text = str(result.output)
+            # Handle UseExisting
+            if isinstance(result.output, UseExisting):
+                if previous_output is None:
+                    raise ValueError("LLM returned UseExisting but no previous output exists")
+                output_text = previous_output
+            else:
+                output_text = str(result.output)
 
-        # Get cost from result
-        cost = 0.0
-        usage = result.usage()
-        if usage:
-            # Cost calculation would go here
-            pass
+            # Record call
+            llm_call = LLMCall(
+                call_id=effective_id,
+                input_hash=self._hash(body),
+                output_hash=self._hash(output_text),
+                output=output_text,
+                model=effective_model,
+                cost_usd=0.0,
+            )
+            self.llm_calls[effective_id] = llm_call
 
-        # Record call
-        llm_call = LLMCall(
-            call_id=effective_id,
-            input_hash=self._hash(body),
-            output_hash=self._hash(output_text),
-            output=output_text,
-            model=effective_model,
-            cost_usd=cost,
-        )
-        self.llm_calls[effective_id] = llm_call
-        self.total_cost += cost
-
-        # Mark operation as done
-        if op_state is not None:
-            op_state.done()
-
-        return output_text
+            return output_text
 
     def _get_cached_llm_call(self, call_id: str, current_input: str) -> LLMCall | None:
         """Check if we have a valid cached LLM call.
@@ -353,14 +323,6 @@ class CompileContext:
         if self.mcp_manager is None:
             raise ValueError("No MCP servers configured")
 
-        # Track MCP access in state tree (like a ref to external resource)
-        op_state = self.doc_state.child(f"mcp:{server}", detail=uri)
-        op_state.start()
-
-        try:
-            result = await self.mcp_manager.read_resource(server, uri)
-            op_state.ref()
-            return result
-        except Exception:
-            op_state.fail()
-            raise
+        op = self.doc_state.child(f"mcp:{server}", detail=uri) if self.doc_state else None
+        with op if op else _nullcontext():
+            return await self.mcp_manager.read_resource(server, uri)

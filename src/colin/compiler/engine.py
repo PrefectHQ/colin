@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -94,31 +95,17 @@ class CompileEngine:
                 doc = doc_map[uri]
                 doc_state = doc_states.get(uri)
 
-                # Mark as processing
-                if doc_state:
-                    doc_state.start()
-
                 try:
-                    result = await self._compile_document(
-                        doc, compiled_outputs, mcp_manager, doc_state
-                    )
-                    compiled.append(result)
-                    compiled_outputs[uri] = result
-
-                    # Write output immediately so refs can find it
-                    self._write_output(result)
-
-                    # Update manifest
-                    self._update_manifest(result)
-
-                    # Mark as done
-                    if doc_state:
-                        doc_state.done()
+                    with doc_state if doc_state else _nullcontext():
+                        result = await self._compile_document(
+                            doc, compiled_outputs, mcp_manager, doc_state
+                        )
+                        compiled.append(result)
+                        compiled_outputs[uri] = result
+                        self._write_output(result)
+                        self._update_manifest(result)
                 except Exception as e:
-                    # Mark as failed
-                    if doc_state:
-                        doc_state.fail(str(e))
-                    # Collect error for this document
+                    # Context manager already marked as failed
                     if uri not in errors:
                         errors[uri] = []
                     errors[uri].append(e)

@@ -9,6 +9,8 @@ class TestOperationState:
         assert state.name == "test"
         assert state.status == Status.PENDING
         assert state.detail is None
+        assert state.cached is False
+        assert state.error is None
         assert state.parent is None
         assert state.children == []
 
@@ -40,42 +42,44 @@ class TestOperationState:
         assert len(parent.children) == 3
         assert parent.children == [child1, child2, child3]
 
-    def test_start_sets_processing(self) -> None:
+    def test_context_manager_sets_processing_on_enter(self) -> None:
         state = OperationState(name="test")
         assert state.status == Status.PENDING
 
-        state.start()
-        assert state.status == Status.PROCESSING
+        with state:
+            assert state.status == Status.PROCESSING
 
-    def test_done_sets_done(self) -> None:
+    def test_context_manager_sets_done_on_success(self) -> None:
         state = OperationState(name="test")
-        state.start()
-        state.done()
+        with state:
+            pass
         assert state.status == Status.DONE
 
-    def test_fail_sets_failed(self) -> None:
+    def test_context_manager_sets_failed_on_exception(self) -> None:
         state = OperationState(name="test")
-        state.start()
-        state.fail()
+        try:
+            with state:
+                raise ValueError("Something went wrong")
+        except ValueError:
+            pass
         assert state.status == Status.FAILED
-        assert state.detail is None
+        assert state.error == "Something went wrong"
 
-    def test_fail_with_error_message(self) -> None:
+    def test_context_manager_propagates_exception(self) -> None:
         state = OperationState(name="test")
-        state.start()
-        state.fail("Connection timeout")
-        assert state.status == Status.FAILED
-        assert state.detail == "Connection timeout"
+        raised = False
+        try:
+            with state:
+                raise RuntimeError("test error")
+        except RuntimeError:
+            raised = True
+        assert raised
 
-    def test_cached_sets_cached(self) -> None:
+    def test_mark_cached(self) -> None:
         state = OperationState(name="llm:auto:abc")
-        state.cached()
-        assert state.status == Status.CACHED
-
-    def test_ref_sets_ref(self) -> None:
-        state = OperationState(name="ref:other")
-        state.ref()
-        assert state.status == Status.REF
+        state.mark_cached()
+        assert state.status == Status.DONE
+        assert state.cached is True
 
 
 class TestCompilationState:
@@ -116,57 +120,52 @@ class TestCompilationState:
         assert result is None
 
     def test_full_workflow(self) -> None:
+        """Test a realistic compilation workflow with context managers."""
         state = CompilationState()
 
         doc1 = state.add_document("context/greeting")
         doc2 = state.add_document("context/summary")
 
-        doc1.start()
-        ref_op = doc1.child("ref:context/summary")
-        ref_op.start()
-        ref_op.ref()
+        # Compile doc1 with a ref and an LLM call
+        with doc1:
+            with doc1.child("ref:context/summary"):
+                pass  # Ref resolution
 
-        llm_op = doc1.child("llm:auto:abc123", detail="gpt-4o")
-        llm_op.start()
-        llm_op.done()
+            with doc1.child("llm:auto:abc123", detail="gpt-4o"):
+                pass  # LLM call
 
-        doc1.done()
-
-        doc2.start()
-        cached_op = doc2.child("extract:xyz")
-        cached_op.cached()
-        doc2.done()
+        # Compile doc2 with a cached operation
+        with doc2:
+            cached_op = doc2.child("extract:xyz")
+            cached_op.mark_cached()
 
         assert doc1.status == Status.DONE
         assert doc2.status == Status.DONE
         assert len(doc1.children) == 2
         assert len(doc2.children) == 1
-        assert doc1.children[0].status == Status.REF
-        assert doc1.children[1].status == Status.DONE
-        assert doc2.children[0].status == Status.CACHED
+        assert doc1.children[0].status == Status.DONE  # ref completed
+        assert doc1.children[1].status == Status.DONE  # llm completed
+        assert doc2.children[0].status == Status.DONE
+        assert doc2.children[0].cached is True
 
     def test_mcp_operations_tracked_like_refs(self) -> None:
         """MCP resource access appears as child operations like refs."""
         state = CompilationState()
 
         doc = state.add_document("context/with_mcp")
-        doc.start()
 
-        # Ref for comparison
-        ref_op = doc.child("ref:other_doc")
-        ref_op.start()
-        ref_op.ref()
+        with doc:
+            # Ref operation
+            with doc.child("ref:other_doc"):
+                pass
 
-        # MCP access tracked like refs (external resource reference)
-        mcp_op = doc.child("mcp:greeter", detail="colin://hello")
-        mcp_op.start()
-        mcp_op.ref()
-
-        doc.done()
+            # MCP access (also completes with DONE status)
+            with doc.child("mcp:greeter", detail="colin://hello"):
+                pass
 
         assert len(doc.children) == 2
         assert doc.children[0].name == "ref:other_doc"
-        assert doc.children[0].status == Status.REF
+        assert doc.children[0].status == Status.DONE
         assert doc.children[1].name == "mcp:greeter"
         assert doc.children[1].detail == "colin://hello"
-        assert doc.children[1].status == Status.REF
+        assert doc.children[1].status == Status.DONE

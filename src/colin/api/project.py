@@ -194,6 +194,7 @@ def get_project_status(project_dir: Path) -> dict:
 
     Returns:
         Dictionary with status information:
+        - project_file: Path to colin.toml (or None if not found)
         - project_name: Name of the project
         - target_dir: Target directory path
         - manifest_exists: Whether manifest.json exists
@@ -220,6 +221,7 @@ def get_project_status(project_dir: Path) -> dict:
     total_cost = sum(doc.total_cost_usd for doc in manifest.documents.values())
 
     return {
+        "project_file": project_file,
         "project_name": project_name,
         "target_dir": target_dir,
         "manifest_exists": manifest_path.exists(),

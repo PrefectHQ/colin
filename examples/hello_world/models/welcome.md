@@ -1,6 +1,6 @@
 ---
 name: Welcome Message
-description: Demonstrates ref() to include other documents
+description: Demonstrates ref() and LLM blocks
 ---
 
 # Welcome
@@ -11,3 +11,13 @@ description: Demonstrates ref() to include other documents
 
 You just saw an example of `ref()` pulling in content from another document.
 Colin automatically compiles documents in the right order based on their dependencies.
+
+## Translation for French Users
+
+{% llm %}
+Translate this greeting message for French users of the Colin library:
+
+{{ ref('greeting').content }}
+
+The translation should feel welcoming and appropriate for a technical audience.
+{% endllm %}

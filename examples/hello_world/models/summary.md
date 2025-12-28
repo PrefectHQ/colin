@@ -23,10 +23,3 @@ Given this greeting:
 
 Write a haiku about being welcomed.
 {% endllm %}
-
-## With Explicit Model
-
-{% llm model="anthropic:claude-sonnet-4-5" %}
-Translate this greeting to French:
-{{ ref('greeting').content }}
-{% endllm %}

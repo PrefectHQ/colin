@@ -6,20 +6,49 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import cyclopts
-from rich.console import Console
+from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.table import Table
 from rich.text import Text
+from rich.tree import Tree
 
 from colin import api
 from colin.api.compile import CompileResult
-from colin.compiler.state import CompilationState, Status
+from colin.cli.utilities import spinner
+from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
 console = Console()
 err_console = Console(stderr=True)
 
 
-def render_state(state: CompilationState) -> Text:
+def _get_icon(op: OperationState) -> RenderableType:
+    """Get display icon for an operation based on status and type."""
+    if op.status == Status.FAILED:
+        return Text("✗", style="red")
+    if op.status == Status.PROCESSING:
+        return spinner
+    if op.status == Status.PENDING:
+        return Text("○", style="dim")
+
+    # DONE - pick icon based on cached flag and operation type
+    if op.cached:
+        return Text("⚡", style="green")
+
+    op_type = op.name.split(":")[0] if ":" in op.name else ""
+    if op_type in ("ref", "mcp"):
+        return Text("→", style="cyan")
+    return Text("✓", style="green")
+
+
+def _make_label(icon: RenderableType, text: str) -> RenderableType:
+    """Combine icon and text into a single horizontal renderable."""
+    grid = Table.grid(padding=(0, 1))
+    grid.add_row(icon, text)
+    return grid
+
+
+def render_state(state: CompilationState) -> RenderableType:
     """Render compilation state for Live display.
 
     Shows all documents with their status and operations.
@@ -28,41 +57,21 @@ def render_state(state: CompilationState) -> Text:
         state: The compilation state to render.
 
     Returns:
-        Rich Text for display.
+        Rich renderable for display.
     """
-    lines: list[str] = []
+    if not state.documents:
+        return Text("")
+
+    # Build a tree for each document, then group them
+    trees: list[Tree] = []
 
     for uri, doc_state in state.documents.items():
-        # Status icon
-        match doc_state.status:
-            case Status.DONE:
-                icon = "[green]✓[/]"
-            case Status.PROCESSING:
-                icon = "[yellow]⋯[/]"
-            case Status.FAILED:
-                icon = "[red]✗[/]"
-            case _:  # PENDING, CACHED, REF
-                icon = "[dim]○[/]"
+        icon = _get_icon(doc_state)
+        doc_tree = Tree(_make_label(icon, f"{uri}.md"), guide_style="dim")
 
-        lines.append(f"  {icon} {uri}.md")
-
-        # Show all child operations
+        # Add child operations
         for child in doc_state.children:
-            # Status icon for child
-            match child.status:
-                case Status.REF:
-                    child_icon = "[cyan]→[/]"
-                case Status.CACHED:
-                    child_icon = "[cyan]⚡[/]"
-                case Status.DONE:
-                    child_icon = "[green]✓[/]"
-                case Status.PROCESSING:
-                    child_icon = "[yellow]⋯[/]"
-                case Status.FAILED:
-                    child_icon = "[red]✗[/]"
-                case Status.PENDING:
-                    child_icon = "[dim]○[/]"
-
+            child_icon = _get_icon(child)
             detail = f" ({child.detail})" if child.detail else ""
 
             # Shorten the operation name for display
@@ -70,23 +79,28 @@ def render_state(state: CompilationState) -> Text:
             if ":" in op_name:
                 op_type, op_id = op_name.split(":", 1)
                 if len(op_id) > 12:
-                    op_id = op_id[:12] + "..."
+                    op_id = op_id[:12]
                 op_name = f"{op_type}:{op_id}"
 
-            lines.append(f"      [dim]└─[/] {child_icon} {op_name}{detail}")
+            doc_tree.add(_make_label(child_icon, f"{op_name}{detail}"))
 
-    return Text.from_markup("\n".join(lines)) if lines else Text("")
+        trees.append(doc_tree)
+
+    return Group(*trees)
 
 
-def print_project_info(project_name: str | None, target_dir: Path) -> None:
+def print_project_info(project_file: Path, project_name: str, target_dir: Path) -> None:
     """Print project info header used by multiple commands."""
     cwd = Path.cwd()
     try:
+        config_display = project_file.relative_to(cwd)
         target_display = target_dir.relative_to(cwd)
     except ValueError:
+        config_display = project_file
         target_display = target_dir
 
-    console.print(f"[dim]Project:[/] {project_name or 'N/A'}")
+    console.print(f"[dim]Config:[/]  {config_display}")
+    console.print(f"[dim]Project:[/] {project_name}")
     console.print(f"[dim]Target:[/]  {target_display}/")
     console.print()
 
@@ -115,13 +129,12 @@ async def run(
         project_dir = project.resolve()
         project_file = find_project_file(project_dir)
 
-        if project_file:
-            config = load_project(project_file)
-            project_name = config.name
-            target_dir = target or (project_file.parent / config.target_path).resolve()
-        else:
-            project_name = None
-            target_dir = target or Path("target").resolve()
+        if not project_file:
+            raise ProjectNotInitializedError(f"No colin.toml found in {project_dir}")
+
+        config = load_project(project_file)
+        project_name = config.name
+        target_dir = target or (project_file.parent / config.target_path).resolve()
 
         # Handle dry run
         if dry_run:
@@ -134,7 +147,7 @@ async def run(
                     dry_run=True,
                 ),
             )
-            print_project_info(project_name, target_dir)
+            print_project_info(project_file, project_name, target_dir)
             console.print(f"[bold]Would run {len(dry_result)} documents:[/]")
             for uri, _ in dry_result:
                 console.print(f"  {uri}.md")
@@ -155,7 +168,7 @@ async def run(
             return
 
         # Print project info before starting
-        print_project_info(project_name, target_dir)
+        print_project_info(project_file, project_name, target_dir)
 
         # Compile with live progress (transient=True clears display when done)
         async def compile_with_live(live: Live) -> CompileResult:
@@ -267,7 +280,13 @@ def clean(
         yes: Skip confirmation prompt.
     """
     status_info = api.get_project_status(project)
+    project_file = status_info["project_file"]
     target_dir = status_info["target_dir"]
+
+    if not project_file:
+        err_console.print(f"[red]Error:[/] No colin.toml found in {project.resolve()}")
+        err_console.print("[dim]Run `colin init` to create a new project[/]")
+        sys.exit(1)
 
     if not target_dir.exists():
         console.print("[dim]Nothing to clean.[/]")
@@ -286,7 +305,7 @@ def clean(
 
     # Show what will be removed
     if not yes:
-        print_project_info(status_info["project_name"], target_dir)
+        print_project_info(project_file, status_info["project_name"], target_dir)
         console.print("[bold]Will remove:[/]")
         for rel in files_in_target:
             console.print(f"  [yellow]{rel}[/]")
@@ -298,7 +317,7 @@ def clean(
 
     # Show project info if skipping confirmation
     if yes:
-        print_project_info(status_info["project_name"], target_dir)
+        print_project_info(project_file, status_info["project_name"], target_dir)
 
     # Remove files
     removed = api.clean_project(project)

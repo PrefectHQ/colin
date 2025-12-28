@@ -6,6 +6,7 @@ reads/renders it. No event matching needed - state is always consistent.
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Self
 
 
 class Status(Enum):
@@ -15,8 +16,6 @@ class Status(Enum):
     PROCESSING = "processing"
     DONE = "done"
     FAILED = "failed"
-    CACHED = "cached"
-    REF = "ref"
 
 
 @dataclass
@@ -24,24 +23,43 @@ class OperationState:
     """A node in the state tree.
 
     Represents a document or operation (LLM call, extract, ref, etc.).
-    Children are attached via the child() method which does mutual attachment.
+    Use as a context manager to auto-handle start/done/fail transitions.
+
+    Example:
+        with doc_state.child("llm:auto:abc", detail="gpt-4"):
+            result = await call_llm(...)
     """
 
     name: str
     status: Status = Status.PENDING
     detail: str | None = None
+    cached: bool = False
+    error: str | None = None
     parent: "OperationState | None" = None
     children: list["OperationState"] = field(default_factory=list)
+
+    def __enter__(self) -> Self:
+        """Start the operation."""
+        self.status = Status.PROCESSING
+        return self
+
+    def __exit__(
+        self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object
+    ) -> bool:
+        """Complete the operation (done on success, failed on exception)."""
+        if exc_type is None:
+            self.status = Status.DONE
+        else:
+            self.status = Status.FAILED
+            self.error = str(exc_val) if exc_val else None
+        return False  # Don't suppress exceptions
 
     def child(self, name: str, detail: str | None = None) -> "OperationState":
         """Create and attach a child operation.
 
-        Mutual attachment: child.parent = self AND self.children.append(child)
-        This allows traversal in both directions.
-
         Args:
-            name: Operation name (e.g., "llm:auto:abc123", "extract", "ref:greeting")
-            detail: Optional detail (e.g., model name)
+            name: Operation name (e.g., "llm:auto:abc123", "ref:greeting", "mcp:server")
+            detail: Optional detail (e.g., model name, URI)
 
         Returns:
             The new child state.
@@ -50,31 +68,10 @@ class OperationState:
         self.children.append(child_state)
         return child_state
 
-    def start(self) -> None:
-        """Mark this operation as processing."""
-        self.status = Status.PROCESSING
-
-    def done(self) -> None:
-        """Mark this operation as done."""
+    def mark_cached(self) -> None:
+        """Mark this operation as served from cache (skips context manager)."""
+        self.cached = True
         self.status = Status.DONE
-
-    def fail(self, error: str | None = None) -> None:
-        """Mark this operation as failed.
-
-        Args:
-            error: Optional error message to store in detail.
-        """
-        self.status = Status.FAILED
-        if error:
-            self.detail = error
-
-    def cached(self) -> None:
-        """Mark this operation as served from cache."""
-        self.status = Status.CACHED
-
-    def ref(self) -> None:
-        """Mark this operation as a ref resolution."""
-        self.status = Status.REF
 
 
 @dataclass
