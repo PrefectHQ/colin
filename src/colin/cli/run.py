@@ -48,6 +48,13 @@ def _make_label(icon: RenderableType, text: str) -> RenderableType:
     return grid
 
 
+def _format_uri(uri: str) -> str:
+    """Format a URI for display, stripping scheme prefix."""
+    if uri.startswith("project://"):
+        return uri[len("project://") :]
+    return f"{uri}.md"
+
+
 def render_state(state: CompilationState) -> RenderableType:
     """Render compilation state for Live display.
 
@@ -67,21 +74,25 @@ def render_state(state: CompilationState) -> RenderableType:
 
     for uri, doc_state in state.documents.items():
         icon = _get_icon(doc_state)
-        doc_tree = Tree(_make_label(icon, f"{uri}.md"), guide_style="dim")
+        doc_tree = Tree(_make_label(icon, _format_uri(uri)), guide_style="dim")
 
         # Add child operations
         for child in doc_state.children:
             child_icon = _get_icon(child)
             detail = f" ({child.detail})" if child.detail else ""
 
-            # Shorten hash-based IDs for display, but keep meaningful names
+            # Format operation name for display
             op_name = child.name
             if ":" in op_name:
                 op_type, op_id = op_name.split(":", 1)
-                # Only truncate auto-generated hash IDs, not meaningful names like refs
-                if op_type not in ("ref", "mcp", "mcp_prompt") and len(op_id) > 12:
-                    op_id = op_id[:12]
-                op_name = f"{op_type}:{op_id}"
+                if op_type == "ref":
+                    # Show refs as ref(uri)
+                    op_name = f"ref({op_id})"
+                elif op_type not in ("mcp",) and len(op_id) > 12:
+                    # Truncate auto-generated hash IDs, keep mcp names
+                    op_name = f"{op_type}:{op_id[:12]}"
+                else:
+                    op_name = f"{op_type}:{op_id}"
 
             doc_tree.add(_make_label(child_icon, f"{op_name}{detail}"))
 

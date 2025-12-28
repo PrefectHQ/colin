@@ -22,8 +22,13 @@ if TYPE_CHECKING:
 
 
 def _has_scheme(uri: str) -> bool:
-    """Check if a URI has an explicit scheme (e.g., file://, github://)."""
+    """Check if a URI has an explicit scheme (e.g., project://, file://)."""
     return "://" in uri
+
+
+def _is_project_uri(uri: str) -> bool:
+    """Check if a URI is a project:// URI."""
+    return uri.startswith("project://")
 
 
 class CompileContext:
@@ -71,17 +76,16 @@ class CompileContext:
         """Fetch content from a referenced document.
 
         This:
-        1. Validates schemaless refs exist within project (compile-time check)
-        2. Records the dependency edge
-        3. Returns the compiled content of the referenced document
+        1. Normalizes shorthand refs to project:// URIs
+        2. Validates project:// refs exist within project (compile-time check)
+        3. Records the dependency edge
+        4. Returns the compiled content of the referenced document
 
-        Schemaless URIs (e.g., 'reports/summary') must resolve within the
-        project boundary - this is validated at compile time. Scheme URIs
-        (e.g., 'file://path/to/file') are external references validated
-        at runtime.
+        Shorthand URIs (e.g., 'data') are normalized to project://data.md.
+        Project URIs must resolve within the project boundary.
 
         Args:
-            uri: URI of the document to reference.
+            uri: URI of the document to reference (shorthand or full).
 
         Returns:
             RefResult with content and metadata.
@@ -89,14 +93,14 @@ class CompileContext:
         Raises:
             RefNotFoundError: If the referenced document doesn't exist.
         """
-        # Validate schemaless refs exist within project (compile-time guard)
-        if not _has_scheme(uri):
+        # Normalize shorthand refs to project:// URIs
+        uri = self.input_plugin.normalize_uri(uri)
+
+        # Validate project:// refs exist within project (compile-time guard)
+        if _is_project_uri(uri):
             model_path = self.input_plugin.uri_to_model_path(uri)
             if model_path is None:
-                raise RefNotFoundError(
-                    f"Referenced document '{uri}' not found in project. "
-                    f"Schemaless refs must resolve within the project boundary."
-                )
+                raise RefNotFoundError(f"Referenced document '{uri}' not found in project.")
 
         # Record the dependency (only track first ref to each URI)
         is_first_ref = uri not in self.refs_evaluated
@@ -349,6 +353,6 @@ class CompileContext:
         if self.mcp_manager is None:
             raise ValueError("No MCP servers configured")
 
-        op = self.doc_state.child(f"mcp_prompt:{server}", detail=name) if self.doc_state else None
+        op = self.doc_state.child(f"mcp:{server}", detail=name) if self.doc_state else None
         with op if op else _nullcontext():
             return await self.mcp_manager.get_prompt(server, name, arguments)

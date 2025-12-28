@@ -55,7 +55,7 @@ name: Test
         result = await engine.compile_all()
 
         assert len(result) == 1
-        assert result[0].uri == "test"
+        assert result[0].uri == "project://test.md"
         assert "# Hello World" in result[0].output
         assert (output_dir / "test.md").exists()
 
@@ -83,10 +83,10 @@ Including: {{ ref('base').content }}
 
         assert len(result) == 2
         uris = [doc.uri for doc in result]
-        assert "base" in uris
-        assert "derived" in uris
+        assert "project://base.md" in uris
+        assert "project://derived.md" in uris
 
-        derived = next(doc for doc in result if doc.uri == "derived")
+        derived = next(doc for doc in result if doc.uri == "project://derived.md")
         assert "Base content here." in derived.output
 
     async def test_compile_all_with_llm_block(
@@ -138,7 +138,7 @@ name: Extract Test
         await engine.compile_all()
 
         assert engine.manifest.compiled_at is not None
-        assert "test" in engine.manifest.documents
+        assert "project://test.md" in engine.manifest.documents
 
     async def test_compile_uri_single(self, engine_setup: tuple[CompileEngine, Path, Path]) -> None:
         engine, source_dir, output_dir = engine_setup
@@ -151,9 +151,9 @@ name: Single
 Just this one.
 """)
 
-        result = await engine.compile_uri("single")
+        result = await engine.compile_uri("project://single.md")
 
-        assert result.uri == "single"
+        assert result.uri == "project://single.md"
         assert "Just this one." in result.output
         assert (output_dir / "single.md").exists()
 
@@ -163,7 +163,7 @@ Just this one.
         engine, _, _ = engine_setup
 
         with pytest.raises(FileNotFoundError):
-            await engine.compile_uri("nonexistent")
+            await engine.compile_uri("project://nonexistent.md")
 
     async def test_compile_order_respects_dependencies(
         self, engine_setup: tuple[CompileEngine, Path, Path]
@@ -177,5 +177,5 @@ Just this one.
         result = await engine.compile_all()
         uris = [doc.uri for doc in result]
 
-        assert uris.index("a") < uris.index("b")
-        assert uris.index("b") < uris.index("c")
+        assert uris.index("project://a.md") < uris.index("project://b.md")
+        assert uris.index("project://b.md") < uris.index("project://c.md")

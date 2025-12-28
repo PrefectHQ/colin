@@ -211,7 +211,9 @@ class CompileEngine:
                 ast = env.parse(doc.template_content)
                 refs = self._extract_refs_from_ast(ast)
                 for ref_uri in refs:
-                    self.graph.add_edge(doc.uri, ref_uri)
+                    # Normalize ref URIs to match document URIs (project://...)
+                    normalized_ref = self.input_plugin.normalize_uri(ref_uri)
+                    self.graph.add_edge(doc.uri, normalized_ref)
             except Exception:
                 # If parsing fails, we'll catch actual errors during compilation
                 pass

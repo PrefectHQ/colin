@@ -46,7 +46,7 @@ class TestCompileContext:
 
         await context.ref("other")
 
-        assert "other" in context.refs_evaluated
+        assert "project://other.md" in context.refs_evaluated
 
     async def test_ref_returns_ref_result(self, context: CompileContext, tmp_path: Path) -> None:
         source_file = tmp_path / "context" / "doc.md"
@@ -59,7 +59,7 @@ class TestCompileContext:
         assert result.name == "Doc"
         assert result.description == "A doc"
         assert result.content == "Compiled content"
-        assert str(result) == "Ref('doc')"
+        assert str(result) == "Ref('project://doc.md')"
 
     async def test_ref_not_found(self, context: CompileContext) -> None:
         with pytest.raises(RefNotFoundError):

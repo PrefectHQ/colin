@@ -4,9 +4,14 @@ Provides a tree structure where the compiler updates state and the CLI
 reads/renders it. No event matching needed - state is always consistent.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Self
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 
 class Status(Enum):
@@ -35,8 +40,8 @@ class OperationState:
     detail: str | None = None
     cached: bool = False
     error: str | None = None
-    parent: "OperationState | None" = None
-    children: list["OperationState"] = field(default_factory=list)
+    parent: OperationState | None = None
+    children: list[OperationState] = field(default_factory=list)
 
     def __enter__(self) -> Self:
         """Start the operation."""
@@ -54,7 +59,7 @@ class OperationState:
             self.error = str(exc_val) if exc_val else None
         return False  # Don't suppress exceptions
 
-    def child(self, name: str, detail: str | None = None) -> "OperationState":
+    def child(self, name: str, detail: str | None = None) -> OperationState:
         """Create and attach a child operation.
 
         Args:

@@ -22,7 +22,7 @@ class FileInputPlugin:
     Models are markdown files with optional YAML frontmatter.
     """
 
-    scheme: str = "file"
+    scheme: str = "project"
 
     def __init__(self, model_dirs: list[Path], target_dir: Path) -> None:
         """Initialize the file input plugin.
@@ -34,17 +34,59 @@ class FileInputPlugin:
         self.model_dirs = model_dirs
         self.target_dir = target_dir
 
+    def normalize_uri(self, uri: str) -> str:
+        """Normalize a URI to project:// format.
+
+        Converts shorthand refs like 'data' to 'project://data.md'.
+
+        Args:
+            uri: URI in any format (shorthand or full).
+
+        Returns:
+            Normalized project:// URI.
+        """
+        # Already normalized
+        if uri.startswith("project://"):
+            return uri
+
+        # Has a different scheme - leave as-is
+        if "://" in uri:
+            return uri
+
+        # Schemaless shorthand - normalize to project://
+        # Add .md extension if missing
+        if not uri.endswith(".md"):
+            uri = f"{uri}.md"
+        return f"project://{uri}"
+
+    def _extract_path_from_uri(self, uri: str) -> str:
+        """Extract the path portion from a project:// URI.
+
+        Args:
+            uri: A project:// URI (e.g., project://data.md).
+
+        Returns:
+            The path without scheme (e.g., data.md).
+        """
+        if uri.startswith("project://"):
+            return uri[len("project://") :]
+        return uri
+
     def uri_to_model_path(self, uri: str) -> Path | None:
         """Convert a URI to a model file path.
 
         Args:
-            uri: Model URI (e.g., 'reports/summary').
+            uri: Model URI (e.g., 'project://data.md' or shorthand 'data').
 
         Returns:
             Path to the model file, or None if not found.
         """
+        # Normalize and extract path
+        normalized = self.normalize_uri(uri)
+        path_part = self._extract_path_from_uri(normalized)
+
         for model_dir in self.model_dirs:
-            candidate = model_dir / f"{uri}.md"
+            candidate = model_dir / path_part
             if candidate.exists():
                 return candidate
         return None
@@ -53,12 +95,13 @@ class FileInputPlugin:
         """Convert a URI to a target file path.
 
         Args:
-            uri: Model URI.
+            uri: Model URI (e.g., 'project://data.md').
 
         Returns:
             Path to the compiled output file.
         """
-        return self.target_dir / f"{uri}.md"
+        path_part = self._extract_path_from_uri(uri)
+        return self.target_dir / path_part
 
     async def fetch(self, uri: str) -> RefResult:
         """Fetch content and metadata for a URI.
@@ -86,7 +129,8 @@ class FileInputPlugin:
             template = model_path.read_text(encoding="utf-8")
 
         # Extract name and description from model frontmatter
-        name: str = uri.split("/")[-1]
+        path_part = self._extract_path_from_uri(uri)
+        name: str = Path(path_part).stem  # Get filename without extension
         description: str | None = None
         if model_path and model_path.exists():
             post = frontmatter.loads(template)
@@ -187,17 +231,17 @@ class FileInputPlugin:
         return False
 
     def _path_to_uri(self, path: Path, model_dir: Path) -> str:
-        """Convert a file path to a URI.
+        """Convert a file path to a project:// URI.
 
         Args:
             path: Path to the model file.
             model_dir: Base model directory.
 
         Returns:
-            URI string (without extension).
+            URI string in project:// format (e.g., project://data.md).
         """
         relative = path.relative_to(model_dir)
-        return str(relative.with_suffix(""))
+        return f"project://{relative}"
 
     def parse_frontmatter(self, path: Path) -> tuple[Frontmatter, str]:
         """Parse frontmatter from a model file.
