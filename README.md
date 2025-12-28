@@ -1,61 +1,117 @@
 # Colin
 
-**Co**ntext **Lin**eage — a compiler for the AI era.
+***Context as code.***
 
-Colin takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
+Colin does for context what dbt did for SQL. It's a context compiler: pull data from scattered sources—files, APIs, databases, MCP servers—and use LLMs to synthesize, summarize, and transform it into Agent Skills and other formats agents can use. Declare dependencies with `ref()`, and Colin builds the graph, compiles in order, and recompiles only what changes.
 
-> *Named for the perpetually cheerful robot from The Hitchhiker's Guide to the Galaxy.*
-
-## Installation
+Writing context by hand means copy-pasting from various sources, hoping nothing was missed, and watching it go stale. Colin keeps your context compiled, cached, and traceable—with full lineage from sources to outputs.
 
 ```bash
-uv add colin
+pip install colin
+cbt run
 ```
+
+*Colin stands for **Co**ntext **Lin**eage — and also happens to be that perpetually helpful robot from The Hitchhiker's Guide to the Galaxy.*
+
+---
+
+## The Problem
+
+Context is everywhere:
+
+- **Local files** (Markdown, JSON, YAML)
+- **MCP servers** (Linear, GitHub, Slack, databases)
+- **Documentation** (Notion, Google Docs, wikis)
+- **APIs** and data warehouses
+
+Agents need this context synthesized and kept current. Today, someone writes a skill by hand, copy-pastes from various sources, hopes nothing was missed, and watches it go stale. There's no dependency tracking. No caching. No way to know what depends on what.
+
+## How It Works
+
+Write Markdown files with Jinja templating. Use `ref()` to pull in other documents, `| extract()` to pull out specific information with an LLM, and `{% llm %}` blocks for freeform synthesis.
+
+Colin compiles them in dependency order, caches LLM calls, and recompiles only what's affected when sources change.
+
+---
 
 ## Quick Start
 
+Initialize a project:
+
 ```bash
-cbt init                 # Create colin.toml and models/
+cbt init my-project
+cd my-project
 ```
 
-Create a markdown file in `models/`:
+Create a source document `models/meeting-notes.md` that pulls from an MCP server:
 
 ```markdown
 ---
-name: Engineering Health
-description: Weekly engineering team health summary
+name: Meeting Notes
+description: Recent meeting notes from the team
 ---
 
-# Engineering Health Report
+{# Pull notes from your Notion MCP server #}
+{{ mcp_resource('notion', 'pages/meeting-notes') }}
+```
 
-{{ ref('sources/github-issues') | extract('open bug count') }}
+Create a skill that extracts what matters in `models/project-status.md`:
 
-{% llm %}
-Summarize the engineering health based on the data above.
-{% endllm %}
+```markdown
+---
+name: Project Status
+description: Current project status for agents
+---
+
+# Project Status
+
+**Last updated:** {{ ref('meeting-notes').updated }}
+
+## Open Action Items
+{{ ref('meeting-notes') | extract('action items and who owns them') }}
+
+## Customer Risks
+{{ ref('meeting-notes') | extract('customer risks or concerns') }}
 ```
 
 Compile:
 
 ```bash
-cbt run                  # Compile all documents
+cbt run
 ```
 
-## Features
+Colin discovers both documents, builds the dependency graph, compiles `meeting-notes` first, then `project-status` with the extracted content. LLM calls are cached—reruns are instant unless the source changes.
+
+Output lands in `target/compiled/`.
+
+**No LLM?** Use `ref()` directly for templating without AI:
+
+```jinja
+{{ ref('meeting-notes').content }}
+```
+
+---
+
+## Core Concepts
 
 ### ref() — Dependency Resolution
 
-Reference other documents. Colin builds a dependency graph and compiles in order:
+Reference other documents. Colin builds the graph and compiles in order:
 
 ```jinja
 {{ ref('context/team-roster') }}
 ```
 
-Returns a `RefResult` with `.name`, `.description`, `.content`, `.template`, `.updated`, `.uri`.
+Returns a `RefResult` with:
 
-### {% llm %} — LLM Blocks
+- `.content` — compiled output
+- `.name` — from frontmatter
+- `.description` — from frontmatter
+- `.template` — raw source
 
-LLM-powered transformations:
+### {% llm %} — LLM Transformations
+
+LLM-powered synthesis:
 
 ```jinja
 {% llm %}
@@ -64,61 +120,48 @@ Identify the top 3 concerns.
 {% endllm %}
 ```
 
-With model and caching ID:
+With model selection:
 
 ```jinja
-{% llm model="sonnet" id="weekly-summary" %}
+{% llm model="anthropic:claude-sonnet-4-5" %}
 Summarize the week's activity.
 {% endllm %}
 ```
 
-### | extract — Extraction Filter
+### | extract — Focused Extraction
 
-Extract specific information:
-
-```jinja
-{{ ref('sources/slack') | extract('action items') }}
-{{ content | extract('key decisions', id='decisions') }}
-```
-
-### mcp_resource() — MCP Integration
-
-Read resources from MCP servers:
+Pull specific information from content:
 
 ```jinja
-{{ mcp_resource('linear', 'linear://issue/ABC-123') }}
+{{ ref('sources/slack') | extract('action items from this week') }}
+{{ ref('sources/calls') | extract('feature requests mentioned') }}
 ```
 
-Configure servers in `colin.toml`:
+### Caching
 
-```toml
-[mcp.servers.linear]
-url = "https://linear-mcp.example.com"
+LLM calls are cached based on inputs:
 
-[mcp.servers.github]
-command = "uvx"
-args = ["mcp-server-github"]
+- **Auto caching**: Same input + same prompt = cached result
+- **Manual IDs**: Stable across prompt changes, receives previous output
+
+```jinja
+{{ content | extract('summary') }}                    {# auto cache #}
+{{ content | extract('summary', id='main-summary') }} {# manual ID #}
 ```
 
-Manage via CLI:
+Manual IDs let you iterate on prompts without regenerating everything.
 
-```bash
-cbt mcp add linear --url https://...
-cbt mcp add github --command uvx --args mcp-server-github
-cbt mcp list
-cbt mcp remove linear
-```
+---
 
 ## CLI
 
 ```bash
-cbt init                 # Create new project
+cbt init [name]          # Create new project
 cbt run                  # Compile all documents
-cbt run --force          # Force recompile everything
+cbt run --force          # Recompile everything
 cbt run --dry-run        # Show what would compile
-cbt status               # Show compilation status
-cbt clean                # Remove outputs and manifest
-cbt mcp list             # List MCP servers
+cbt status               # Show project status
+cbt clean                # Remove outputs and cache
 ```
 
 ## Configuration
@@ -130,48 +173,53 @@ cbt mcp list             # List MCP servers
 name = "my-project"
 model-path = "models"    # Source documents
 target-path = "target"   # Compiled output
-
-[mcp.servers.example]
-url = "https://..."
 ```
 
-## Frontmatter
+### MCP Servers
 
-```yaml
----
-name: My Document
-description: A helpful description
-custom_field: any metadata
----
+Connect to MCP servers for external data:
+
+```toml
+[mcp.servers.linear]
+url = "https://linear-mcp.example.com"
+
+[mcp.servers.github]
+command = "uvx"
+args = ["mcp-server-github"]
 ```
 
-## Caching
-
-LLM calls are cached to avoid redundant API calls:
-
-- **Auto IDs**: Hash-based, cache on identical input
-- **Manual IDs**: Stable across prompt changes, receives previous output
-
-```jinja
-{{ content | extract('summary') }}              {# auto ID #}
-{{ content | extract('summary', id='main') }}   {# manual ID #}
+```bash
+cbt mcp add linear --url https://...
+cbt mcp list
 ```
 
 ## Project Structure
 
 ```
 my-project/
-├── colin.toml           # Project configuration
-├── models/              # Source .md files
-│   ├── reports/
-│   │   └── weekly.md
-│   └── sources/
-│       └── metrics.md
-└── target/              # Compiled output (git-ignored)
+├── colin.toml           # Configuration
+├── models/              # Source documents
+│   ├── sources/
+│   │   └── metrics.md
+│   └── summaries/
+│       └── weekly.md
+└── target/              # Compiled output
     ├── compiled/
-    └── manifest.json
+    └── manifest.json    # Lineage + cache
 ```
 
-## License
+---
 
-MIT
+## Coming Soon
+
+- **MCP resource integration** — `{{ mcp_resource('linear', 'projects') }}` to pull live data
+- **Watch mode** — Recompile on file changes
+- **Cost tracking** — Per-document LLM cost attribution
+
+---
+
+## Part of Prefect's Context Layer
+
+Colin is built by [Prefect](https://prefect.io) as part of our mission to deliver the right context to agents at the right time. It connects to [MCP](https://modelcontextprotocol.io) for data access and produces [Agent Skills](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/prompt_caching) for delivery.
+
+Apache 2.0
