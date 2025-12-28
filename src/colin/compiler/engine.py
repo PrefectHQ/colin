@@ -7,12 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from fastmcp.mcp_config import MCPConfig
 from jinja2 import nodes
 
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
 from colin.exceptions import MultipleCompilationErrors
+from colin.mcp import MCPManager
 from colin.models import (
     ColinDocument,
     CompiledDocument,
@@ -38,6 +40,7 @@ class CompileEngine:
         manifest: Manifest,
         input_plugin: FileInputPlugin,
         llm_provider: LLMProvider,
+        mcp_config: MCPConfig | None = None,
     ) -> None:
         """Initialize the compile engine.
 
@@ -45,10 +48,12 @@ class CompileEngine:
             manifest: The manifest for caching and metadata.
             input_plugin: Input plugin for document access.
             llm_provider: LLM provider for transformations.
+            mcp_config: MCP server configuration.
         """
         self.manifest = manifest
         self.input_plugin = input_plugin
         self.llm_provider = llm_provider
+        self.mcp_config = mcp_config or MCPConfig()
         self.graph = DependencyGraph()
 
     async def compile_all(self) -> list[CompiledDocument]:
@@ -73,23 +78,28 @@ class CompileEngine:
         doc_map = {doc.uri: doc for doc in documents}
         errors: dict[str, list[Exception]] = {}
 
-        for uri in compile_order:
-            doc = doc_map[uri]
-            try:
-                result = await self._compile_document(doc, compiled_outputs)
-                compiled.append(result)
-                compiled_outputs[uri] = result
+        # Create MCP manager for resource access
+        mcp_manager = MCPManager(self.mcp_config)
+        try:
+            for uri in compile_order:
+                doc = doc_map[uri]
+                try:
+                    result = await self._compile_document(doc, compiled_outputs, mcp_manager)
+                    compiled.append(result)
+                    compiled_outputs[uri] = result
 
-                # Write output immediately so refs can find it
-                self._write_output(result)
+                    # Write output immediately so refs can find it
+                    self._write_output(result)
 
-                # Update manifest
-                self._update_manifest(result)
-            except Exception as e:
-                # Collect error for this document
-                if uri not in errors:
-                    errors[uri] = []
-                errors[uri].append(e)
+                    # Update manifest
+                    self._update_manifest(result)
+                except Exception as e:
+                    # Collect error for this document
+                    if uri not in errors:
+                        errors[uri] = []
+                    errors[uri].append(e)
+        finally:
+            await mcp_manager.close()
 
         # Raise collected errors if any
         if errors:
@@ -216,12 +226,14 @@ class CompileEngine:
         self,
         doc: ColinDocument,
         compiled_outputs: dict[str, CompiledDocument],
+        mcp_manager: MCPManager | None = None,
     ) -> CompiledDocument:
         """Compile a single document.
 
         Args:
             doc: The document to compile.
             compiled_outputs: Already-compiled documents from this run.
+            mcp_manager: MCP manager for resource access.
 
         Returns:
             The compiled document.
@@ -236,6 +248,7 @@ class CompileEngine:
             llm_provider=self.llm_provider,
             input_plugin=self.input_plugin,
             compiled_outputs=compiled_outputs,
+            mcp_manager=mcp_manager,
         )
 
         # Bind context to environment

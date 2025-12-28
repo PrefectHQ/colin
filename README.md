@@ -2,7 +2,7 @@
 
 **Co**ntext **Lin**eage — a compiler for the AI era.
 
-Colin takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats. It's the happiest way to build agent context.
+Colin takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
 
 > *Named for the perpetually cheerful robot from The Hitchhiker's Guide to the Galaxy.*
 
@@ -14,12 +14,14 @@ uv add colin
 
 ## Quick Start
 
-Create a `.colin` file in `context/`:
+```bash
+cbt init                 # Create colin.toml and models/
+```
+
+Create a markdown file in `models/`:
 
 ```markdown
 ---
-colin:
-  output: markdown
 name: Engineering Health
 description: Weekly engineering team health summary
 ---
@@ -33,45 +35,36 @@ Summarize the engineering health based on the data above.
 {% endllm %}
 ```
 
-Compile your documents:
+Compile:
 
 ```bash
-cbt compile
+cbt run                  # Compile all documents
 ```
 
-## Core Concepts
+## Features
 
-### ref() - Dependency Resolution
+### ref() — Dependency Resolution
 
-The `ref()` function registers a dependency and returns the compiled content of another document:
+Reference other documents. Colin builds a dependency graph and compiles in order:
 
 ```jinja
 {{ ref('context/team-roster') }}
 ```
 
-It returns a structured `RefResult` with:
+Returns a `RefResult` with `.name`, `.description`, `.content`, `.template`, `.updated`, `.uri`.
 
-- `.name` - Document name from frontmatter
-- `.description` - Document description
-- `.content` - Compiled output (also returned by `str()`)
-- `.template` - Raw source template
-- `.updated` - Last compilation timestamp
-- `.uri` - The ref URI
+### {% llm %} — LLM Blocks
 
-### LLM Blocks
-
-Use `{% llm %}` blocks for LLM-powered transformations:
+LLM-powered transformations:
 
 ```jinja
 {% llm %}
-Given this data:
-{{ ref('sources/metrics') }}
-
+Given: {{ ref('sources/metrics') }}
 Identify the top 3 concerns.
 {% endllm %}
 ```
 
-With explicit model and caching ID:
+With model and caching ID:
 
 ```jinja
 {% llm model="sonnet" id="weekly-summary" %}
@@ -79,75 +72,104 @@ Summarize the week's activity.
 {% endllm %}
 ```
 
-### Extract Filter
+### | extract — Extraction Filter
 
-Extract specific information from content:
+Extract specific information:
 
 ```jinja
-{{ ref('sources/slack-export') | extract('action items') }}
-{{ content | extract('key decisions', id='decisions-extract') }}
+{{ ref('sources/slack') | extract('action items') }}
+{{ content | extract('key decisions', id='decisions') }}
 ```
 
-### Frontmatter
+### mcp_resource() — MCP Integration
 
-Colin uses YAML frontmatter with a `colin:` namespace for configuration:
+Read resources from MCP servers:
+
+```jinja
+{{ mcp_resource('linear', 'linear://issue/ABC-123') }}
+```
+
+Configure servers in `colin.toml`:
+
+```toml
+[mcp.servers.linear]
+url = "https://linear-mcp.example.com"
+
+[mcp.servers.github]
+command = "uvx"
+args = ["mcp-server-github"]
+```
+
+Manage via CLI:
+
+```bash
+cbt mcp add linear --url https://...
+cbt mcp add github --command uvx --args mcp-server-github
+cbt mcp list
+cbt mcp remove linear
+```
+
+## CLI
+
+```bash
+cbt init                 # Create new project
+cbt run                  # Compile all documents
+cbt run --force          # Force recompile everything
+cbt run --dry-run        # Show what would compile
+cbt status               # Show compilation status
+cbt clean                # Remove outputs and manifest
+cbt mcp list             # List MCP servers
+```
+
+## Configuration
+
+`colin.toml`:
+
+```toml
+[project]
+name = "my-project"
+model-path = "models"    # Source documents
+target-path = "target"   # Compiled output
+
+[mcp.servers.example]
+url = "https://..."
+```
+
+## Frontmatter
 
 ```yaml
 ---
-colin:
-  output: markdown
 name: My Document
 description: A helpful description
-custom_field: any metadata you want
+custom_field: any metadata
 ---
 ```
 
-## CLI Commands
-
-```bash
-cbt compile              # Compile all documents
-cbt compile --force      # Force recompile everything
-cbt compile --dry-run    # Show what would be compiled
-cbt compile --verbose    # Detailed output with costs
-
-cbt status               # Show compilation status
-cbt clean                # Remove outputs and manifest
-```
-
-## How It Works
-
-1. **Discovery** - Find all `.colin` files in source directories
-2. **AST Parsing** - Extract `ref()` calls to build dependency graph
-3. **Topological Sort** - Order documents so dependencies compile first
-4. **Compilation** - Render Jinja templates with LLM transformations
-5. **Caching** - Store results in manifest for incremental rebuilds
-
 ## Caching
 
-Colin caches LLM calls to avoid redundant API calls:
+LLM calls are cached to avoid redundant API calls:
 
-- **Auto IDs** (default): Hash-based, cache hits when input is identical
-- **Manual IDs**: Stable across prompt changes, receives previous output for consistency
+- **Auto IDs**: Hash-based, cache on identical input
+- **Manual IDs**: Stable across prompt changes, receives previous output
 
 ```jinja
-{# Auto ID - caches on exact input match #}
-{{ content | extract('summary') }}
-
-{# Manual ID - maintains stability across prompt tweaks #}
-{{ content | extract('summary', id='main-summary') }}
+{{ content | extract('summary') }}              {# auto ID #}
+{{ content | extract('summary', id='main') }}   {# manual ID #}
 ```
 
 ## Project Structure
 
-```text
-your-project/
-├── context/           # Source .colin files
+```
+my-project/
+├── colin.toml           # Project configuration
+├── models/              # Source .md files
 │   ├── reports/
-│   │   └── weekly.colin
-│   └── summaries/
-│       └── team.colin
-├── target/            # Compiled output (git-ignored)
-└── .colin-manifest.json  # Build cache (git-ignored)
+│   │   └── weekly.md
+│   └── sources/
+│       └── metrics.md
+└── target/              # Compiled output (git-ignored)
+    ├── compiled/
+    └── manifest.json
 ```
 
 ## License

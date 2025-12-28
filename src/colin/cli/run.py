@@ -1,4 +1,4 @@
-"""Colin CLI using cyclopts - thin shell over API functions."""
+"""Run, init, status, and clean commands."""
 
 import asyncio
 import sys
@@ -15,8 +15,6 @@ from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedErr
 console = Console()
 err_console = Console(stderr=True)
 
-app = cyclopts.App(name="cbt", help="Colin - Context compiler for the AI era.")
-
 
 def print_project_info(project_name: str | None, target_dir: Path) -> None:
     """Print project info header used by multiple commands."""
@@ -31,7 +29,6 @@ def print_project_info(project_name: str | None, target_dir: Path) -> None:
     console.print()
 
 
-@app.command
 def run(
     project: Path = Path("."),
     *,
@@ -144,7 +141,6 @@ async def _run_async(
         sys.exit(1)
 
 
-@app.command
 def init(
     project: Path = Path("."),
     *,
@@ -190,7 +186,6 @@ def init(
         sys.exit(1)
 
 
-@app.command
 def status(
     project: Path = Path("."),
 ) -> None:
@@ -223,7 +218,6 @@ def status(
         console.print(f"\n[dim]Last run: {status_info['compiled_at']:%Y-%m-%d %H:%M}[/]")
 
 
-@app.command
 def clean(
     project: Path = Path("."),
     *,
@@ -280,8 +274,3 @@ def clean(
             console.print(f"  [dim]{rel}[/]")
         except ValueError:
             console.print(f"  [dim]{path}[/]")
-
-
-def main() -> None:
-    """Entry point for the CLI."""
-    app()

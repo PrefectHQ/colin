@@ -11,6 +11,7 @@ from colin.models import CompiledDocument, LLMCall, RefResult
 
 if TYPE_CHECKING:
     from colin.llm.base import LLMProvider
+    from colin.mcp import MCPManager
     from colin.models import Manifest
     from colin.plugins.inputs.file import FileInputPlugin
 
@@ -34,6 +35,7 @@ class CompileContext:
         llm_provider: LLMProvider,
         input_plugin: FileInputPlugin,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
+        mcp_manager: MCPManager | None = None,
     ) -> None:
         """Initialize the compile context.
 
@@ -43,12 +45,14 @@ class CompileContext:
             llm_provider: LLM provider for transformations.
             input_plugin: Input plugin for fetching refs.
             compiled_outputs: Already-compiled documents from current run.
+            mcp_manager: MCP manager for server connections.
         """
         self.manifest = manifest
         self.document_uri = document_uri
         self.llm_provider = llm_provider
         self.input_plugin = input_plugin
         self.compiled_outputs = compiled_outputs or {}
+        self.mcp_manager = mcp_manager
 
         # Tracking during render
         self.refs_evaluated: list[str] = []
@@ -245,3 +249,20 @@ class CompileContext:
             16-character hash string.
         """
         return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    async def mcp_resource(self, server: str, uri: str) -> str:
+        """Read a resource from an MCP server.
+
+        Args:
+            server: Server name as configured in colin.toml.
+            uri: Resource URI.
+
+        Returns:
+            Resource content as string.
+
+        Raises:
+            ValueError: If MCP manager not configured or server unknown.
+        """
+        if self.mcp_manager is None:
+            raise ValueError("No MCP servers configured")
+        return await self.mcp_manager.read_resource(server, uri)

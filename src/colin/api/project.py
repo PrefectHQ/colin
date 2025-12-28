@@ -8,6 +8,7 @@ from typing import Any
 
 import tomli
 import tomli_w
+from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
 from pydantic import BaseModel
 
 from colin.api.manifest import load_manifest
@@ -33,6 +34,7 @@ class ProjectConfig(BaseModel):
     name: str = "colin-project"
     model_path: str = "models"
     target_path: str = "target"
+    mcp: MCPConfig = MCPConfig()
 
 
 def find_project_file(start: Path | None = None) -> Path | None:
@@ -68,11 +70,29 @@ def load_project(path: Path) -> ProjectConfig:
         data = tomli.load(f)
 
     project = data.get("project", {})
+    mcp_data = data.get("mcp", {})
+    servers_data = mcp_data.get("servers", {})
+
+    # Convert [mcp.servers.name] format to MCPConfig
+    mcp_servers: dict[str, StdioMCPServer | RemoteMCPServer] = {}
+    for name, server_data in servers_data.items():
+        if "url" in server_data:
+            mcp_servers[name] = RemoteMCPServer(
+                url=server_data["url"],
+                headers=server_data.get("headers", {}),
+            )
+        elif "command" in server_data:
+            mcp_servers[name] = StdioMCPServer(
+                command=server_data["command"],
+                args=server_data.get("args", []),
+                env=server_data.get("env", {}),
+            )
 
     return ProjectConfig(
         name=project.get("name", "colin-project"),
         model_path=project.get("model-path", "models"),
         target_path=project.get("target-path", "target"),
+        mcp=MCPConfig(mcpServers=mcp_servers),
     )
 
 
@@ -150,6 +170,14 @@ def save_project(path: Path, config: ProjectConfig) -> None:
             "target-path": config.target_path,
         },
     }
+
+    # Convert MCPConfig to [mcp.servers.name] format
+    if config.mcp.mcpServers:
+        servers = {}
+        for name, server in config.mcp.mcpServers.items():
+            servers[name] = server.model_dump(exclude_none=True, exclude_defaults=True)
+        data["mcp"] = {"servers": servers}
+
     with open(path, "wb") as f:
         tomli_w.dump(data, f)
 

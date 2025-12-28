@@ -109,6 +109,7 @@ async def compile_project(
         manifest=manifest,
         input_plugin=input_plugin,
         llm_provider=llm_provider,
+        mcp_config=config.mcp,
     )
 
     compiled = await engine.compile_all()
