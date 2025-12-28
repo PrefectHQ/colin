@@ -21,6 +21,7 @@ class Status(Enum):
     PROCESSING = "processing"
     DONE = "done"
     FAILED = "failed"
+    SKIPPED = "skipped"  # Upstream dependency failed
 
 
 @dataclass
@@ -77,6 +78,11 @@ class OperationState:
         """Mark this operation as served from cache (skips context manager)."""
         self.cached = True
         self.status = Status.DONE
+
+    def mark_skipped(self, reason: str | None = None) -> None:
+        """Mark this operation as skipped due to upstream failure."""
+        self.status = Status.SKIPPED
+        self.error = reason
 
 
 @dataclass

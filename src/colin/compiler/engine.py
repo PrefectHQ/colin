@@ -89,11 +89,33 @@ class CompileEngine:
         compiled_outputs: dict[str, CompiledDocument] = {}  # For in-memory ref lookup
         doc_map = {doc.uri: doc for doc in documents}
         errors: dict[str, list[Exception]] = {}
+        failed_uris: set[str] = set()  # Track failed URIs for skipping dependents
+        skipped_uris: set[str] = set()  # Track skipped URIs
 
-        async def compile_one(uri: str) -> tuple[str, CompiledDocument | Exception]:
-            """Compile a single document, catching exceptions."""
-            doc = doc_map[uri]
+        def get_failed_dependency(uri: str) -> str | None:
+            """Check if any dependency of uri has failed."""
+            for dep in self.graph.get_dependencies(uri):
+                if dep in failed_uris:
+                    return dep
+            return None
+
+        async def compile_one(uri: str) -> tuple[str, CompiledDocument | Exception | None]:
+            """Compile a single document, catching exceptions.
+
+            Returns None if the document was skipped.
+            """
             doc_state = doc_states.get(uri)
+
+            # Check if any upstream dependency failed
+            failed_dep = get_failed_dependency(uri)
+            if failed_dep:
+                if doc_state:
+                    doc_state.mark_skipped(f"upstream '{failed_dep}' failed")
+                skipped_uris.add(uri)
+                failed_uris.add(uri)  # Propagate failure to dependents
+                return (uri, None)
+
+            doc = doc_map[uri]
             try:
                 with doc_state if doc_state else _nullcontext():
                     result = await self._compile_document(
@@ -101,6 +123,7 @@ class CompileEngine:
                     )
                     return (uri, result)
             except Exception as e:
+                failed_uris.add(uri)
                 return (uri, e)
 
         # Create MCP manager for resource access
@@ -112,7 +135,10 @@ class CompileEngine:
 
                 # Process results
                 for uri, result in results:
-                    if isinstance(result, Exception):
+                    if result is None:
+                        # Skipped - already handled above
+                        pass
+                    elif isinstance(result, Exception):
                         errors.setdefault(uri, []).append(result)
                     else:
                         compiled.append(result)
@@ -124,7 +150,7 @@ class CompileEngine:
 
         # Raise collected errors if any
         if errors:
-            raise MultipleCompilationErrors(errors)
+            raise MultipleCompilationErrors(errors, skipped_uris)
 
         # Update manifest timestamp
         self.manifest.compiled_at = datetime.now(timezone.utc)
