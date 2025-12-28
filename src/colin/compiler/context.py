@@ -197,7 +197,8 @@ class CompileContext:
 
             # Handle UseExisting
             if isinstance(result.output, UseExisting):
-                output_text = previous_output  # Safe: UseExisting only allowed if previous exists
+                assert previous_output is not None  # Guarded by output_type conditional
+                output_text = previous_output
             else:
                 output_text = str(result.output)
 
@@ -264,7 +265,8 @@ class CompileContext:
 
             # Handle UseExisting
             if isinstance(result.output, UseExisting):
-                output_text = previous_output  # Safe: UseExisting only allowed if previous exists
+                assert previous_output is not None  # Guarded by output_type conditional
+                output_text = previous_output
             else:
                 output_text = str(result.output)
 

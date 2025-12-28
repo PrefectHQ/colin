@@ -35,16 +35,31 @@ class CompilationError(ColinError):
         super().__init__(message)
 
 
+class UpstreamFailedError(ColinError):
+    """Document skipped because an upstream dependency failed."""
+
+    def __init__(self, failed_dependency: str) -> None:
+        """Initialize with the failed dependency.
+
+        Args:
+            failed_dependency: URI of the dependency that failed.
+        """
+        self.failed_dependency = failed_dependency
+        super().__init__(f"Skipped: upstream dependency '{failed_dependency}' failed")
+
+
 class MultipleCompilationErrors(ColinError):
     """Multiple documents failed compilation."""
 
-    def __init__(self, errors: dict[str, list[Exception]]) -> None:
+    def __init__(self, errors: dict[str, list[Exception]], skipped: set[str] | None = None) -> None:
         """Initialize with errors grouped by document.
 
         Args:
             errors: Dict mapping document URI to list of errors.
+            skipped: Set of URIs that were skipped due to upstream failures.
         """
         self.errors = errors
+        self.skipped = skipped or set()
         # Build summary message
         error_count = sum(len(errs) for errs in errors.values())
         doc_count = len(errors)

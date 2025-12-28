@@ -26,6 +26,8 @@ def _get_icon(op: OperationState) -> RenderableType:
     """Get display icon for an operation based on status and type."""
     if op.status == Status.FAILED:
         return Text("✗", style="red")
+    if op.status == Status.SKIPPED:
+        return Text("○", style="yellow")
     if op.status == Status.PROCESSING:
         return spinner
     if op.status == Status.PENDING:
@@ -207,8 +209,13 @@ async def run(
             live.update(render_state(state))
 
     except MultipleCompilationErrors as e:
-        err_console.print("\n[red bold]Compilation failed[/]")
+        # Note: Live display already shows final state, no need to print again
+        console.print()
+
+        err_console.print("[red bold]Compilation failed[/]")
         err_console.print()
+
+        # Only show actual errors, not skipped documents
         doc_items = list(e.errors.items())
         for i, (uri, doc_errors) in enumerate(doc_items):
             is_last_doc = i == len(doc_items) - 1
@@ -220,8 +227,13 @@ async def run(
             if not is_last_doc:
                 err_console.print()
         err_console.print()
+
+        # Summary: errors + skipped count
         error_count = sum(len(errs) for errs in e.errors.values())
-        err_console.print(f"[dim]{error_count} error(s) in {len(e.errors)} document(s)[/]")
+        skip_msg = f", {len(e.skipped)} skipped" if e.skipped else ""
+        err_console.print(
+            f"[dim]{error_count} error(s) in {len(e.errors)} document(s){skip_msg}[/]"
+        )
         sys.exit(1)
     except ProjectNotInitializedError as e:
         err_console.print(f"[red]Error:[/] {e}")
