@@ -3,17 +3,79 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import cyclopts
 from rich.console import Console
-from rich.table import Table
+from rich.live import Live
+from rich.text import Text
 
 from colin import api
+from colin.api.compile import CompileResult
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
+from colin.state import CompilationState, Status
 
 console = Console()
 err_console = Console(stderr=True)
+
+
+def render_state(state: CompilationState) -> Text:
+    """Render compilation state for Live display.
+
+    Shows all documents with their status and operations.
+
+    Args:
+        state: The compilation state to render.
+
+    Returns:
+        Rich Text for display.
+    """
+    lines: list[str] = []
+
+    for uri, doc_state in state.documents.items():
+        # Status icon
+        match doc_state.status:
+            case Status.DONE:
+                icon = "[green]✓[/]"
+            case Status.PROCESSING:
+                icon = "[yellow]⋯[/]"
+            case Status.FAILED:
+                icon = "[red]✗[/]"
+            case Status.PENDING:
+                icon = "[dim]○[/]"
+
+        lines.append(f"  {icon} {uri}.md")
+
+        # Show all child operations
+        for child in doc_state.children:
+            # Status icon for child
+            match child.status:
+                case Status.REF:
+                    child_icon = "[cyan]→[/]"
+                case Status.CACHED:
+                    child_icon = "[cyan]⚡[/]"
+                case Status.DONE:
+                    child_icon = "[green]✓[/]"
+                case Status.PROCESSING:
+                    child_icon = "[yellow]⋯[/]"
+                case Status.FAILED:
+                    child_icon = "[red]✗[/]"
+                case Status.PENDING:
+                    child_icon = "[dim]○[/]"
+
+            detail = f" ({child.detail})" if child.detail else ""
+
+            # Shorten the operation name for display
+            op_name = child.name
+            if ":" in op_name:
+                op_type, op_id = op_name.split(":", 1)
+                if len(op_id) > 12:
+                    op_id = op_id[:12] + "..."
+                op_name = f"{op_type}:{op_id}"
+
+            lines.append(f"      [dim]└─[/] {child_icon} {op_name}{detail}")
+
+    return Text.from_markup("\n".join(lines)) if lines else Text("")
 
 
 def print_project_info(project_name: str | None, target_dir: Path) -> None:
@@ -35,6 +97,7 @@ def run(
     target: Path | None = None,
     force: bool = False,
     dry_run: bool = False,
+    quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
 ) -> None:
     """Compile and run all models.
 
@@ -43,6 +106,7 @@ def run(
         target: Override target directory (default: from colin.toml).
         force: Force recompile all documents.
         dry_run: Show what would be run without running.
+        quiet: Hide progress display, show only final results.
     """
     asyncio.run(
         _run_async(
@@ -50,6 +114,7 @@ def run(
             target=target,
             force=force,
             dry_run=dry_run,
+            quiet=quiet,
         )
     )
 
@@ -60,6 +125,7 @@ async def _run_async(
     target: Path | None,
     force: bool,
     dry_run: bool,
+    quiet: bool,
 ) -> None:
     """Async implementation of run command."""
     try:
@@ -77,40 +143,63 @@ async def _run_async(
             project_name = None
             target_dir = target or Path("target").resolve()
 
-        # Compile or dry run
-        result = await api.compile_project(
-            project_dir=project,
-            target_dir=target,
-            force=force,
-            dry_run=dry_run,
-        )
-
+        # Handle dry run
         if dry_run:
-            # result is list of (uri, path) tuples
+            dry_result = cast(
+                list[tuple[str, Path]],
+                await api.compile_project(
+                    project_dir=project,
+                    target_dir=target,
+                    force=force,
+                    dry_run=True,
+                ),
+            )
             print_project_info(project_name, target_dir)
-            console.print(f"[bold]Would run {len(result)} documents:[/]")
-            for uri, _ in result:
+            console.print(f"[bold]Would run {len(dry_result)} documents:[/]")
+            for uri, _ in dry_result:
                 console.print(f"  {uri}.md")
             return
 
-        # result is CompileResult
-        print_project_info(result.project_name, target_dir)
+        # Create state for progress tracking
+        state = CompilationState()
 
-        with console.status("[dim]Running...", spinner="dots"):
-            # Compilation already happened, just show results
-            pass
+        if quiet:
+            # No output at all, just run compilation
+            await api.compile_project(
+                project_dir=project,
+                target_dir=target,
+                force=force,
+                dry_run=False,
+                state=state,
+            )
+            return
 
-        for doc in result.compiled:
-            llm_info = f" [dim]({len(doc.llm_calls)} LLM)[/]" if doc.llm_calls else ""
-            console.print(f"  [green]✓[/] {doc.uri}.md{llm_info}")
+        # Print project info before starting
+        print_project_info(project_name, target_dir)
 
-        # Summary line
-        summary_parts = [f"[bold]{len(result.compiled)}[/] documents"]
-        if result.total_llm_calls > 0:
-            summary_parts.append(f"{result.total_llm_calls} LLM calls")
-            if result.total_cost > 0:
-                summary_parts[-1] += f" (${result.total_cost:.4f})"
-        console.print(f"\n[green]Done.[/] {' · '.join(summary_parts)}")
+        # Compile with live progress (transient=True clears display when done)
+        async def compile_with_live(live: Live) -> CompileResult:
+            """Run compilation while updating live display."""
+            task = asyncio.create_task(
+                api.compile_project(
+                    project_dir=project,
+                    target_dir=target,
+                    force=force,
+                    dry_run=False,
+                    state=state,
+                )
+            )
+            # Update display while waiting
+            while not task.done():
+                live.update(render_state(state))
+                await asyncio.sleep(0.1)
+            # Cast is safe because dry_run=False means CompileResult is returned
+            return cast(CompileResult, await task)
+
+        with Live(Text(""), console=console, refresh_per_second=10) as live:
+            await compile_with_live(live)
+            # Final update to show completed state
+            live.update(render_state(state))
 
     except MultipleCompilationErrors as e:
         err_console.print("\n[red bold]Compilation failed[/]")
@@ -184,38 +273,6 @@ def init(
     except FileExistsError as e:
         err_console.print(f"[red]Error:[/] {e}")
         sys.exit(1)
-
-
-def status(
-    project: Path = Path("."),
-) -> None:
-    """Show run status.
-
-    Args:
-        project: Project directory (default: current directory).
-    """
-    status_info = api.get_project_status(project)
-
-    if not status_info["manifest_exists"] or status_info["document_count"] == 0:
-        console.print("[dim]No documents run yet.[/]")
-        return
-
-    print_project_info(status_info["project_name"], status_info["target_dir"])
-
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Document")
-    table.add_column("LLM Calls", justify="right")
-    table.add_column("Cost", justify="right")
-
-    for uri, info in sorted(status_info["documents"].items()):
-        llm_calls = str(info["llm_calls"]) if info["llm_calls"] > 0 else "-"
-        cost = f"${info['cost']:.4f}" if info["cost"] > 0 else "-"
-        table.add_row(uri, llm_calls, cost)
-
-    console.print(table)
-
-    if status_info["compiled_at"]:
-        console.print(f"\n[dim]Last run: {status_info['compiled_at']:%Y-%m-%d %H:%M}[/]")
 
 
 def clean(

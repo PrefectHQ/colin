@@ -21,6 +21,7 @@ from colin.models import (
     DocumentMeta,
     Manifest,
 )
+from colin.state import CompilationState, OperationState
 
 if TYPE_CHECKING:
     from colin.plugins.inputs.file import FileInputPlugin
@@ -40,6 +41,7 @@ class CompileEngine:
         input_plugin: FileInputPlugin,
         default_model: str,
         mcp_config: MCPConfig | None = None,
+        state: CompilationState | None = None,
     ) -> None:
         """Initialize the compile engine.
 
@@ -48,11 +50,13 @@ class CompileEngine:
             input_plugin: Input plugin for document access.
             default_model: Default LLM model to use.
             mcp_config: MCP server configuration.
+            state: Optional compilation state for progress tracking.
         """
         self.manifest = manifest
         self.input_plugin = input_plugin
         self.default_model = default_model
         self.mcp_config = mcp_config or MCPConfig()
+        self.state = state
         self.graph = DependencyGraph()
 
     async def compile_all(self) -> list[CompiledDocument]:
@@ -71,7 +75,13 @@ class CompileEngine:
         uris = {doc.uri for doc in documents}
         compile_order = self.graph.topological_sort(uris)
 
-        # Phase 4: Compile in order, collecting all errors
+        # Phase 4: Add all documents to state (if tracking)
+        doc_states: dict[str, OperationState] = {}
+        if self.state is not None:
+            for uri in compile_order:
+                doc_states[uri] = self.state.add_document(uri)
+
+        # Phase 5: Compile in order, collecting all errors
         compiled: list[CompiledDocument] = []
         compiled_outputs: dict[str, CompiledDocument] = {}  # For in-memory ref lookup
         doc_map = {doc.uri: doc for doc in documents}
@@ -82,8 +92,16 @@ class CompileEngine:
         try:
             for uri in compile_order:
                 doc = doc_map[uri]
+                doc_state = doc_states.get(uri)
+
+                # Mark as processing
+                if doc_state:
+                    doc_state.start()
+
                 try:
-                    result = await self._compile_document(doc, compiled_outputs, mcp_manager)
+                    result = await self._compile_document(
+                        doc, compiled_outputs, mcp_manager, doc_state
+                    )
                     compiled.append(result)
                     compiled_outputs[uri] = result
 
@@ -92,7 +110,14 @@ class CompileEngine:
 
                     # Update manifest
                     self._update_manifest(result)
+
+                    # Mark as done
+                    if doc_state:
+                        doc_state.done()
                 except Exception as e:
+                    # Mark as failed
+                    if doc_state:
+                        doc_state.fail(str(e))
                     # Collect error for this document
                     if uri not in errors:
                         errors[uri] = []
@@ -226,6 +251,7 @@ class CompileEngine:
         doc: ColinDocument,
         compiled_outputs: dict[str, CompiledDocument],
         mcp_manager: MCPManager | None = None,
+        doc_state: OperationState | None = None,
     ) -> CompiledDocument:
         """Compile a single document.
 
@@ -233,6 +259,7 @@ class CompileEngine:
             doc: The document to compile.
             compiled_outputs: Already-compiled documents from this run.
             mcp_manager: MCP manager for resource access.
+            doc_state: Optional state for progress tracking.
 
         Returns:
             The compiled document.
@@ -248,6 +275,7 @@ class CompileEngine:
             input_plugin=self.input_plugin,
             compiled_outputs=compiled_outputs,
             mcp_manager=mcp_manager,
+            doc_state=doc_state,
         )
 
         # Bind context to environment
@@ -299,3 +327,13 @@ class CompileEngine:
             total_cost_usd=doc.total_cost_usd,
         )
         self.manifest.set_document(doc.uri, meta)
+
+    def _is_cached_call(self, doc: ColinDocument, llm_call: object) -> bool:
+        """Check if an LLM call was from cache.
+
+        This is a simplified check - returns False since we track
+        cached calls via LLMCallCompleted events in the context.
+        """
+        # For now, we don't track this at engine level
+        # The CLI can track from LLMCallCompleted events
+        return False

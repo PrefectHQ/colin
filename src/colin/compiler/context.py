@@ -12,6 +12,7 @@ from colin.exceptions import RefNotFoundError
 from colin.llm.prompts import render_complete_prompt, render_extract_prompt
 from colin.llm.types import LLMOutput, UseExisting
 from colin.models import CompiledDocument, LLMCall, RefResult
+from colin.state import OperationState
 
 if TYPE_CHECKING:
     from colin.mcp import MCPManager
@@ -39,6 +40,7 @@ class CompileContext:
         input_plugin: FileInputPlugin,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
         mcp_manager: MCPManager | None = None,
+        doc_state: OperationState | None = None,
     ) -> None:
         """Initialize the compile context.
 
@@ -49,6 +51,7 @@ class CompileContext:
             input_plugin: Input plugin for fetching refs.
             compiled_outputs: Already-compiled documents from current run.
             mcp_manager: MCP manager for server connections.
+            doc_state: Optional state for progress tracking.
         """
         self.manifest = manifest
         self.document_uri = document_uri
@@ -56,6 +59,7 @@ class CompileContext:
         self.input_plugin = input_plugin
         self.compiled_outputs = compiled_outputs or {}
         self.mcp_manager = mcp_manager
+        self.doc_state = doc_state
 
         # Tracking during render
         self.refs_evaluated: list[str] = []
@@ -93,15 +97,22 @@ class CompileContext:
                     f"Schemaless refs must resolve within the project boundary."
                 )
 
-        # Record the dependency
+        # Record the dependency (and track in state tree on first occurrence)
+        ref_op = None
         if uri not in self.refs_evaluated:
             self.refs_evaluated.append(uri)
+            # Only track first ref to each URI
+            if self.doc_state is not None:
+                ref_op = self.doc_state.child(f"ref:{uri}")
+                ref_op.start()
 
         # Check in-memory compiled outputs first (from current compile run)
         if uri in self.compiled_outputs:
             compiled = self.compiled_outputs[uri]
             name_val = compiled.frontmatter.metadata.get("name")
             desc_val = compiled.frontmatter.metadata.get("description")
+            if ref_op is not None:
+                ref_op.ref()
             return RefResult(
                 name=name_val if isinstance(name_val, str) else uri.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,
@@ -113,8 +124,13 @@ class CompileContext:
 
         # Fall back to fetching from disk
         try:
-            return await self.input_plugin.fetch(uri)
+            result = await self.input_plugin.fetch(uri)
+            if ref_op is not None:
+                ref_op.ref()
+            return result
         except FileNotFoundError as e:
+            if ref_op is not None:
+                ref_op.fail(str(e))
             raise RefNotFoundError(f"Referenced document not found: {uri}") from e
 
     async def extract(
@@ -137,12 +153,17 @@ class CompileContext:
         """
         # Determine call ID
         effective_id = call_id or f"auto:{self._hash(content + 'extract' + prompt)}"
+        effective_model = model or self.default_model
 
         # Check cache
-        cached = self._get_cached_llm_call(effective_id, content)
-        if cached:
-            self.llm_calls[effective_id] = cached  # Preserve in manifest
-            return cached.output
+        cached_call = self._get_cached_llm_call(effective_id, content)
+        if cached_call:
+            self.llm_calls[effective_id] = cached_call  # Preserve in manifest
+            # Track cached call in state tree
+            if self.doc_state is not None:
+                op_state = self.doc_state.child(f"extract:{effective_id}")
+                op_state.cached()
+            return cached_call.output
 
         # Get previous output for stability
         previous_output = None
@@ -154,8 +175,13 @@ class CompileContext:
         # Render prompt from template
         full_prompt = render_extract_prompt(content, prompt, previous_output)
 
+        # Create state for this operation
+        op_state = None
+        if self.doc_state is not None:
+            op_state = self.doc_state.child(f"extract:{effective_id}", detail=effective_model)
+            op_state.start()
+
         # Call LLM with structured output
-        effective_model = model or self.default_model
         agent: Agent[None, LLMOutput] = Agent(
             effective_model,
             output_type=[UseExisting, str],  # type: ignore[arg-type]
@@ -190,6 +216,10 @@ class CompileContext:
         self.llm_calls[effective_id] = llm_call
         self.total_cost += cost
 
+        # Mark operation as done
+        if op_state is not None:
+            op_state.done()
+
         return output_text
 
     async def call_llm_block(
@@ -209,12 +239,17 @@ class CompileContext:
             The LLM response.
         """
         effective_id = call_id or f"auto:{self._hash(body)}"
+        effective_model = model or self.default_model
 
         # Check cache
-        cached = self._get_cached_llm_call(effective_id, body)
-        if cached:
-            self.llm_calls[effective_id] = cached  # Preserve in manifest
-            return cached.output
+        cached_call = self._get_cached_llm_call(effective_id, body)
+        if cached_call:
+            self.llm_calls[effective_id] = cached_call  # Preserve in manifest
+            # Track cached call in state tree
+            if self.doc_state is not None:
+                op_state = self.doc_state.child(f"llm:{effective_id}")
+                op_state.cached()
+            return cached_call.output
 
         # Get previous output for stability
         previous_output = None
@@ -226,8 +261,13 @@ class CompileContext:
         # Render prompt from template
         full_prompt = render_complete_prompt(body, previous_output)
 
+        # Create state for this operation
+        op_state = None
+        if self.doc_state is not None:
+            op_state = self.doc_state.child(f"llm:{effective_id}", detail=effective_model)
+            op_state.start()
+
         # Call LLM with structured output
-        effective_model = model or self.default_model
         agent: Agent[None, LLMOutput] = Agent(
             effective_model,
             output_type=[UseExisting, str],  # type: ignore[arg-type]
@@ -260,6 +300,10 @@ class CompileContext:
         )
         self.llm_calls[effective_id] = llm_call
         self.total_cost += cost
+
+        # Mark operation as done
+        if op_state is not None:
+            op_state.done()
 
         return output_text
 

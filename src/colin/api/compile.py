@@ -11,6 +11,7 @@ from colin.exceptions import ProjectNotInitializedError
 from colin.models import CompiledDocument, Manifest
 from colin.plugins.inputs.file import FileInputPlugin
 from colin.settings import settings
+from colin.state import CompilationState
 
 
 class CompileResult:
@@ -51,6 +52,7 @@ async def compile_project(
     force: bool = False,
     default_model: str | None = None,
     dry_run: bool = False,
+    state: CompilationState | None = None,
 ) -> CompileResult | list[tuple[str, Path]]:
     """Compile all documents in a project.
 
@@ -60,6 +62,7 @@ async def compile_project(
         force: Force recompile all documents.
         default_model: Override default LLM model.
         dry_run: If True, return list of (uri, path) tuples instead of compiling.
+        state: Optional compilation state for progress tracking.
 
     Returns:
         CompileResult with compiled documents and manifest, or list of (uri, path) if dry_run.
@@ -102,6 +105,7 @@ async def compile_project(
         input_plugin=input_plugin,
         default_model=effective_model,
         mcp_config=config.mcp,
+        state=state,
     )
 
     compiled = await engine.compile_all()
