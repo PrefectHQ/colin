@@ -90,4 +90,4 @@ def test_mcp_prompt_shown_in_output(
     captured = capfd.readouterr()
     # MCP prompt access should be shown in output (unified as mcp:server)
     assert "mcp:greeter" in captured.out
-    assert "(greet)" in captured.out  # Prompt name shown in detail
+    assert "greet" in captured.out  # Prompt name shown in detail

@@ -41,7 +41,7 @@ def _get_icon(op: OperationState) -> RenderableType:
     return Text("✓", style="green")
 
 
-def _make_label(icon: RenderableType, text: str) -> RenderableType:
+def _make_label(icon: RenderableType, text: RenderableType | str) -> RenderableType:
     """Combine icon and text into a single horizontal renderable."""
     grid = Table.grid(padding=(0, 1))
     grid.add_row(icon, text)
@@ -79,22 +79,22 @@ def render_state(state: CompilationState) -> RenderableType:
         # Add child operations
         for child in doc_state.children:
             child_icon = _get_icon(child)
-            detail = f" ({child.detail})" if child.detail else ""
 
             # Format operation name for display
             op_name = child.name
-            if ":" in op_name:
-                op_type, op_id = op_name.split(":", 1)
-                if op_type == "ref":
-                    # Show refs as ref(uri)
-                    op_name = f"ref({op_id})"
-                elif op_type not in ("mcp",) and len(op_id) > 12:
-                    # Truncate auto-generated hash IDs, keep mcp names
-                    op_name = f"{op_type}:{op_id[:12]}"
-                else:
-                    op_name = f"{op_type}:{op_id}"
+            if op_name.startswith("ref:"):
+                # Show refs as ref(uri)
+                op_name = f"ref({op_name[4:]})"
 
-            doc_tree.add(_make_label(child_icon, f"{op_name}{detail}"))
+            # Build label with optional dim detail
+            if child.detail:
+                label = Text()
+                label.append(op_name)
+                label.append(f" {child.detail}", style="dim")
+            else:
+                label = Text(op_name)
+
+            doc_tree.add(_make_label(child_icon, label))
 
         trees.append(doc_tree)
 
@@ -212,7 +212,7 @@ async def run(
         doc_items = list(e.errors.items())
         for i, (uri, doc_errors) in enumerate(doc_items):
             is_last_doc = i == len(doc_items) - 1
-            err_console.print(f"[yellow]{uri}.md[/]")
+            err_console.print(f"[yellow]{_format_uri(uri)}[/]")
             for j, err in enumerate(doc_errors):
                 is_last_err = j == len(doc_errors) - 1
                 prefix = "└──" if is_last_err else "├──"
