@@ -12,7 +12,7 @@ repos:
     hooks:
       - id: ty
         name: ty check
-        entry: uv run --isolated ty check
+        entry: uv run ty check
         language: system
         types: [python]
         files: ^src/|^tests/
