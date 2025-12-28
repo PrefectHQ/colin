@@ -1,4 +1,4 @@
-"""Run, init, status, and clean commands."""
+"""Run, init, and clean commands."""
 
 import asyncio
 import sys
@@ -91,7 +91,7 @@ def print_project_info(project_name: str | None, target_dir: Path) -> None:
     console.print()
 
 
-def run(
+async def run(
     project: Path = Path("."),
     *,
     target: Path | None = None,
@@ -108,26 +108,6 @@ def run(
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
     """
-    asyncio.run(
-        _run_async(
-            project=project,
-            target=target,
-            force=force,
-            dry_run=dry_run,
-            quiet=quiet,
-        )
-    )
-
-
-async def _run_async(
-    *,
-    project: Path,
-    target: Path | None,
-    force: bool,
-    dry_run: bool,
-    quiet: bool,
-) -> None:
-    """Async implementation of run command."""
     try:
         # Get project info for display
         from colin.api.project import find_project_file, load_project
