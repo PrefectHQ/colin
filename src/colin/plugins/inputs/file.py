@@ -90,9 +90,7 @@ class FileInputPlugin:
         description: str | None = None
         if model_path and model_path.exists():
             post = frontmatter.loads(template)
-            metadata: dict[str, object] = {
-                k: v for k, v in post.metadata.items() if k != "colin"
-            }
+            metadata: dict[str, object] = {k: v for k, v in post.metadata.items() if k != "colin"}
             name_value = metadata.get("name")
             if isinstance(name_value, str):
                 name = name_value

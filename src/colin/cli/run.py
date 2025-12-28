@@ -44,12 +44,14 @@ def run(
         force: Force recompile all documents.
         dry_run: Show what would be run without running.
     """
-    asyncio.run(_run_async(
-        project=project,
-        target=target,
-        force=force,
-        dry_run=dry_run,
-    ))
+    asyncio.run(
+        _run_async(
+            project=project,
+            target=target,
+            force=force,
+            dry_run=dry_run,
+        )
+    )
 
 
 async def _run_async(
@@ -125,9 +127,7 @@ async def _run_async(
                 err_console.print()
         err_console.print()
         error_count = sum(len(errs) for errs in e.errors.values())
-        err_console.print(
-            f"[dim]{error_count} error(s) in {len(e.errors)} document(s)[/]"
-        )
+        err_console.print(f"[dim]{error_count} error(s) in {len(e.errors)} document(s)[/]")
         sys.exit(1)
     except ProjectNotInitializedError as e:
         err_console.print(f"[red]Error:[/] {e}")

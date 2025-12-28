@@ -4,11 +4,36 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Generator
+
+
+@pytest.fixture
+def mock_agent() -> Generator[MagicMock, None, None]:
+    """Mock pydantic_ai.Agent for testing.
+
+    Returns a mock that simulates Agent behavior with predictable outputs.
+    """
+    with patch("colin.compiler.context.Agent") as mock_agent_class:
+        # Create a mock agent instance
+        mock_instance = MagicMock()
+
+        # Create a mock result with .output attribute
+        mock_result = MagicMock()
+        mock_result.output = "[TEST LLM RESPONSE]"
+        mock_result.usage.return_value = None
+
+        # Make run() return the mock result
+        mock_instance.run = AsyncMock(return_value=mock_result)
+
+        # Make the class return the mock instance
+        mock_agent_class.return_value = mock_instance
+
+        yield mock_agent_class
 
 
 @pytest.fixture

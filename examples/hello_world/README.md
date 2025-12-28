@@ -17,7 +17,13 @@ cbt run
 
 ## Output
 
-After compiling, check the `target/` directory. The `summary.md` file will contain stub LLM responses (the MVP uses a stub provider).
+After compiling, check the `target/` directory. The `summary.md` file will contain real LLM responses.
+
+Set your API key before running:
+
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+```
 
 ## What to Notice
 

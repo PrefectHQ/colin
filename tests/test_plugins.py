@@ -70,9 +70,7 @@ Template content here.
         assert "Template content here." in result.template
         assert result.uri == "test"
 
-    async def test_fetch_uses_uri_as_name_fallback(
-        self, plugin: FileInputPlugin
-    ) -> None:
+    async def test_fetch_uses_uri_as_name_fallback(self, plugin: FileInputPlugin) -> None:
         model_file = plugin.model_dirs[0] / "my-doc.md"
         model_file.write_text("---\n---\nContent")
         target_file = plugin.target_dir / "my-doc.md"
@@ -85,9 +83,7 @@ Template content here.
         with pytest.raises(FileNotFoundError):
             await plugin.fetch("nonexistent")
 
-    async def test_hash_returns_consistent_value(
-        self, plugin: FileInputPlugin
-    ) -> None:
+    async def test_hash_returns_consistent_value(self, plugin: FileInputPlugin) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("content here")
 
@@ -145,9 +141,7 @@ Template content here.
 
         assert uris == ["a", "m", "z"]
 
-    def test_parse_frontmatter_with_colin_config(
-        self, plugin: FileInputPlugin
-    ) -> None:
+    def test_parse_frontmatter_with_colin_config(self, plugin: FileInputPlugin) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("""\
 ---
@@ -167,9 +161,7 @@ Content here.
         assert fm.metadata["name"] == "Test"
         assert "Content here." in content
 
-    def test_parse_frontmatter_without_colin_config(
-        self, plugin: FileInputPlugin
-    ) -> None:
+    def test_parse_frontmatter_without_colin_config(self, plugin: FileInputPlugin) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("""\
 ---
@@ -196,9 +188,7 @@ Content here.
         assert fm.metadata == {}
         assert "No frontmatter here." in content
 
-    def test_discover_excludes_target_directory(
-        self, plugin: FileInputPlugin
-    ) -> None:
+    def test_discover_excludes_target_directory(self, plugin: FileInputPlugin) -> None:
         # Create model file
         (plugin.model_dirs[0] / "model.md").write_text("model")
 
@@ -212,9 +202,7 @@ Content here.
         assert "model" in uris
         assert "target" not in uris
 
-    def test_discover_excludes_nested_projects(
-        self, plugin: FileInputPlugin
-    ) -> None:
+    def test_discover_excludes_nested_projects(self, plugin: FileInputPlugin) -> None:
         # Create model file in root
         (plugin.model_dirs[0] / "root.md").write_text("root")
 

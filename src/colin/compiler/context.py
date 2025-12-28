@@ -6,11 +6,14 @@ import hashlib
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from pydantic_ai import Agent
+
 from colin.exceptions import RefNotFoundError
+from colin.llm.prompts import render_complete_prompt, render_extract_prompt
+from colin.llm.types import LLMOutput, UseExisting
 from colin.models import CompiledDocument, LLMCall, RefResult
 
 if TYPE_CHECKING:
-    from colin.llm.base import LLMProvider
     from colin.mcp import MCPManager
     from colin.models import Manifest
     from colin.plugins.inputs.file import FileInputPlugin
@@ -32,7 +35,7 @@ class CompileContext:
         self,
         manifest: Manifest,
         document_uri: str,
-        llm_provider: LLMProvider,
+        default_model: str,
         input_plugin: FileInputPlugin,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
         mcp_manager: MCPManager | None = None,
@@ -42,14 +45,14 @@ class CompileContext:
         Args:
             manifest: The manifest for caching and metadata.
             document_uri: URI of the document being compiled.
-            llm_provider: LLM provider for transformations.
+            default_model: Default LLM model to use.
             input_plugin: Input plugin for fetching refs.
             compiled_outputs: Already-compiled documents from current run.
             mcp_manager: MCP manager for server connections.
         """
         self.manifest = manifest
         self.document_uri = document_uri
-        self.llm_provider = llm_provider
+        self.default_model = default_model
         self.input_plugin = input_plugin
         self.compiled_outputs = compiled_outputs or {}
         self.mcp_manager = mcp_manager
@@ -119,6 +122,7 @@ class CompileContext:
         content: str,
         prompt: str,
         call_id: str | None = None,
+        model: str | None = None,
     ) -> str:
         """Extract information from content using LLM.
 
@@ -126,6 +130,7 @@ class CompileContext:
             content: The content to extract from.
             prompt: What to extract.
             call_id: Optional manual ID for caching.
+            model: Optional model override.
 
         Returns:
             The extracted text.
@@ -146,34 +151,58 @@ class CompileContext:
             if doc_meta and effective_id in doc_meta.llm_calls:
                 previous_output = doc_meta.llm_calls[effective_id].output
 
-        # Call LLM
-        result = await self.llm_provider.extract(content, prompt, previous_output)
+        # Render prompt from template
+        full_prompt = render_extract_prompt(content, prompt, previous_output)
+
+        # Call LLM with structured output
+        effective_model = model or self.default_model
+        agent: Agent[None, LLMOutput] = Agent(
+            effective_model,
+            output_type=[UseExisting, str],  # type: ignore[arg-type]
+        )
+        result = await agent.run(full_prompt)
+
+        # Handle UseExisting
+        if isinstance(result.output, UseExisting):
+            if previous_output is None:
+                raise ValueError("LLM returned UseExisting but no previous output exists")
+            output_text = previous_output
+        else:
+            output_text = str(result.output)
+
+        # Get cost from result
+        cost = 0.0
+        usage = result.usage()
+        if usage:
+            # Pydantic AI provides token counts, we'd need a pricing table
+            # For now, use 0.0 - can add cost calculation later
+            pass
 
         # Record call
         llm_call = LLMCall(
             call_id=effective_id,
             input_hash=self._hash(content),
-            output_hash=self._hash(result.text),
-            output=result.text,
-            model=result.model,
-            cost_usd=result.cost,
+            output_hash=self._hash(output_text),
+            output=output_text,
+            model=effective_model,
+            cost_usd=cost,
         )
         self.llm_calls[effective_id] = llm_call
-        self.total_cost += result.cost
+        self.total_cost += cost
 
-        return result.text
+        return output_text
 
     async def call_llm_block(
         self,
         body: str,
-        model: str,
+        model: str | None,
         call_id: str | None,
     ) -> str:
         """Handle {% llm %}...{% endllm %} block.
 
         Args:
             body: The rendered block content (prompt).
-            model: Model name (ignored for stub).
+            model: Model name override.
             call_id: Optional manual ID.
 
         Returns:
@@ -194,31 +223,45 @@ class CompileContext:
             if doc_meta and effective_id in doc_meta.llm_calls:
                 previous_output = doc_meta.llm_calls[effective_id].output
 
-        # Build full prompt with previous output if available
-        full_prompt = body
-        if previous_output:
-            full_prompt = (
-                f"{body}\n\n"
-                f"[Previous output for reference - maintain stability if appropriate:]\n"
-                f"{previous_output}"
-            )
+        # Render prompt from template
+        full_prompt = render_complete_prompt(body, previous_output)
 
-        # Call LLM
-        result = await self.llm_provider.complete(full_prompt, model=model)
+        # Call LLM with structured output
+        effective_model = model or self.default_model
+        agent: Agent[None, LLMOutput] = Agent(
+            effective_model,
+            output_type=[UseExisting, str],  # type: ignore[arg-type]
+        )
+        result = await agent.run(full_prompt)
+
+        # Handle UseExisting
+        if isinstance(result.output, UseExisting):
+            if previous_output is None:
+                raise ValueError("LLM returned UseExisting but no previous output exists")
+            output_text = previous_output
+        else:
+            output_text = str(result.output)
+
+        # Get cost from result
+        cost = 0.0
+        usage = result.usage()
+        if usage:
+            # Cost calculation would go here
+            pass
 
         # Record call
         llm_call = LLMCall(
             call_id=effective_id,
             input_hash=self._hash(body),
-            output_hash=self._hash(result.text),
-            output=result.text,
-            model=result.model,
-            cost_usd=result.cost,
+            output_hash=self._hash(output_text),
+            output=output_text,
+            model=effective_model,
+            cost_usd=cost,
         )
         self.llm_calls[effective_id] = llm_call
-        self.total_cost += result.cost
+        self.total_cost += cost
 
-        return result.text
+        return output_text
 
     def _get_cached_llm_call(self, call_id: str, current_input: str) -> LLMCall | None:
         """Check if we have a valid cached LLM call.

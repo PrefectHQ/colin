@@ -98,7 +98,6 @@ class LLMBlockExtension(Extension):
         # Delegate to context's LLM handling
         return await compile_context.call_llm_block(
             body=body_content,
-            model=model or "stub",
+            model=model,
             call_id=id,
         )
-

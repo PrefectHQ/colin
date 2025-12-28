@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from colin.api.manifest import load_manifest, save_manifest
 from colin.api.project import find_project_file, load_project
 from colin.compiler import CompileEngine
 from colin.exceptions import ProjectNotInitializedError
-from colin.llm.stub import StubLLMProvider
 from colin.models import CompiledDocument, Manifest
 from colin.plugins.inputs.file import FileInputPlugin
 from colin.settings import settings
-
-if TYPE_CHECKING:
-    from colin.llm.base import LLMProvider
 
 
 class CompileResult:
@@ -54,7 +49,7 @@ async def compile_project(
     *,
     target_dir: Path | None = None,
     force: bool = False,
-    llm_provider: LLMProvider | None = None,
+    default_model: str | None = None,
     dry_run: bool = False,
 ) -> CompileResult | list[tuple[str, Path]]:
     """Compile all documents in a project.
@@ -63,7 +58,7 @@ async def compile_project(
         project_dir: Project directory (must contain colin.toml).
         target_dir: Override target directory (default: from colin.toml).
         force: Force recompile all documents.
-        llm_provider: LLM provider to use (default: StubLLMProvider).
+        default_model: Override default LLM model.
         dry_run: If True, return list of (uri, path) tuples instead of compiling.
 
     Returns:
@@ -78,9 +73,7 @@ async def compile_project(
     project_file = find_project_file(project_dir)
 
     if not project_file:
-        raise ProjectNotInitializedError(
-            f"No colin.toml found in {project_dir}"
-        )
+        raise ProjectNotInitializedError(f"No colin.toml found in {project_dir}")
 
     config = load_project(project_file)
     project_name = config.name
@@ -96,9 +89,8 @@ async def compile_project(
         documents = input_plugin.discover_documents()
         return documents
 
-    # Use provided LLM provider or default
-    if llm_provider is None:
-        llm_provider = StubLLMProvider()
+    # Resolve model: param > project config > settings
+    effective_model = default_model or config.default_llm_model or settings.default_llm_model
 
     # Load or create manifest
     manifest_path = target_dir / settings.manifest_file
@@ -108,7 +100,7 @@ async def compile_project(
     engine = CompileEngine(
         manifest=manifest,
         input_plugin=input_plugin,
-        llm_provider=llm_provider,
+        default_model=effective_model,
         mcp_config=config.mcp,
     )
 
@@ -123,4 +115,3 @@ async def compile_project(
         manifest=manifest,
         project_name=project_name,
     )
-

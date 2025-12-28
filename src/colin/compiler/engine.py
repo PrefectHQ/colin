@@ -23,7 +23,6 @@ from colin.models import (
 )
 
 if TYPE_CHECKING:
-    from colin.llm.base import LLMProvider
     from colin.plugins.inputs.file import FileInputPlugin
 
 
@@ -39,7 +38,7 @@ class CompileEngine:
         self,
         manifest: Manifest,
         input_plugin: FileInputPlugin,
-        llm_provider: LLMProvider,
+        default_model: str,
         mcp_config: MCPConfig | None = None,
     ) -> None:
         """Initialize the compile engine.
@@ -47,12 +46,12 @@ class CompileEngine:
         Args:
             manifest: The manifest for caching and metadata.
             input_plugin: Input plugin for document access.
-            llm_provider: LLM provider for transformations.
+            default_model: Default LLM model to use.
             mcp_config: MCP server configuration.
         """
         self.manifest = manifest
         self.input_plugin = input_plugin
-        self.llm_provider = llm_provider
+        self.default_model = default_model
         self.mcp_config = mcp_config or MCPConfig()
         self.graph = DependencyGraph()
 
@@ -245,7 +244,7 @@ class CompileEngine:
         context = CompileContext(
             manifest=self.manifest,
             document_uri=doc.uri,
-            llm_provider=self.llm_provider,
+            default_model=self.default_model,
             input_plugin=self.input_plugin,
             compiled_outputs=compiled_outputs,
             mcp_manager=mcp_manager,

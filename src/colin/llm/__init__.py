@@ -1,1 +1,1 @@
-"""LLM provider interface and implementations."""
+"""LLM types and prompt templates for Colin."""

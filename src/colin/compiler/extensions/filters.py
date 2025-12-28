@@ -41,24 +41,25 @@ def create_extract_filter(context: CompileContext):
         content: str | RefResult | object,
         prompt: str,
         id: str | None = None,  # noqa: A002 - using 'id' to match template syntax
+        model: str | None = None,
     ) -> str:
         """Extract information from content using LLM.
 
         Usage in templates:
             {{ content | extract('feature requests') }}
             {{ content | extract('status', id='status-extraction') }}
-            {{ ref('doc') | extract('summary') }}
+            {{ ref('doc') | extract('summary', model='openai:gpt-4o') }}
 
         Args:
             content: The content to extract from (string or RefResult).
             prompt: What to extract.
             id: Optional manual ID for caching.
+            model: Optional model override.
 
         Returns:
             The extracted text.
         """
         serialized = _serialize_for_llm(content)
-        return await context.extract(serialized, prompt, call_id=id)
+        return await context.extract(serialized, prompt, call_id=id, model=model)
 
     return extract_filter
-

@@ -34,6 +34,7 @@ class ProjectConfig(BaseModel):
     name: str = "colin-project"
     model_path: str = "models"
     target_path: str = "target"
+    default_llm_model: str | None = None
     mcp: MCPConfig = MCPConfig()
 
 
@@ -92,6 +93,7 @@ def load_project(path: Path) -> ProjectConfig:
         name=project.get("name", "colin-project"),
         model_path=project.get("model-path", "models"),
         target_path=project.get("target-path", "target"),
+        default_llm_model=project.get("default-llm-model"),
         mcp=MCPConfig(mcpServers=mcp_servers),
     )
 
@@ -163,13 +165,15 @@ def save_project(path: Path, config: ProjectConfig) -> None:
         path: Path to colin.toml file.
         config: Configuration to save.
     """
-    data: dict[str, Any] = {
-        "project": {
-            "name": config.name,
-            "model-path": config.model_path,
-            "target-path": config.target_path,
-        },
+    project_data: dict[str, Any] = {
+        "name": config.name,
+        "model-path": config.model_path,
+        "target-path": config.target_path,
     }
+    if config.default_llm_model:
+        project_data["default-llm-model"] = config.default_llm_model
+
+    data: dict[str, Any] = {"project": project_data}
 
     # Convert MCPConfig to [mcp.servers.name] format
     if config.mcp.mcpServers:

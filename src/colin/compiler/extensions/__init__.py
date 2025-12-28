@@ -1,2 +1,1 @@
 """Jinja extensions for Colin."""
-

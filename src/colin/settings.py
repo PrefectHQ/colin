@@ -18,9 +18,9 @@ class ColinSettings(BaseSettings):
         case_sensitive=False,
     )
 
-    default_llm_provider: str = Field(
-        default="stub",
-        description="Default LLM provider to use (e.g., 'stub', 'openai', 'anthropic')",
+    default_llm_model: str = Field(
+        default="anthropic:claude-sonnet-4-5",
+        description="Default LLM model (e.g., 'anthropic:claude-sonnet-4-5', 'openai:gpt-4o')",
     )
 
     manifest_file: str = Field(
@@ -31,4 +31,3 @@ class ColinSettings(BaseSettings):
 
 # Global settings instance
 settings = ColinSettings()
-

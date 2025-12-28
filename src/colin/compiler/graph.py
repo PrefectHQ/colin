@@ -95,9 +95,7 @@ class DependencyGraph:
         if len(result) != len(uris):
             # Cycle detected
             remaining = uris - set(result)
-            raise CyclicDependencyError(
-                f"Cyclic dependency involving: {remaining}"
-            )
+            raise CyclicDependencyError(f"Cyclic dependency involving: {remaining}")
 
         return result
 
@@ -132,4 +130,3 @@ class DependencyGraph:
         all_uris.update(self.dependencies.keys())
         all_uris.update(self.dependents.keys())
         return all_uris
-

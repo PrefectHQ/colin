@@ -48,9 +48,7 @@ class MultipleCompilationErrors(ColinError):
         # Build summary message
         error_count = sum(len(errs) for errs in errors.values())
         doc_count = len(errors)
-        super().__init__(
-            f"Compilation failed: {error_count} error(s) in {doc_count} document(s)"
-        )
+        super().__init__(f"Compilation failed: {error_count} error(s) in {doc_count} document(s)")
 
 
 class ProjectNotInitializedError(ColinError):

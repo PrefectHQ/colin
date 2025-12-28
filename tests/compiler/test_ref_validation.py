@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import pytest
 
 from colin.compiler import CompileContext
 from colin.compiler.context import _has_scheme
 from colin.exceptions import RefNotFoundError
-from colin.llm.stub import StubLLMProvider
 from colin.models import Manifest
 from colin.plugins.inputs.file import FileInputPlugin
+
+if TYPE_CHECKING:
+    pass
 
 
 class TestHasScheme:
@@ -44,7 +48,9 @@ class TestSchemalessRefValidation:
     """Tests for schemaless ref validation at compile time."""
 
     @pytest.fixture
-    def project_setup(self, tmp_path: Path) -> tuple[CompileContext, Path, Path]:
+    def project_setup(
+        self, tmp_path: Path, mock_agent: MagicMock
+    ) -> tuple[CompileContext, Path, Path]:
         """Set up a project with models directory."""
         source_dir = tmp_path / "models"
         source_dir.mkdir()
@@ -56,12 +62,11 @@ class TestSchemalessRefValidation:
             model_dirs=[source_dir],
             target_dir=output_dir,
         )
-        llm_provider = StubLLMProvider()
 
         context = CompileContext(
             manifest=manifest,
             document_uri="test-doc",
-            llm_provider=llm_provider,
+            default_model="test-model",
             input_plugin=input_plugin,
         )
         return context, source_dir, output_dir
@@ -136,7 +141,9 @@ class TestPathTraversalPrevention:
     """Tests that path traversal attempts are caught."""
 
     @pytest.fixture
-    def project_setup(self, tmp_path: Path) -> tuple[CompileContext, Path, Path]:
+    def project_setup(
+        self, tmp_path: Path, mock_agent: MagicMock
+    ) -> tuple[CompileContext, Path, Path]:
         """Set up a project with models directory."""
         source_dir = tmp_path / "project" / "models"
         source_dir.mkdir(parents=True)
@@ -152,12 +159,11 @@ class TestPathTraversalPrevention:
             model_dirs=[source_dir],
             target_dir=output_dir,
         )
-        llm_provider = StubLLMProvider()
 
         context = CompileContext(
             manifest=manifest,
             document_uri="test-doc",
-            llm_provider=llm_provider,
+            default_model="test-model",
             input_plugin=input_plugin,
         )
         return context, source_dir, output_dir

@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
+
+import pytest
 
 from colin.compiler import CompileEngine
-from colin.llm.stub import StubLLMProvider
 from colin.models import Manifest
 from colin.plugins.inputs.file import FileInputPlugin
+
+if TYPE_CHECKING:
+    pass
 
 
 class TestCompileIntegration:
     """Integration tests that compile real fixture files."""
+
+    @pytest.fixture(autouse=True)
+    def setup_mock(self, mock_agent: MagicMock) -> None:
+        """Ensure mock_agent is active for all tests."""
+        pass
 
     async def test_hello_world_example(self, tmp_path: Path) -> None:
         """Test compiling the hello_world example end-to-end."""
@@ -76,8 +87,7 @@ Write a haiku about being welcomed.
         # Compile
         input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
         manifest = Manifest()
-        llm_provider = StubLLMProvider()
-        engine = CompileEngine(manifest, input_plugin, llm_provider)
+        engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
         compiled = await engine.compile_all()
 
@@ -103,9 +113,8 @@ Write a haiku about being welcomed.
         summary_doc = next(d for d in compiled if d.uri == "summary")
         assert len(summary_doc.llm_calls) == 2  # extract + llm block
 
-        # Verify stub LLM responses
-        assert "[STUB EXTRACTION:" in summary_output
-        assert "[STUB LLM RESPONSE:" in summary_output
+        # Verify test LLM responses
+        assert "[TEST LLM RESPONSE]" in summary_output
 
     async def test_diamond_dependency(self, tmp_path: Path) -> None:
         """Test diamond dependency pattern (A depends on B and C, both depend on D)."""
@@ -148,7 +157,7 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
         # Compile
         input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
         manifest = Manifest()
-        engine = CompileEngine(manifest, input_plugin, StubLLMProvider())
+        engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
         compiled = await engine.compile_all()
 
@@ -187,7 +196,7 @@ Report includes {{ ref('base').content }}
         # Compile
         input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
         manifest = Manifest()
-        engine = CompileEngine(manifest, input_plugin, StubLLMProvider())
+        engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
         await engine.compile_all()
 

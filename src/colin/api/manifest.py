@@ -32,4 +32,3 @@ def save_manifest(manifest: Manifest, path: Path) -> None:
     """
     data = manifest.model_dump(mode="json")
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-

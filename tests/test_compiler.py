@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import pytest
 
 from colin.compiler import CompileContext, CompileEngine
 from colin.exceptions import RefNotFoundError
-from colin.llm.stub import StubLLMProvider
 from colin.models import DocumentMeta, LLMCall, Manifest
 from colin.plugins.inputs.file import FileInputPlugin
+
+if TYPE_CHECKING:
+    pass
 
 
 class TestCompileContext:
     @pytest.fixture
-    def context(self, tmp_path: Path) -> CompileContext:
+    def context(self, tmp_path: Path, mock_agent: MagicMock) -> CompileContext:
         source_dir = tmp_path / "context"
         source_dir.mkdir()
         output_dir = tmp_path / "target"
@@ -26,18 +30,15 @@ class TestCompileContext:
             model_dirs=[source_dir],
             target_dir=output_dir,
         )
-        llm_provider = StubLLMProvider()
 
         return CompileContext(
             manifest=manifest,
             document_uri="test-doc",
-            llm_provider=llm_provider,
+            default_model="test-model",
             input_plugin=input_plugin,
         )
 
-    async def test_ref_tracks_dependency(
-        self, context: CompileContext, tmp_path: Path
-    ) -> None:
+    async def test_ref_tracks_dependency(self, context: CompileContext, tmp_path: Path) -> None:
         source_file = tmp_path / "context" / "other.md"
         source_file.write_text("---\nname: Other\n---\nContent")
         output_file = tmp_path / "target" / "other.md"
@@ -47,9 +48,7 @@ class TestCompileContext:
 
         assert "other" in context.refs_evaluated
 
-    async def test_ref_returns_ref_result(
-        self, context: CompileContext, tmp_path: Path
-    ) -> None:
+    async def test_ref_returns_ref_result(self, context: CompileContext, tmp_path: Path) -> None:
         source_file = tmp_path / "context" / "doc.md"
         source_file.write_text("---\nname: Doc\ndescription: A doc\n---\nTemplate")
         output_file = tmp_path / "target" / "doc.md"
@@ -66,24 +65,29 @@ class TestCompileContext:
         with pytest.raises(RefNotFoundError):
             await context.ref("nonexistent")
 
-    async def test_extract_calls_llm(self, context: CompileContext) -> None:
+    async def test_extract_calls_llm(self, context: CompileContext, mock_agent: MagicMock) -> None:
         result = await context.extract("Some content", "Extract names")
 
         assert result is not None
-        assert "[STUB EXTRACTION:" in result
+        assert result == "[TEST LLM RESPONSE]"
+        mock_agent.assert_called()
 
-    async def test_extract_records_call(self, context: CompileContext) -> None:
+    async def test_extract_records_call(
+        self, context: CompileContext, mock_agent: MagicMock
+    ) -> None:
         await context.extract("Content", "Extract")
 
         assert len(context.llm_calls) == 1
 
-    async def test_extract_with_manual_id(self, context: CompileContext) -> None:
+    async def test_extract_with_manual_id(
+        self, context: CompileContext, mock_agent: MagicMock
+    ) -> None:
         await context.extract("Content", "Extract", call_id="my-id")
 
         assert "my-id" in context.llm_calls
 
     async def test_extract_auto_id_is_deterministic(
-        self, context: CompileContext
+        self, context: CompileContext, mock_agent: MagicMock
     ) -> None:
         await context.extract("Content", "Extract")
         call_id = list(context.llm_calls.keys())[0]
@@ -91,7 +95,7 @@ class TestCompileContext:
         assert call_id.startswith("auto:")
 
     async def test_extract_caches_on_same_input(
-        self, context: CompileContext, tmp_path: Path
+        self, context: CompileContext, tmp_path: Path, mock_agent: MagicMock
     ) -> None:
         context.manifest.set_document(
             "test-doc",
@@ -105,7 +109,7 @@ class TestCompileContext:
                         input_hash=context._hash("Content"),
                         output_hash="out",
                         output="Cached result",
-                        model="stub",
+                        model="test-model",
                     )
                 },
             ),
@@ -114,20 +118,22 @@ class TestCompileContext:
         result = await context.extract("Content", "Extract", call_id="auto:1234567890123456")
         assert result == "Cached result"
 
-    async def test_call_llm_block(self, context: CompileContext) -> None:
+    async def test_call_llm_block(self, context: CompileContext, mock_agent: MagicMock) -> None:
         result = await context.call_llm_block(
             body="Test prompt",
-            model="stub",
+            model=None,
             call_id=None,
         )
 
         assert result is not None
-        assert "[STUB LLM RESPONSE:" in result
+        assert result == "[TEST LLM RESPONSE]"
 
-    async def test_call_llm_block_records_call(self, context: CompileContext) -> None:
+    async def test_call_llm_block_records_call(
+        self, context: CompileContext, mock_agent: MagicMock
+    ) -> None:
         await context.call_llm_block(
             body="Test prompt",
-            model="stub",
+            model=None,
             call_id="block-1",
         )
 
@@ -136,7 +142,9 @@ class TestCompileContext:
 
 class TestCompileEngine:
     @pytest.fixture
-    def engine_setup(self, tmp_path: Path) -> tuple[CompileEngine, Path, Path]:
+    def engine_setup(
+        self, tmp_path: Path, mock_agent: MagicMock
+    ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "context"
         source_dir.mkdir()
         output_dir = tmp_path / "target"
@@ -147,18 +155,15 @@ class TestCompileEngine:
             model_dirs=[source_dir],
             target_dir=output_dir,
         )
-        llm_provider = StubLLMProvider()
 
         engine = CompileEngine(
             manifest=manifest,
             input_plugin=input_plugin,
-            llm_provider=llm_provider,
+            default_model="test-model",
         )
         return engine, source_dir, output_dir
 
-    async def test_compile_all_empty(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
-    ) -> None:
+    async def test_compile_all_empty(self, engine_setup: tuple[CompileEngine, Path, Path]) -> None:
         engine, _, _ = engine_setup
         result = await engine.compile_all()
         assert result == []
@@ -213,7 +218,7 @@ Including: {{ ref('base').content }}
         assert "Base content here." in derived.output
 
     async def test_compile_all_with_llm_block(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path], mock_agent: MagicMock
     ) -> None:
         engine, source_dir, _ = engine_setup
 
@@ -230,11 +235,11 @@ Summarize this content.
         result = await engine.compile_all()
 
         assert len(result) == 1
-        assert "[STUB LLM RESPONSE:" in result[0].output
+        assert "[TEST LLM RESPONSE]" in result[0].output
         assert len(result[0].llm_calls) == 1
 
     async def test_compile_all_with_extract_filter(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path], mock_agent: MagicMock
     ) -> None:
         engine, source_dir, _ = engine_setup
 
@@ -249,7 +254,7 @@ name: Extract Test
         result = await engine.compile_all()
 
         assert len(result) == 1
-        assert "[STUB EXTRACTION:" in result[0].output
+        assert "[TEST LLM RESPONSE]" in result[0].output
 
     async def test_compile_all_updates_manifest(
         self, engine_setup: tuple[CompileEngine, Path, Path]
@@ -263,9 +268,7 @@ name: Extract Test
         assert engine.manifest.compiled_at is not None
         assert "test" in engine.manifest.documents
 
-    async def test_compile_uri_single(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
-    ) -> None:
+    async def test_compile_uri_single(self, engine_setup: tuple[CompileEngine, Path, Path]) -> None:
         engine, source_dir, output_dir = engine_setup
 
         (source_dir / "single.md").write_text("""\
@@ -296,12 +299,8 @@ Just this one.
         engine, source_dir, output_dir = engine_setup
 
         (source_dir / "a.md").write_text("---\nname: A\n---\nA content")
-        (source_dir / "b.md").write_text(
-            "---\nname: B\n---\nB uses {{ ref('a').content }}"
-        )
-        (source_dir / "c.md").write_text(
-            "---\nname: C\n---\nC uses {{ ref('b').content }}"
-        )
+        (source_dir / "b.md").write_text("---\nname: B\n---\nB uses {{ ref('a').content }}")
+        (source_dir / "c.md").write_text("---\nname: C\n---\nC uses {{ ref('b').content }}")
 
         result = await engine.compile_all()
         uris = [doc.uri for doc in result]
