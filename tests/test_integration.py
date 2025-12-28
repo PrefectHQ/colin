@@ -10,7 +10,7 @@ import pytest
 
 from colin.compiler import CompileEngine
 from colin.models import Manifest
-from colin.plugins.inputs.file import FileInputPlugin
+from colin.plugins.inputs.file import ProjectInput
 
 if TYPE_CHECKING:
     pass
@@ -85,7 +85,7 @@ Write a haiku about being welcomed.
 """)
 
         # Compile
-        input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
+        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
         manifest = Manifest()
         engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
@@ -155,7 +155,7 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
 """)
 
         # Compile
-        input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
+        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
         manifest = Manifest()
         engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
@@ -194,7 +194,7 @@ Report includes {{ ref('base').content }}
 """)
 
         # Compile
-        input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
+        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
         manifest = Manifest()
         engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 

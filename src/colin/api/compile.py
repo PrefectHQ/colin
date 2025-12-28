@@ -10,7 +10,7 @@ from colin.compiler import CompileEngine
 from colin.compiler.state import CompilationState
 from colin.exceptions import ProjectNotInitializedError
 from colin.models import CompiledDocument, Manifest
-from colin.plugins.inputs.file import FileInputPlugin
+from colin.plugins.inputs.file import ProjectInput
 from colin.settings import settings
 
 
@@ -85,7 +85,7 @@ async def compile_project(
 
     # Set up input plugin
     compiled_dir = target_dir / "compiled"
-    input_plugin = FileInputPlugin(model_dirs=[model_dir], target_dir=compiled_dir)
+    input_plugin = ProjectInput(model_dirs=[model_dir], target_dir=compiled_dir)
 
     # Handle dry run
     if dry_run:

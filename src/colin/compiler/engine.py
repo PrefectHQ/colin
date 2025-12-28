@@ -26,7 +26,7 @@ from colin.models import (
 )
 
 if TYPE_CHECKING:
-    from colin.plugins.inputs.file import FileInputPlugin
+    from colin.plugins.inputs.file import ProjectInput
 
 
 class CompileEngine:
@@ -40,7 +40,7 @@ class CompileEngine:
     def __init__(
         self,
         manifest: Manifest,
-        input_plugin: FileInputPlugin,
+        input_plugin: ProjectInput,
         default_model: str,
         mcp_config: MCPConfig | None = None,
         state: CompilationState | None = None,

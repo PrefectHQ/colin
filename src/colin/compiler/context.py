@@ -18,7 +18,7 @@ from colin.models import CompiledDocument, LLMCall, RefResult
 if TYPE_CHECKING:
     from colin.mcp import MCPManager
     from colin.models import Manifest
-    from colin.plugins.inputs.file import FileInputPlugin
+    from colin.plugins.inputs.file import ProjectInput
 
 
 def _has_scheme(uri: str) -> bool:
@@ -43,7 +43,7 @@ class CompileContext:
         manifest: Manifest,
         document_uri: str,
         default_model: str,
-        input_plugin: FileInputPlugin,
+        input_plugin: ProjectInput,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
         mcp_manager: MCPManager | None = None,
         doc_state: OperationState | None = None,

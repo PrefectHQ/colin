@@ -12,7 +12,7 @@ from colin.compiler import CompileContext
 from colin.compiler.context import _has_scheme
 from colin.exceptions import RefNotFoundError
 from colin.models import Manifest
-from colin.plugins.inputs.file import FileInputPlugin
+from colin.plugins.inputs.file import ProjectInput
 
 if TYPE_CHECKING:
     pass
@@ -58,7 +58,7 @@ class TestSchemalessRefValidation:
         output_dir.mkdir()
 
         manifest = Manifest()
-        input_plugin = FileInputPlugin(
+        input_plugin = ProjectInput(
             model_dirs=[source_dir],
             target_dir=output_dir,
         )
@@ -155,7 +155,7 @@ class TestPathTraversalPrevention:
         outside_file.write_text("---\nname: Secret\n---\nSecret content")
 
         manifest = Manifest()
-        input_plugin = FileInputPlugin(
+        input_plugin = ProjectInput(
             model_dirs=[source_dir],
             target_dir=output_dir,
         )

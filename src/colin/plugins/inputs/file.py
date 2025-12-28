@@ -1,31 +1,62 @@
-"""File input plugin for local model files."""
+"""File-based input plugins for local model files."""
 
 from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import frontmatter
 
 from colin.models import ColinConfig, Frontmatter, RefResult
 
-if TYPE_CHECKING:
-    pass
+
+class FileInput:
+    """Base input for reading files from the filesystem.
+
+    Provides common file reading and frontmatter parsing functionality.
+    Subclasses implement URI scheme handling.
+    """
+
+    scheme: str = "file"
+
+    def parse_frontmatter(self, path: Path) -> tuple[Frontmatter, str]:
+        """Parse frontmatter from a model file.
+
+        Args:
+            path: Path to the model file.
+
+        Returns:
+            Tuple of (Frontmatter, template_content).
+        """
+        content = path.read_text(encoding="utf-8")
+        post = frontmatter.loads(content)
+
+        # Extract colin config
+        raw_colin = post.metadata.pop("colin", {})
+        colin_data = cast(dict[str, Any], raw_colin) if isinstance(raw_colin, dict) else {}
+        colin_config = ColinConfig.model_validate(colin_data)
+
+        # Rest is document metadata
+        metadata = cast(dict[str, Any], post.metadata)
+        fm = Frontmatter(colin=colin_config, metadata=metadata)
+
+        return fm, post.content
 
 
-class FileInputPlugin:
-    """Input plugin for local model files.
+class ProjectInput(FileInput):
+    """Input for project-local model files using project:// URIs.
 
-    This is the default input plugin that reads models from the local filesystem.
-    Models are markdown files with optional YAML frontmatter.
+    Handles documents within a Colin project, identified by project:// URIs
+    (e.g., project://greeting.md). Templates can use shorthand refs like
+    ref('greeting') which are normalized to full URIs.
     """
 
     scheme: str = "project"
 
     def __init__(self, model_dirs: list[Path], target_dir: Path) -> None:
-        """Initialize the file input plugin.
+        """Initialize the project input.
 
         Args:
             model_dirs: Directories containing model files.
@@ -242,26 +273,3 @@ class FileInputPlugin:
         """
         relative = path.relative_to(model_dir)
         return f"project://{relative}"
-
-    def parse_frontmatter(self, path: Path) -> tuple[Frontmatter, str]:
-        """Parse frontmatter from a model file.
-
-        Args:
-            path: Path to the model file.
-
-        Returns:
-            Tuple of (Frontmatter, template_content).
-        """
-        content = path.read_text(encoding="utf-8")
-        post = frontmatter.loads(content)
-
-        # Extract colin config
-        raw_colin = post.metadata.pop("colin", {})
-        colin_data = cast(dict[str, Any], raw_colin) if isinstance(raw_colin, dict) else {}
-        colin_config = ColinConfig.model_validate(colin_data)
-
-        # Rest is document metadata
-        metadata = cast(dict[str, Any], post.metadata)
-        fm = Frontmatter(colin=colin_config, metadata=metadata)
-
-        return fm, post.content

@@ -9,7 +9,7 @@ import pytest
 
 from colin.compiler import CompileEngine
 from colin.models import Manifest
-from colin.plugins.inputs.file import FileInputPlugin
+from colin.plugins.inputs.file import ProjectInput
 
 
 class TestCompileEngine:
@@ -23,7 +23,7 @@ class TestCompileEngine:
         output_dir.mkdir()
 
         manifest = Manifest()
-        input_plugin = FileInputPlugin(
+        input_plugin = ProjectInput(
             model_dirs=[source_dir],
             target_dir=output_dir,
         )
