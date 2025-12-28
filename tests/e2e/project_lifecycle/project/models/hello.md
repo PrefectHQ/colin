@@ -1,4 +1,0 @@
----
-name: Hello
----
-Hello, world!

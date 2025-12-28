@@ -144,3 +144,29 @@ class TestCompilationState:
         assert doc1.children[0].status == Status.REF
         assert doc1.children[1].status == Status.DONE
         assert doc2.children[0].status == Status.CACHED
+
+    def test_mcp_operations_tracked_like_refs(self) -> None:
+        """MCP resource access appears as child operations like refs."""
+        state = CompilationState()
+
+        doc = state.add_document("context/with_mcp")
+        doc.start()
+
+        # Ref for comparison
+        ref_op = doc.child("ref:other_doc")
+        ref_op.start()
+        ref_op.ref()
+
+        # MCP access tracked like refs (external resource reference)
+        mcp_op = doc.child("mcp:greeter", detail="colin://hello")
+        mcp_op.start()
+        mcp_op.ref()
+
+        doc.done()
+
+        assert len(doc.children) == 2
+        assert doc.children[0].name == "ref:other_doc"
+        assert doc.children[0].status == Status.REF
+        assert doc.children[1].name == "mcp:greeter"
+        assert doc.children[1].detail == "colin://hello"
+        assert doc.children[1].status == Status.REF

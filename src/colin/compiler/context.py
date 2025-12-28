@@ -352,4 +352,15 @@ class CompileContext:
         """
         if self.mcp_manager is None:
             raise ValueError("No MCP servers configured")
-        return await self.mcp_manager.read_resource(server, uri)
+
+        # Track MCP access in state tree (like a ref to external resource)
+        op_state = self.doc_state.child(f"mcp:{server}", detail=uri)
+        op_state.start()
+
+        try:
+            result = await self.mcp_manager.read_resource(server, uri)
+            op_state.ref()
+            return result
+        except Exception:
+            op_state.fail()
+            raise

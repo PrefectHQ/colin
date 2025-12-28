@@ -1,10 +1,14 @@
 """MCP server management commands."""
 
+import asyncio
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import cyclopts
-from fastmcp.mcp_config import RemoteMCPServer
+from cyclopts import Parameter
+from fastmcp import Client
+from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
 from rich.console import Console
 from rich.table import Table
 
@@ -19,37 +23,79 @@ app = cyclopts.App(name="mcp", help="Manage MCP servers.")
 @app.command
 def add(
     name: str,
+    command_or_url: str,
+    args: Annotated[list[str] | None, Parameter(negative=())] = None,
     *,
-    url: str | None = None,
-    command: str | None = None,
-    args: list[str] | None = None,
+    transport: Annotated[
+        str | None,
+        Parameter(name=["-t", "--transport"]),
+    ] = None,
+    env: Annotated[
+        list[str] | None,
+        Parameter(name=["-e", "--env"]),
+    ] = None,
     project: Path = Path("."),
 ) -> None:
     """Add an MCP server.
 
+    Examples:
+      # Add HTTP server:
+      colin mcp add sentry https://mcp.sentry.dev/mcp --transport http
+
+      # Add stdio server:
+      colin mcp add airtable npx -y airtable-mcp-server -e AIRTABLE_API_KEY=xxx
+
+      # Add stdio server (default transport):
+      colin mcp add greeter uvx fastmcp run server.py
+
     Args:
         name: Server name (used in templates as mcp_resource('name', ...)).
-        url: Server URL for HTTP/SSE transport.
-        command: Command to run for stdio transport.
-        args: Arguments for stdio command.
-        project: Project directory (default: current directory).
+        command_or_url: Command to run (stdio) or URL (http/sse).
+        args: Additional arguments for stdio command.
+        transport: Transport type: stdio, sse, or http. Defaults to stdio.
+        env: Environment variables in KEY=VALUE format (stdio only).
+        project: Project directory.
     """
-    if not url and not command:
-        err_console.print("[red]Error:[/] Either --url or --command is required")
+    # Determine transport type
+    if transport is None:
+        if command_or_url.startswith(("http://", "https://")):
+            transport = "http"
+        else:
+            transport = "stdio"
+
+    transport = transport.lower()
+    if transport not in ("stdio", "sse", "http"):
+        err_console.print(f"[red]Error:[/] Invalid transport: {transport}")
+        err_console.print("[dim]Valid options: stdio, sse, http[/]")
         sys.exit(1)
 
-    if url and command:
-        err_console.print("[red]Error:[/] Cannot specify both --url and --command")
+    is_remote = transport in ("http", "sse")
+
+    if is_remote and (args or env):
+        err_console.print("[red]Error:[/] --env and args only apply to stdio transport")
         sys.exit(1)
+
+    # Parse env list into dict
+    env_dict: dict[str, str] = {}
+    for item in env or []:
+        if "=" not in item:
+            err_console.print(f"[red]Error:[/] Invalid env format: {item} (expected KEY=VALUE)")
+            sys.exit(1)
+        key, value = item.split("=", 1)
+        env_dict[key] = value
+
+    # Build server config
+    if is_remote:
+        server: StdioMCPServer | RemoteMCPServer = RemoteMCPServer(url=command_or_url)
+    else:
+        server = StdioMCPServer(
+            command=command_or_url,
+            args=args or [],
+            env=env_dict,
+        )
 
     try:
-        api.mcp.add_server(
-            project_dir=project,
-            name=name,
-            url=url,
-            command=command,
-            args=args or [],
-        )
+        api.mcp.add_server(project_dir=project, name=name, server=server)
         console.print(f"[green]Added:[/] {name}")
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
@@ -70,7 +116,7 @@ def remove(
 
     Args:
         name: Server name to remove.
-        project: Project directory (default: current directory).
+        project: Project directory.
     """
     try:
         api.mcp.remove_server(project_dir=project, name=name)
@@ -92,7 +138,7 @@ def list_servers(
     """List configured MCP servers.
 
     Args:
-        project: Project directory (default: current directory).
+        project: Project directory.
     """
     try:
         mcp_config = api.mcp.list_servers(project_dir=project)
@@ -122,3 +168,58 @@ def list_servers(
         err_console.print(f"[red]Error:[/] {e}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
+
+
+@app.command
+def test(
+    name: str,
+    *,
+    project: Path = Path("."),
+) -> None:
+    """Test connection to an MCP server.
+
+    Connects to the server and lists available resources.
+
+    Args:
+        name: Server name to test.
+        project: Project directory.
+    """
+    try:
+        mcp_config = api.mcp.list_servers(project_dir=project)
+    except FileNotFoundError as e:
+        err_console.print(f"[red]Error:[/] {e}")
+        err_console.print("[dim]Run `colin init` to create a new project[/]")
+        sys.exit(1)
+
+    if name not in mcp_config.mcpServers:
+        err_console.print(f"[red]Error:[/] MCP server '{name}' not found")
+        err_console.print("[dim]Use `colin mcp list` to see configured servers[/]")
+        sys.exit(1)
+
+    server = mcp_config.mcpServers[name]
+    console.print(f"[dim]Testing connection to[/] {name}...")
+
+    async def do_test() -> None:
+        single_config = MCPConfig(mcpServers={name: server})
+        client = Client(single_config)
+
+        try:
+            async with client:
+                resources = await client.list_resources()
+
+                console.print(f"[green]✓[/] Connected to {name}")
+
+                if resources:
+                    console.print(f"\n[bold]Resources ({len(resources)}):[/]")
+                    for resource in resources:
+                        uri = resource.uri
+                        desc = f" - {resource.description}" if resource.description else ""
+                        console.print(f"  {uri}{desc}")
+                else:
+                    console.print("\n[dim]No resources available[/]")
+
+        except Exception as e:
+            err_console.print(f"[red]✗[/] Failed to connect: {e}")
+            sys.exit(1)
+
+    asyncio.run(do_test())

@@ -1,4 +1,0 @@
-[project]
-name = "lifecycle-test"
-model_path = "models"
-target_path = "target"
