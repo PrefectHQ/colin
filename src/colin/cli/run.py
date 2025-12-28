@@ -200,7 +200,7 @@ async def run(
         sys.exit(1)
     except ProjectNotInitializedError as e:
         err_console.print(f"[red]Error:[/] {e}")
-        err_console.print("[dim]Run `cbt init` to create a new project[/]")
+        err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
     except ValueError as e:
         err_console.print(f"[red]Error:[/] {e}")
@@ -248,7 +248,7 @@ def init(
         console.print(f"[green]Created:[/] {project_display}")
         console.print(f"[green]Created:[/] {model_display}/")
         console.print()
-        console.print("[dim]Add .md files to models/ and run `cbt run`[/]")
+        console.print("[dim]Add .md files to models/ and run `colin run`[/]")
 
     except FileExistsError as e:
         err_console.print(f"[red]Error:[/] {e}")

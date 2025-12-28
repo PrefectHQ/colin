@@ -17,7 +17,7 @@ This enables automatic dependency tracking without explicit declarations.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                           cbt CLI                               │
+│                           Colin CLI                               │
 │  compile [--force] [--dry-run]                                  │
 └─────────────────────────────────────────────────────────────────┘
                               │

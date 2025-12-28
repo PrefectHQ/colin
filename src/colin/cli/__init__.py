@@ -8,7 +8,7 @@ from colin.cli import mcp, run
 console = Console()
 err_console = Console(stderr=True)
 
-app = cyclopts.App(name="cbt", help="Colin - Context compiler for the AI era.")
+app = cyclopts.App(name="colin", help="Colin - Context compiler for the AI era.")
 
 # Register subcommands
 app.command(run.run)

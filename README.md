@@ -8,7 +8,7 @@ Writing context by hand means copy-pasting from various sources, hoping nothing 
 
 ```bash
 pip install colin
-cbt run
+colin run
 ```
 
 *Colin stands for **Co**ntext **Lin**eage — and also happens to be that perpetually helpful robot from The Hitchhiker's Guide to the Galaxy.*
@@ -39,7 +39,7 @@ Colin compiles them in dependency order, caches LLM calls, and recompiles only w
 Initialize a project:
 
 ```bash
-cbt init my-project
+colin init my-project
 cd my-project
 ```
 
@@ -77,7 +77,7 @@ description: Current project status for agents
 Compile:
 
 ```bash
-cbt run
+colin run
 ```
 
 Colin discovers both documents, builds the dependency graph, compiles `meeting-notes` first, then `project-status` with the extracted content. LLM calls are cached—reruns are instant unless the source changes.
@@ -156,12 +156,12 @@ Manual IDs let you iterate on prompts without regenerating everything.
 ## CLI
 
 ```bash
-cbt init [name]          # Create new project
-cbt run                  # Compile all documents
-cbt run --force          # Recompile everything
-cbt run --dry-run        # Show what would compile
-cbt status               # Show project status
-cbt clean                # Remove outputs and cache
+colin init [name]          # Create new project
+colin run                  # Compile all documents
+colin run --force          # Recompile everything
+colin run --dry-run        # Show what would compile
+colin status               # Show project status
+colin clean                # Remove outputs and cache
 ```
 
 ## Configuration
@@ -189,8 +189,8 @@ args = ["mcp-server-github"]
 ```
 
 ```bash
-cbt mcp add linear --url https://...
-cbt mcp list
+colin mcp add linear --url https://...
+colin mcp list
 ```
 
 ## Project Structure

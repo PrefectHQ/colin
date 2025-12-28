@@ -53,7 +53,7 @@ def add(
         console.print(f"[green]Added:[/] {name}")
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
-        err_console.print("[dim]Run `cbt init` to create a new project[/]")
+        err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
     except ValueError as e:
         err_console.print(f"[red]Error:[/] {e}")
@@ -77,7 +77,7 @@ def remove(
         console.print(f"[green]Removed:[/] {name}")
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
-        err_console.print("[dim]Run `cbt init` to create a new project[/]")
+        err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
     except ValueError as e:
         err_console.print(f"[red]Error:[/] {e}")
@@ -120,5 +120,5 @@ def list_servers(
         console.print(table)
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
-        err_console.print("[dim]Run `cbt init` to create a new project[/]")
+        err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)

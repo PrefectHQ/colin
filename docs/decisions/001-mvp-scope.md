@@ -18,7 +18,7 @@ Colin is an ambitious project with many potential features. We need to define a 
 - JSON manifest with Pydantic models
 - Change detection via source hashing
 - Topological compilation order (DAG)
-- `cbt compile` command
+- `colin compile` command
 - Output to `dist/` directory as markdown
 
 ### Out of MVP
@@ -26,7 +26,7 @@ Colin is an ambitious project with many potential features. We need to define a 
 - MCP integration (`mcp()` function, `mcp_tool()`)
 - Remote `colin://` refs
 - `{% pin %}` blocks (complex LLM reliability)
-- Watch mode (`cbt watch`)
+- Watch mode (`colin watch`)
 - Skills output format
 - `compiled.previous` (whole document's prior output)
 - `| summarize()`, `| translate()` filters

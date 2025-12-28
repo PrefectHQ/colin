@@ -12,7 +12,7 @@ A minimal Colin project demonstrating the core features.
 
 ```bash
 cd examples/hello_world
-cbt run
+colin run
 ```
 
 ## Output
@@ -29,4 +29,4 @@ export ANTHROPIC_API_KEY=your-key-here
 
 1. **Dependency order**: `greeting` compiles first because `welcome` and `summary` depend on it
 2. **ref() inclusion**: The greeting content appears inline in `welcome.md`
-3. **LLM tracking**: Run `cbt status` to see LLM call metadata
+3. **LLM tracking**: Run `colin status` to see LLM call metadata
