@@ -6,33 +6,33 @@ from pathlib import Path
 
 import pytest
 
-from colin.plugins.inputs.file import FileInputPlugin
+from colin.plugins.inputs.file import ProjectInput
 
 
-class TestFileInputPlugin:
+class TestProjectInput:
     @pytest.fixture
-    def plugin(self, tmp_path: Path) -> FileInputPlugin:
+    def plugin(self, tmp_path: Path) -> ProjectInput:
         model_dir = tmp_path / "models"
         model_dir.mkdir()
         target_dir = tmp_path / "target"
         target_dir.mkdir()
-        return FileInputPlugin(
+        return ProjectInput(
             model_dirs=[model_dir],
             target_dir=target_dir,
         )
 
-    def test_uri_to_model_path_found(self, plugin: FileInputPlugin) -> None:
+    def test_uri_to_model_path_found(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("content")
 
         path = plugin.uri_to_model_path("test")
         assert path == model_file
 
-    def test_uri_to_model_path_not_found(self, plugin: FileInputPlugin) -> None:
+    def test_uri_to_model_path_not_found(self, plugin: ProjectInput) -> None:
         path = plugin.uri_to_model_path("nonexistent")
         assert path is None
 
-    def test_uri_to_model_path_nested(self, plugin: FileInputPlugin) -> None:
+    def test_uri_to_model_path_nested(self, plugin: ProjectInput) -> None:
         nested_dir = plugin.model_dirs[0] / "sub"
         nested_dir.mkdir()
         model_file = nested_dir / "test.md"
@@ -41,15 +41,16 @@ class TestFileInputPlugin:
         path = plugin.uri_to_model_path("sub/test")
         assert path == model_file
 
-    def test_uri_to_target_path(self, plugin: FileInputPlugin) -> None:
-        path = plugin.uri_to_target_path("test")
+    def test_uri_to_target_path(self, plugin: ProjectInput) -> None:
+        # Works with both shorthand and full URI
+        path = plugin.uri_to_target_path("project://test.md")
         assert path == plugin.target_dir / "test.md"
 
-    def test_uri_to_target_path_nested(self, plugin: FileInputPlugin) -> None:
-        path = plugin.uri_to_target_path("sub/test")
+    def test_uri_to_target_path_nested(self, plugin: ProjectInput) -> None:
+        path = plugin.uri_to_target_path("project://sub/test.md")
         assert path == plugin.target_dir / "sub/test.md"
 
-    async def test_fetch_returns_ref_result(self, plugin: FileInputPlugin) -> None:
+    async def test_fetch_returns_ref_result(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("""\
 ---
@@ -62,28 +63,28 @@ Template content here.
         target_file = plugin.target_dir / "test.md"
         target_file.write_text("Compiled output")
 
-        result = await plugin.fetch("test")
+        result = await plugin.fetch("project://test.md")
 
         assert result.name == "Test Document"
         assert result.description == "A test"
         assert result.content == "Compiled output"
         assert "Template content here." in result.template
-        assert result.uri == "test"
+        assert result.uri == "project://test.md"
 
-    async def test_fetch_uses_uri_as_name_fallback(self, plugin: FileInputPlugin) -> None:
+    async def test_fetch_uses_uri_as_name_fallback(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "my-doc.md"
         model_file.write_text("---\n---\nContent")
         target_file = plugin.target_dir / "my-doc.md"
         target_file.write_text("Output")
 
-        result = await plugin.fetch("my-doc")
-        assert result.name == "my-doc"
+        result = await plugin.fetch("project://my-doc.md")
+        assert result.name == "my-doc"  # Stem of filename
 
-    async def test_fetch_not_found(self, plugin: FileInputPlugin) -> None:
+    async def test_fetch_not_found(self, plugin: ProjectInput) -> None:
         with pytest.raises(FileNotFoundError):
             await plugin.fetch("nonexistent")
 
-    async def test_hash_returns_consistent_value(self, plugin: FileInputPlugin) -> None:
+    async def test_hash_returns_consistent_value(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("content here")
 
@@ -93,7 +94,7 @@ Template content here.
         assert hash1 == hash2
         assert len(hash1) == 16
 
-    async def test_hash_changes_with_content(self, plugin: FileInputPlugin) -> None:
+    async def test_hash_changes_with_content(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("content A")
         hash1 = await plugin.hash("test")
@@ -103,24 +104,24 @@ Template content here.
 
         assert hash1 != hash2
 
-    async def test_hash_not_found(self, plugin: FileInputPlugin) -> None:
+    async def test_hash_not_found(self, plugin: ProjectInput) -> None:
         with pytest.raises(FileNotFoundError):
             await plugin.hash("nonexistent")
 
-    def test_discover_documents_empty(self, plugin: FileInputPlugin) -> None:
+    def test_discover_documents_empty(self, plugin: ProjectInput) -> None:
         docs = plugin.discover_documents()
         assert docs == []
 
-    def test_discover_documents_finds_files(self, plugin: FileInputPlugin) -> None:
+    def test_discover_documents_finds_files(self, plugin: ProjectInput) -> None:
         (plugin.model_dirs[0] / "a.md").write_text("a")
         (plugin.model_dirs[0] / "b.md").write_text("b")
 
         docs = plugin.discover_documents()
         uris = [uri for uri, _ in docs]
 
-        assert set(uris) == {"a", "b"}
+        assert set(uris) == {"project://a.md", "project://b.md"}
 
-    def test_discover_documents_nested(self, plugin: FileInputPlugin) -> None:
+    def test_discover_documents_nested(self, plugin: ProjectInput) -> None:
         (plugin.model_dirs[0] / "root.md").write_text("r")
         nested = plugin.model_dirs[0] / "sub"
         nested.mkdir()
@@ -129,9 +130,9 @@ Template content here.
         docs = plugin.discover_documents()
         uris = [uri for uri, _ in docs]
 
-        assert set(uris) == {"root", "sub/nested"}
+        assert set(uris) == {"project://root.md", "project://sub/nested.md"}
 
-    def test_discover_documents_sorted(self, plugin: FileInputPlugin) -> None:
+    def test_discover_documents_sorted(self, plugin: ProjectInput) -> None:
         (plugin.model_dirs[0] / "z.md").write_text("z")
         (plugin.model_dirs[0] / "a.md").write_text("a")
         (plugin.model_dirs[0] / "m.md").write_text("m")
@@ -139,9 +140,9 @@ Template content here.
         docs = plugin.discover_documents()
         uris = [uri for uri, _ in docs]
 
-        assert uris == ["a", "m", "z"]
+        assert uris == ["project://a.md", "project://m.md", "project://z.md"]
 
-    def test_parse_frontmatter_with_colin_config(self, plugin: FileInputPlugin) -> None:
+    def test_parse_frontmatter_with_colin_config(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("""\
 ---
@@ -161,7 +162,7 @@ Content here.
         assert fm.metadata["name"] == "Test"
         assert "Content here." in content
 
-    def test_parse_frontmatter_without_colin_config(self, plugin: FileInputPlugin) -> None:
+    def test_parse_frontmatter_without_colin_config(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("""\
 ---
@@ -178,7 +179,7 @@ Content here.
         assert fm.metadata["name"] == "Test"
         assert fm.metadata["description"] == "A test document"
 
-    def test_parse_frontmatter_empty(self, plugin: FileInputPlugin) -> None:
+    def test_parse_frontmatter_empty(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("No frontmatter here.")
 
@@ -188,7 +189,7 @@ Content here.
         assert fm.metadata == {}
         assert "No frontmatter here." in content
 
-    def test_discover_excludes_target_directory(self, plugin: FileInputPlugin) -> None:
+    def test_discover_excludes_target_directory(self, plugin: ProjectInput) -> None:
         # Create model file
         (plugin.model_dirs[0] / "model.md").write_text("model")
 
@@ -199,10 +200,10 @@ Content here.
         docs = plugin.discover_documents()
         uris = [uri for uri, _ in docs]
 
-        assert "model" in uris
-        assert "target" not in uris
+        assert "project://model.md" in uris
+        assert "project://target.md" not in uris
 
-    def test_discover_excludes_nested_projects(self, plugin: FileInputPlugin) -> None:
+    def test_discover_excludes_nested_projects(self, plugin: ProjectInput) -> None:
         # Create model file in root
         (plugin.model_dirs[0] / "root.md").write_text("root")
 
@@ -215,5 +216,5 @@ Content here.
         docs = plugin.discover_documents()
         uris = [uri for uri, _ in docs]
 
-        assert "root" in uris
-        assert "nested_project/nested" not in uris
+        assert "project://root.md" in uris
+        assert "project://nested_project/nested.md" not in uris

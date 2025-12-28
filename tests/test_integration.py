@@ -10,7 +10,7 @@ import pytest
 
 from colin.compiler import CompileEngine
 from colin.models import Manifest
-from colin.plugins.inputs.file import FileInputPlugin
+from colin.plugins.inputs.file import ProjectInput
 
 if TYPE_CHECKING:
     pass
@@ -85,7 +85,7 @@ Write a haiku about being welcomed.
 """)
 
         # Compile
-        input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
+        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
         manifest = Manifest()
         engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
@@ -93,8 +93,8 @@ Write a haiku about being welcomed.
 
         # Verify compile order (greeting must be first)
         uris = [doc.uri for doc in compiled]
-        assert uris.index("greeting") < uris.index("welcome")
-        assert uris.index("greeting") < uris.index("summary")
+        assert uris.index("project://greeting.md") < uris.index("project://welcome.md")
+        assert uris.index("project://greeting.md") < uris.index("project://summary.md")
 
         # Verify output files exist
         assert (output_dir / "greeting.md").exists()
@@ -110,7 +110,7 @@ Write a haiku about being welcomed.
         assert "Hello! Welcome to Colin." in summary_output
 
         # Verify LLM calls were made for summary
-        summary_doc = next(d for d in compiled if d.uri == "summary")
+        summary_doc = next(d for d in compiled if d.uri == "project://summary.md")
         assert len(summary_doc.llm_calls) == 2  # extract + llm block
 
         # Verify test LLM responses
@@ -155,7 +155,7 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
 """)
 
         # Compile
-        input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
+        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
         manifest = Manifest()
         engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
@@ -163,10 +163,10 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
 
         # Verify order: D must be first, A must be last
         uris = [doc.uri for doc in compiled]
-        assert uris.index("d") < uris.index("b")
-        assert uris.index("d") < uris.index("c")
-        assert uris.index("b") < uris.index("a")
-        assert uris.index("c") < uris.index("a")
+        assert uris.index("project://d.md") < uris.index("project://b.md")
+        assert uris.index("project://d.md") < uris.index("project://c.md")
+        assert uris.index("project://b.md") < uris.index("project://a.md")
+        assert uris.index("project://c.md") < uris.index("project://a.md")
 
         # Verify content propagation
         a_output = (output_dir / "a.md").read_text()
@@ -194,7 +194,7 @@ Report includes {{ ref('base').content }}
 """)
 
         # Compile
-        input_plugin = FileInputPlugin([source_dir], target_dir=output_dir)
+        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
         manifest = Manifest()
         engine = CompileEngine(manifest, input_plugin, default_model="test-model")
 
