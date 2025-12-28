@@ -187,17 +187,17 @@ class CompileContext:
         # Call LLM (with state tracking if enabled)
         op = self.doc_state.child("extract", detail=_truncate(prompt)) if self.doc_state else None
         with op if op else _nullcontext():
+            # Only allow UseExisting if there's a previous output to use
+            output_type: list[type] = [UseExisting, str] if previous_output else [str]
             agent: Agent[None, LLMOutput] = Agent(
                 effective_model,
-                output_type=[UseExisting, str],  # type: ignore[arg-type]
+                output_type=output_type,  # type: ignore[arg-type]
             )
             result = await agent.run(full_prompt)
 
             # Handle UseExisting
             if isinstance(result.output, UseExisting):
-                if previous_output is None:
-                    raise ValueError("LLM returned UseExisting but no previous output exists")
-                output_text = previous_output
+                output_text = previous_output  # Safe: UseExisting only allowed if previous exists
             else:
                 output_text = str(result.output)
 
@@ -254,17 +254,17 @@ class CompileContext:
         # Call LLM (with state tracking if enabled)
         op = self.doc_state.child("llm", detail=_truncate(body)) if self.doc_state else None
         with op if op else _nullcontext():
+            # Only allow UseExisting if there's a previous output to use
+            output_type: list[type] = [UseExisting, str] if previous_output else [str]
             agent: Agent[None, LLMOutput] = Agent(
                 effective_model,
-                output_type=[UseExisting, str],  # type: ignore[arg-type]
+                output_type=output_type,  # type: ignore[arg-type]
             )
             result = await agent.run(full_prompt)
 
             # Handle UseExisting
             if isinstance(result.output, UseExisting):
-                if previous_output is None:
-                    raise ValueError("LLM returned UseExisting but no previous output exists")
-                output_text = previous_output
+                output_text = previous_output  # Safe: UseExisting only allowed if previous exists
             else:
                 output_text = str(result.output)
 
