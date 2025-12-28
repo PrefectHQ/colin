@@ -21,7 +21,7 @@ from colin.models import (
     DocumentMeta,
     Manifest,
 )
-from colin.state import CompilationState, OperationState
+from colin.compiler.state import CompilationState, OperationState
 
 if TYPE_CHECKING:
     from colin.plugins.inputs.file import FileInputPlugin
@@ -327,13 +327,3 @@ class CompileEngine:
             total_cost_usd=doc.total_cost_usd,
         )
         self.manifest.set_document(doc.uri, meta)
-
-    def _is_cached_call(self, doc: ColinDocument, llm_call: object) -> bool:
-        """Check if an LLM call was from cache.
-
-        This is a simplified check - returns False since we track
-        cached calls via LLMCallCompleted events in the context.
-        """
-        # For now, we don't track this at engine level
-        # The CLI can track from LLMCallCompleted events
-        return False

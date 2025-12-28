@@ -13,7 +13,7 @@ from rich.text import Text
 from colin import api
 from colin.api.compile import CompileResult
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
-from colin.state import CompilationState, Status
+from colin.compiler.state import CompilationState, Status
 
 console = Console()
 err_console = Console(stderr=True)
@@ -41,7 +41,7 @@ def render_state(state: CompilationState) -> Text:
                 icon = "[yellow]⋯[/]"
             case Status.FAILED:
                 icon = "[red]✗[/]"
-            case Status.PENDING:
+            case _:  # PENDING, CACHED, REF
                 icon = "[dim]○[/]"
 
         lines.append(f"  {icon} {uri}.md")

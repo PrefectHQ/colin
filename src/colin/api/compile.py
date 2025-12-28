@@ -11,7 +11,7 @@ from colin.exceptions import ProjectNotInitializedError
 from colin.models import CompiledDocument, Manifest
 from colin.plugins.inputs.file import FileInputPlugin
 from colin.settings import settings
-from colin.state import CompilationState
+from colin.compiler.state import CompilationState
 
 
 class CompileResult:

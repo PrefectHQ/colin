@@ -76,10 +76,6 @@ class OperationState:
         """Mark this operation as a ref resolution."""
         self.status = Status.REF
 
-    def active_children(self) -> list["OperationState"]:
-        """Return children that are not done."""
-        return [c for c in self.children if c.status != Status.DONE]
-
 
 @dataclass
 class CompilationState:
@@ -114,3 +110,4 @@ class CompilationState:
             The document state, or None if not found.
         """
         return self.documents.get(uri)
+

@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 
+from colin.compiler.state import OperationState
 from colin.exceptions import RefNotFoundError
 from colin.llm.prompts import render_complete_prompt, render_extract_prompt
 from colin.llm.types import LLMOutput, UseExisting
 from colin.models import CompiledDocument, LLMCall, RefResult
-from colin.state import OperationState
 
 if TYPE_CHECKING:
     from colin.mcp import MCPManager
