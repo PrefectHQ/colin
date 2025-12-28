@@ -62,3 +62,31 @@ def test_mcp_test_command(greeter_server: Path, cli: Callable[..., None], capfd)
     captured = capfd.readouterr()
     assert "Connected to greeter" in captured.out
     assert "colin://hello" in captured.out
+
+
+def test_mcp_prompt_basic(greeter_server: Path, target_dir: Path, cli: Callable[..., None]):
+    """MCP prompt content appears in compiled output."""
+    cli("run", "--target", str(target_dir), "--quiet")
+
+    output = (target_dir / "compiled" / "prompt_basic.md").read_text()
+    assert "greet the user warmly" in output
+
+
+def test_mcp_prompt_with_args(greeter_server: Path, target_dir: Path, cli: Callable[..., None]):
+    """MCP prompt with arguments works."""
+    cli("run", "--target", str(target_dir), "--quiet")
+
+    output = (target_dir / "compiled" / "prompt_with_args.md").read_text()
+    assert "Spanish" in output
+    assert "formal" in output
+
+
+def test_mcp_prompt_shown_in_output(
+    greeter_server: Path, target_dir: Path, cli: Callable[..., None], capfd
+):
+    """MCP prompt access appears in CLI output."""
+    cli("run", "--target", str(target_dir))
+
+    captured = capfd.readouterr()
+    # MCP prompt access should be shown in output
+    assert "mcp_prompt:greeter" in captured.out

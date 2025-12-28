@@ -326,3 +326,29 @@ class CompileContext:
         op = self.doc_state.child(f"mcp:{server}", detail=uri) if self.doc_state else None
         with op if op else _nullcontext():
             return await self.mcp_manager.read_resource(server, uri)
+
+    async def mcp_prompt(
+        self,
+        server: str,
+        name: str,
+        arguments: dict[str, str] | None = None,
+    ) -> str:
+        """Get a prompt from an MCP server.
+
+        Args:
+            server: Server name as configured in colin.toml.
+            name: Prompt name.
+            arguments: Prompt arguments as dict.
+
+        Returns:
+            Rendered prompt content as string.
+
+        Raises:
+            ValueError: If MCP manager not configured or server unknown.
+        """
+        if self.mcp_manager is None:
+            raise ValueError("No MCP servers configured")
+
+        op = self.doc_state.child(f"mcp_prompt:{server}", detail=name) if self.doc_state else None
+        with op if op else _nullcontext():
+            return await self.mcp_manager.get_prompt(server, name, arguments)

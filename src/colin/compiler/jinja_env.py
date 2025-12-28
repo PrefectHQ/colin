@@ -50,6 +50,7 @@ def bind_context_to_environment(
     # Core functions
     env.globals["ref"] = context.ref
     env.globals["mcp_resource"] = context.mcp_resource
+    env.globals["mcp_prompt"] = context.mcp_prompt
 
     # LLM filters
     env.filters["extract"] = create_extract_filter(context)
