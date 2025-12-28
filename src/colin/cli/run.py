@@ -12,8 +12,8 @@ from rich.text import Text
 
 from colin import api
 from colin.api.compile import CompileResult
-from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 from colin.compiler.state import CompilationState, Status
+from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
 console = Console()
 err_console = Console(stderr=True)

@@ -7,11 +7,11 @@ from pathlib import Path
 from colin.api.manifest import load_manifest, save_manifest
 from colin.api.project import find_project_file, load_project
 from colin.compiler import CompileEngine
+from colin.compiler.state import CompilationState
 from colin.exceptions import ProjectNotInitializedError
 from colin.models import CompiledDocument, Manifest
 from colin.plugins.inputs.file import FileInputPlugin
 from colin.settings import settings
-from colin.compiler.state import CompilationState
 
 
 class CompileResult:

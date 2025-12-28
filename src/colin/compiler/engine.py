@@ -13,6 +13,7 @@ from jinja2 import nodes
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
+from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.mcp import MCPManager
 from colin.models import (
@@ -21,7 +22,6 @@ from colin.models import (
     DocumentMeta,
     Manifest,
 )
-from colin.compiler.state import CompilationState, OperationState
 
 if TYPE_CHECKING:
     from colin.plugins.inputs.file import FileInputPlugin
