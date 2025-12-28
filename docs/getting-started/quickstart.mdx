@@ -1,0 +1,153 @@
+---
+title: Quickstart
+icon: rocket-launch
+---
+
+This guide will help you create your first Colin project, write interconnected documents, and compile them.
+
+If you haven't already installed Colin, follow the [installation instructions](/getting-started/installation).
+
+## Initialize a Project
+
+Create a new directory and initialize a Colin project:
+
+```bash
+mkdir my-context && cd my-context
+colin init
+```
+
+This creates:
+- `colin.toml` - Project configuration
+- `models/` - Directory for your source documents
+
+## Create Your First Document
+
+Documents in Colin are Markdown files with optional Jinja templating. Create a simple source document:
+
+```markdown models/company.md
+---
+name: Company Overview
+---
+
+Acme Corp builds developer tools that streamline CI/CD pipelines.
+Founded in 2020, we serve over 500 enterprise customers including
+Fortune 100 companies. Our platform reduces deployment time by 80%
+through intelligent caching and parallel execution.
+```
+
+## Reference Other Documents
+
+Now create a document that references the company overview using `ref()`:
+
+```markdown models/about.md
+---
+name: About Page
+---
+
+# About Us
+
+{{ ref('company').content }}
+```
+
+The `ref('company')` call does two things:
+1. Registers that `about.md` depends on `company.md`
+2. Returns a `RefResult` object with the compiled content
+
+## Compile Your Project
+
+Run the compiler:
+
+```bash
+colin run
+```
+
+You'll see output showing the compilation progress:
+
+```
+Config:  colin.toml
+Project: my-context
+Target:  target/
+
+✓ company.md
+✓ about.md
+```
+
+Colin detected the dependency and compiled `company.md` first, then `about.md`.
+
+## Transform Content with Extract
+
+The `| extract()` filter uses an LLM to pull specific information from a document:
+
+```markdown models/pitch.md
+---
+name: Sales Pitch
+---
+
+# Why Acme?
+
+{{ ref('company') | extract('the single most compelling benefit for enterprise buyers') }}
+
+# Key Stats
+
+{{ ref('company') | extract('quantitative metrics as bullet points') }}
+```
+
+Compile again:
+
+```bash
+colin run
+```
+
+```
+Config:  colin.toml
+Project: my-context
+Target:  target/
+
+✓ company.md
+✓ about.md
+✓ pitch.md
+  → llm:a1b2c3
+  → llm:d4e5f6
+```
+
+The `→ llm:` entries show LLM calls that were made. On subsequent runs with the same inputs, you'll see `⚡` indicating cached results.
+
+## LLM Blocks for Full Control
+
+For more complex transformations involving multiple sources, use `{% llm %}` blocks:
+
+```markdown models/executive-summary.md
+---
+name: Executive Summary
+---
+
+# Executive Summary
+
+{% llm %}
+Synthesize the following into a 3-paragraph executive summary:
+
+Company background:
+{{ ref('company').content }}
+
+Sales positioning:
+{{ ref('pitch').content }}
+
+Write for a board audience. Be concise.
+{% endllm %}
+```
+
+LLM blocks give you full control over the prompt, letting you combine multiple refs and provide specific instructions.
+
+## Incremental Builds
+
+Edit `company.md` and run `colin run` again. Colin detects that `company.md` changed and recompiles all documents that depend on it—but only those documents.
+
+## What's Next?
+
+You've learned the basics:
+- Initialize a project with `colin init`
+- Create documents with frontmatter
+- Reference other documents with `ref()`
+- Transform content with `| extract()`
+- Use `{% llm %}` blocks for multi-source synthesis
+- Compile with `colin run`

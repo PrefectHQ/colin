@@ -1,0 +1,61 @@
+---
+title: Welcome to Colin!
+sidebarTitle: Welcome!
+icon: hand-wave
+---
+
+Colin (**Co**ntext **Lin**eage) is a **context compiler** for the AI era. It does for agent context what dbt did for SQL: takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
+
+```yaml models/product-brief.md
+---
+name: Product Brief
+---
+
+# About Us
+
+{{ ref('company').content }}
+
+# What Makes Us Different
+
+{{ ref('company') | extract('top 3 differentiators for enterprise buyers') }}
+```
+
+```yaml models/company.md
+---
+name: Company Overview
+---
+
+Acme Corp builds developer tools that streamline CI/CD pipelines.
+Founded in 2020, we serve over 500 enterprise customers including
+Fortune 100 companies. Our platform reduces deployment time by 80%
+through intelligent caching and parallel execution.
+```
+
+## The Core Insight
+
+Like dbt's `ref()`, Colin's `ref()` function does double duty:
+
+1. **Registers a dependency edge** in the graph
+2. **Returns content** for use in the template
+
+This enables automatic dependency tracking without explicit declarations. When you compile, Colin builds the dependency graph from the refs that actually execute, compiles documents in topological order, and caches LLM calls for reproducibility.
+
+## Why Colin?
+
+Context is scattered everywhere—project trackers, customer conversations, documentation, databases. Agents need this context synthesized into useful formats: skills they can load on-demand, system prompts that shape their behavior, documentation for humans and machines.
+
+Today, this synthesis is manual. Someone writes a skill by hand, copy-pasting from various sources, hoping they didn't miss anything. When sources change, the skill goes stale. There's no lineage, no caching, no way to know what depends on what.
+
+**Colin solves this:**
+
+**Interconnected context**: Real-world context isn't isolated. Your product docs reference your company overview. Your API specs reference your data models. Colin makes these relationships explicit and manageable.
+
+**Incremental builds**: Change one source document and only rebuild what depends on it. No more reprocessing everything.
+
+**LLM caching**: LLM calls are cached by input hash. Same input, same output, no API call.
+
+**Full lineage**: The manifest tracks everything. You can see exactly what changed, when, and why—complete traceability across your context graph.
+
+## Get Started
+
+Ready to compile your first context? [Install](/getting-started/installation) Colin, then dive into the [Quickstart](/getting-started/quickstart) for a hands-on introduction.

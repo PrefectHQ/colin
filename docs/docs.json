@@ -1,0 +1,69 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "appearance": {
+    "default": "system",
+    "strict": false
+  },
+  "background": {
+    "color": {
+      "dark": "#222831",
+      "light": "#EEEEEE"
+    },
+    "decoration": "gradient"
+  },
+  "colors": {
+    "dark": "#00d4ff",
+    "light": "#0284c7",
+    "primary": "#0ea5e9"
+  },
+  "description": "A context compiler for the AI era.",
+  "errors": {
+    "404": {
+      "description": "You've wandered outside the context.",
+      "redirect": false,
+      "title": "Don't panic."
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/jlowin/colin"
+    }
+  },
+  "name": "Colin",
+  "navbar": {
+    "primary": {
+      "href": "https://github.com/jlowin/colin",
+      "type": "github"
+    }
+  },
+  "navigation": {
+    "anchors": [
+      {
+        "anchor": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "getting-started/welcome",
+              "getting-started/installation",
+              "getting-started/quickstart"
+            ]
+          }
+        ],
+        "icon": "book"
+      }
+    ]
+  },
+  "search": {
+    "prompt": "Search the docs..."
+  },
+  "styling": {
+    "codeblocks": {
+      "theme": {
+        "dark": "dark-plus",
+        "light": "snazzy-light"
+      }
+    }
+  },
+  "theme": "almond"
+}
