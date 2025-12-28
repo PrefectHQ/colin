@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from colin import api
+from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
 console = Console()
 err_console = Console(stderr=True)
@@ -37,23 +38,20 @@ def run(
     target: Path | None = None,
     force: bool = False,
     dry_run: bool = False,
-    init: bool = False,
 ) -> None:
     """Compile and run all models.
 
     Args:
         project: Project directory (default: current directory).
-        target: Override target directory (default: from colin.toml or ./target/).
+        target: Override target directory (default: from colin.toml).
         force: Force recompile all documents.
         dry_run: Show what would be run without running.
-        init: Create a new colin.toml if none exists.
     """
     asyncio.run(_run_async(
         project=project,
         target=target,
         force=force,
         dry_run=dry_run,
-        init=init,
     ))
 
 
@@ -63,7 +61,6 @@ async def _run_async(
     target: Path | None,
     force: bool,
     dry_run: bool,
-    init: bool,
 ) -> None:
     """Async implementation of run command."""
     try:
@@ -86,7 +83,6 @@ async def _run_async(
             project_dir=project,
             target_dir=target,
             force=force,
-            init_if_missing=init,
             dry_run=dry_run,
         )
 
@@ -117,11 +113,80 @@ async def _run_async(
                 summary_parts[-1] += f" (${result.total_cost:.4f})"
         console.print(f"\n[green]Done.[/] {' · '.join(summary_parts)}")
 
+    except MultipleCompilationErrors as e:
+        err_console.print("\n[red bold]Compilation failed[/]")
+        err_console.print()
+        doc_items = list(e.errors.items())
+        for i, (uri, doc_errors) in enumerate(doc_items):
+            is_last_doc = i == len(doc_items) - 1
+            err_console.print(f"[yellow]{uri}.md[/]")
+            for j, err in enumerate(doc_errors):
+                is_last_err = j == len(doc_errors) - 1
+                prefix = "└──" if is_last_err else "├──"
+                err_console.print(f"  {prefix} [red]✗[/] {err}")
+            if not is_last_doc:
+                err_console.print()
+        err_console.print()
+        error_count = sum(len(errs) for errs in e.errors.values())
+        err_console.print(
+            f"[dim]{error_count} error(s) in {len(e.errors)} document(s)[/]"
+        )
+        sys.exit(1)
+    except ProjectNotInitializedError as e:
+        err_console.print(f"[red]Error:[/] {e}")
+        err_console.print("[dim]Run `cbt init` to create a new project[/]")
+        sys.exit(1)
     except ValueError as e:
         err_console.print(f"[red]Error:[/] {e}")
         sys.exit(1)
     except Exception as e:
         err_console.print(f"[red]Unexpected error:[/] {e}")
+        sys.exit(1)
+
+
+@app.command
+def init(
+    project: Path = Path("."),
+    *,
+    name: str | None = None,
+    models: str = "models",
+    target: str = "target",
+) -> None:
+    """Initialize a new Colin project.
+
+    Creates colin.toml and models directory.
+
+    Args:
+        project: Project directory (default: current directory).
+        name: Project name (default: directory name).
+        models: Path to models directory (default: "models").
+        target: Path to target directory (default: "target").
+    """
+    project_dir = project.resolve()
+
+    try:
+        project_file, model_dir = api.init_project(
+            directory=project_dir,
+            name=name,
+            model_path=models,
+            target_path=target,
+        )
+
+        cwd = Path.cwd()
+        try:
+            project_display = project_file.relative_to(cwd)
+            model_display = model_dir.relative_to(cwd)
+        except ValueError:
+            project_display = project_file
+            model_display = model_dir
+
+        console.print(f"[green]Created:[/] {project_display}")
+        console.print(f"[green]Created:[/] {model_display}/")
+        console.print()
+        console.print("[dim]Add .md files to models/ and run `cbt run`[/]")
+
+    except FileExistsError as e:
+        err_console.print(f"[red]Error:[/] {e}")
         sys.exit(1)
 
 

@@ -95,6 +95,47 @@ def create_project(directory: Path, name: str | None = None) -> Path:
     return project_file
 
 
+def init_project(
+    directory: Path,
+    name: str | None = None,
+    model_path: str = "models",
+    target_path: str = "target",
+) -> tuple[Path, Path]:
+    """Initialize a new Colin project with colin.toml and models directory.
+
+    Args:
+        directory: Directory to create project in.
+        name: Project name (default: directory name).
+        model_path: Path to models directory (default: "models").
+        target_path: Path to target directory (default: "target").
+
+    Returns:
+        Tuple of (colin.toml path, models directory path).
+
+    Raises:
+        FileExistsError: If colin.toml already exists.
+    """
+    project_file = directory / PROJECT_FILE
+
+    if project_file.exists():
+        raise FileExistsError(f"Project already exists: {project_file}")
+
+    # Create colin.toml with full config
+    project_name = name or directory.name
+    config = ProjectConfig(
+        name=project_name,
+        model_path=model_path,
+        target_path=target_path,
+    )
+    save_project(project_file, config)
+
+    # Create models directory
+    model_dir = directory / model_path
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    return project_file, model_dir
+
+
 def save_project(path: Path, config: ProjectConfig) -> None:
     """Save project configuration to colin.toml.
 

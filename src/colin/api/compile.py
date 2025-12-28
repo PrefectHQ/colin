@@ -6,12 +6,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from colin.api.manifest import load_manifest, save_manifest
-from colin.api.project import (
-    create_project,
-    find_project_file,
-    load_project,
-)
+from colin.api.project import find_project_file, load_project
 from colin.compiler import CompileEngine
+from colin.exceptions import ProjectNotInitializedError
 from colin.llm.stub import StubLLMProvider
 from colin.models import CompiledDocument, Manifest
 from colin.plugins.inputs.file import FileInputPlugin
@@ -58,66 +55,37 @@ async def compile_project(
     target_dir: Path | None = None,
     force: bool = False,
     llm_provider: LLMProvider | None = None,
-    init_if_missing: bool = False,
     dry_run: bool = False,
 ) -> CompileResult | list[tuple[str, Path]]:
     """Compile all documents in a project.
 
     Args:
-        project_dir: Project directory (should contain colin.toml or models/).
-        target_dir: Override target directory (default: from colin.toml or ./target/).
+        project_dir: Project directory (must contain colin.toml).
+        target_dir: Override target directory (default: from colin.toml).
         force: Force recompile all documents.
         llm_provider: LLM provider to use (default: StubLLMProvider).
-        init_if_missing: Create colin.toml if it doesn't exist.
         dry_run: If True, return list of (uri, path) tuples instead of compiling.
 
     Returns:
         CompileResult with compiled documents and manifest, or list of (uri, path) if dry_run.
 
     Raises:
-        FileNotFoundError: If project directory doesn't exist.
-        ValueError: If no models found and init_if_missing is False.
+        ProjectNotInitializedError: If no colin.toml found.
     """
     project_dir = project_dir.resolve()
 
-    # Find or create project file
+    # Find project file - required
     project_file = find_project_file(project_dir)
 
-    if project_file:
-        config = load_project(project_file)
-        project_name = config.name
-        model_dir = (project_file.parent / config.model_path).resolve()
-        target_dir = target_dir or (project_file.parent / config.target_path).resolve()
-    else:
-        project_name = None
-        model_dir = (project_dir / "models").resolve()
+    if not project_file:
+        raise ProjectNotInitializedError(
+            f"No colin.toml found in {project_dir}"
+        )
 
-        if not model_dir.exists():
-            if not init_if_missing:
-                raise ValueError(
-                    f"Models directory not found: {model_dir}. "
-                    "Use init_if_missing=True to create a project."
-                )
-            # Will create project below
-
-        model_files = list(model_dir.rglob("*.md")) if model_dir.exists() else []
-        if not model_files:
-            if not init_if_missing:
-                raise ValueError(
-                    f"No .md files found in: {model_dir}. "
-                    "Use init_if_missing=True to create a project."
-                )
-
-        if init_if_missing:
-            project_file = create_project(project_dir, name=project_dir.name)
-            project_name = project_dir.name
-            config = load_project(project_file)
-            target_dir = target_dir or (project_dir / config.target_path).resolve()
-        else:
-            raise ValueError(
-                f"No colin.toml found in {project_dir}. "
-                "Use init_if_missing=True to create one."
-            )
+    config = load_project(project_file)
+    project_name = config.name
+    model_dir = (project_file.parent / config.model_path).resolve()
+    target_dir = target_dir or (project_file.parent / config.target_path).resolve()
 
     # Set up input plugin
     compiled_dir = target_dir / "compiled"

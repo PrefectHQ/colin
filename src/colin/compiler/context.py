@@ -15,6 +15,11 @@ if TYPE_CHECKING:
     from colin.plugins.inputs.file import FileInputPlugin
 
 
+def _has_scheme(uri: str) -> bool:
+    """Check if a URI has an explicit scheme (e.g., file://, github://)."""
+    return "://" in uri
+
+
 class CompileContext:
     """Tracks state during document compilation.
 
@@ -51,11 +56,17 @@ class CompileContext:
         self.total_cost: float = 0.0
 
     async def ref(self, uri: str) -> RefResult:
-        """Fetch content from a local .colin file.
+        """Fetch content from a referenced document.
 
         This:
-        1. Records the dependency edge
-        2. Returns the compiled content of the referenced document
+        1. Validates schemaless refs exist within project (compile-time check)
+        2. Records the dependency edge
+        3. Returns the compiled content of the referenced document
+
+        Schemaless URIs (e.g., 'reports/summary') must resolve within the
+        project boundary - this is validated at compile time. Scheme URIs
+        (e.g., 'file://path/to/file') are external references validated
+        at runtime.
 
         Args:
             uri: URI of the document to reference.
@@ -66,6 +77,15 @@ class CompileContext:
         Raises:
             RefNotFoundError: If the referenced document doesn't exist.
         """
+        # Validate schemaless refs exist within project (compile-time guard)
+        if not _has_scheme(uri):
+            model_path = self.input_plugin.uri_to_model_path(uri)
+            if model_path is None:
+                raise RefNotFoundError(
+                    f"Referenced document '{uri}' not found in project. "
+                    f"Schemaless refs must resolve within the project boundary."
+                )
+
         # Record the dependency
         if uri not in self.refs_evaluated:
             self.refs_evaluated.append(uri)

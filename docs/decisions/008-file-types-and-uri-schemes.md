@@ -58,6 +58,24 @@ ref('reports/quarterly')  # Equivalent to ref('file://reports/quarterly')
 
 Local model refs can omit the scheme since they're always local files.
 
+### Ref Scope and Error Semantics
+
+Schemaless refs and scheme refs have different scope and error behavior:
+
+| Reference | Scope | Validation | Error Type |
+|-----------|-------|------------|------------|
+| `path/to/file` | Project-local | Must exist within project | **Compilation error** |
+| `file://path/to/file` | Filesystem | External, explicit path | **Runtime error** |
+
+**Schemaless refs** are guaranteed to resolve within your project boundary. They are validated at compile time and are portable across machines (the project contains everything needed).
+
+**Scheme refs** (like `file://`) explicitly reach outside the project. The user takes responsibility for the external dependency. Missing files become runtime concerns because:
+- Different machines may have different filesystem layouts
+- External paths are environment-specific by design
+- We can't validate external resources at compile time
+
+This makes schemaless refs "safe by default" while scheme refs are "explicit and environment-aware."
+
 ### Custom URIs via Frontmatter
 
 A file can declare a custom URI to decouple reference name from file path:

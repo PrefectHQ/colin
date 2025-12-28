@@ -8,6 +8,7 @@ from colin.api.project import (
     create_project,
     find_project_file,
     get_project_status,
+    init_project,
     load_project,
     save_project,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "find_project_file",
     "load_project",
     "create_project",
+    "init_project",
     "save_project",
     "get_project_status",
     "clean_project",

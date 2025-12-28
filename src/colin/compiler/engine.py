@@ -12,6 +12,7 @@ from jinja2 import nodes
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
+from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
     ColinDocument,
     CompiledDocument,
@@ -66,22 +67,33 @@ class CompileEngine:
         uris = {doc.uri for doc in documents}
         compile_order = self.graph.topological_sort(uris)
 
-        # Phase 4: Compile in order
+        # Phase 4: Compile in order, collecting all errors
         compiled: list[CompiledDocument] = []
         compiled_outputs: dict[str, CompiledDocument] = {}  # For in-memory ref lookup
         doc_map = {doc.uri: doc for doc in documents}
+        errors: dict[str, list[Exception]] = {}
 
         for uri in compile_order:
             doc = doc_map[uri]
-            result = await self._compile_document(doc, compiled_outputs)
-            compiled.append(result)
-            compiled_outputs[uri] = result
+            try:
+                result = await self._compile_document(doc, compiled_outputs)
+                compiled.append(result)
+                compiled_outputs[uri] = result
 
-            # Write output immediately so refs can find it
-            self._write_output(result)
+                # Write output immediately so refs can find it
+                self._write_output(result)
 
-            # Update manifest
-            self._update_manifest(result)
+                # Update manifest
+                self._update_manifest(result)
+            except Exception as e:
+                # Collect error for this document
+                if uri not in errors:
+                    errors[uri] = []
+                errors[uri].append(e)
+
+        # Raise collected errors if any
+        if errors:
+            raise MultipleCompilationErrors(errors)
 
         # Update manifest timestamp
         self.manifest.compiled_at = datetime.now(timezone.utc)
