@@ -31,6 +31,14 @@ def _is_project_uri(uri: str) -> bool:
     return uri.startswith("project://")
 
 
+def _truncate(text: str, max_len: int = 40) -> str:
+    """Truncate text for display, collapsing whitespace."""
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= max_len:
+        return f"'{collapsed}'"
+    return f"'{collapsed[: max_len - 3]}...'"
+
+
 class CompileContext:
     """Tracks state during document compilation.
 
@@ -163,7 +171,7 @@ class CompileContext:
         if cached_call:
             self.llm_calls[effective_id] = cached_call  # Preserve in manifest
             if self.doc_state is not None:
-                self.doc_state.child(f"extract:{effective_id}").mark_cached()
+                self.doc_state.child("extract").mark_cached()
             return cached_call.output
 
         # Get previous output for stability
@@ -177,11 +185,7 @@ class CompileContext:
         full_prompt = render_extract_prompt(content, prompt, previous_output)
 
         # Call LLM (with state tracking if enabled)
-        op = (
-            self.doc_state.child(f"extract:{effective_id}", detail=effective_model)
-            if self.doc_state
-            else None
-        )
+        op = self.doc_state.child("extract", detail=_truncate(prompt)) if self.doc_state else None
         with op if op else _nullcontext():
             agent: Agent[None, LLMOutput] = Agent(
                 effective_model,
@@ -234,7 +238,7 @@ class CompileContext:
         if cached_call:
             self.llm_calls[effective_id] = cached_call  # Preserve in manifest
             if self.doc_state is not None:
-                self.doc_state.child(f"llm:{effective_id}").mark_cached()
+                self.doc_state.child("llm").mark_cached()
             return cached_call.output
 
         # Get previous output for stability
@@ -248,11 +252,7 @@ class CompileContext:
         full_prompt = render_complete_prompt(body, previous_output)
 
         # Call LLM (with state tracking if enabled)
-        op = (
-            self.doc_state.child(f"llm:{effective_id}", detail=effective_model)
-            if self.doc_state
-            else None
-        )
+        op = self.doc_state.child("llm", detail=_truncate(body)) if self.doc_state else None
         with op if op else _nullcontext():
             agent: Agent[None, LLMOutput] = Agent(
                 effective_model,
