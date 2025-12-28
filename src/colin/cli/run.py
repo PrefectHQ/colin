@@ -74,11 +74,12 @@ def render_state(state: CompilationState) -> RenderableType:
             child_icon = _get_icon(child)
             detail = f" ({child.detail})" if child.detail else ""
 
-            # Shorten the operation name for display
+            # Shorten hash-based IDs for display, but keep meaningful names
             op_name = child.name
             if ":" in op_name:
                 op_type, op_id = op_name.split(":", 1)
-                if len(op_id) > 12:
+                # Only truncate auto-generated hash IDs, not meaningful names like refs
+                if op_type not in ("ref", "mcp", "mcp_prompt") and len(op_id) > 12:
                     op_id = op_id[:12]
                 op_name = f"{op_type}:{op_id}"
 
