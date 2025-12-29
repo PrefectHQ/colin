@@ -204,33 +204,8 @@ colin mcp add linear --url https://...
 colin mcp list
 ```
 
-## Project Structure
-
-```
-my-project/
-├── colin.toml           # Configuration
-├── models/              # Source documents
-│   ├── sources/
-│   │   └── metrics.md
-│   └── summaries/
-│       └── weekly.md
-└── target/              # Compiled output
-    ├── compiled/
-    └── manifest.json    # Lineage + cache
-```
-
----
-
-## Coming Soon
-
-- **MCP resource integration** — `{{ mcp_resource('linear', 'projects') }}` to pull live data
-- **Watch mode** — Recompile on file changes
-- **Cost tracking** — Per-document LLM cost attribution
-
 ---
 
 ## Part of Prefect's Context Layer
 
-Colin is built by [Prefect](https://prefect.io) as part of our mission to deliver the right context to agents at the right time. It connects to [MCP](https://modelcontextprotocol.io) for data access and produces [Agent Skills](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/prompt_caching) for delivery.
-
-Apache 2.0
+Colin is built by [Prefect](https://prefect.io) as part of our mission to deliver the right context at the right time.
