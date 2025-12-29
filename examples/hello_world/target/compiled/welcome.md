@@ -11,17 +11,16 @@ Colin automatically compiles documents in the right order based on their depende
 
 ## Translation for French Users
 
-Here's a natural French translation that maintains a welcoming yet professional tone suitable for a technical audience:
+# French Translation
 
-**Bonjour ! Bienvenue sur Colin.**
+Bonjour ! Bienvenue à Colin.
 
-**Ceci est un document simple que d'autres documents peuvent référencer.**
+Ceci est un document simple que d'autres documents peuvent référencer.
 
 ---
 
-**Notes on the translation:**
-- "Bonjour !" is the standard French greeting, appropriate for all contexts
-- "Bienvenue sur Colin" uses "sur" (on) which is the natural preposition for welcoming someone to a platform/library in French
-- "Ceci est un document simple" maintains the straightforward, technical tone
-- "que d'autres documents peuvent référencer" is the natural way to express "that other documents can reference" in French
-- The overall tone remains warm yet professional, suitable for technical documentation
+**Alternative (slightly more formal):**
+
+Bienvenue à Colin !
+
+Ceci est un document simple auquel d'autres documents peuvent faire référence.

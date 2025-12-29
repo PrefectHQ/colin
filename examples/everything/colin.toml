@@ -1,0 +1,21 @@
+[project]
+name = "everything"
+version = "0.1.0"
+default-llm-model = "anthropic:claude-haiku-4-5"
+
+[paths]
+models = "models"
+target = "target"
+
+[mcp.servers.demo]
+command = "uvx"
+args = [
+    "--with",
+    "fastmcp",
+    "fastmcp",
+    "run",
+    "--no-banner",
+    "--log-level",
+    "ERROR",
+    "examples/everything/mcp_server.py",
+]
