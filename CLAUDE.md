@@ -19,11 +19,13 @@ uv run pytest              # Run tests
 **CRITICAL**: These docs must be kept up to date with all work:
 
 ### `docs/architecture.md`
+
 - Live updated architectural overview
 - Must reflect current system design
 - Update when architecture changes
 
 ### `docs/decisions/`
+
 - Architecture Decision Records (ADRs)
 - Format: `NNN-short-name.md` (e.g., `001-mvp-scope.md`)
 - Record *why* core decisions were made
@@ -31,22 +33,11 @@ uv run pytest              # Run tests
 - Not every small choice - only significant architectural decisions
 
 **When to create an ADR:**
+
 - Choosing between multiple valid approaches
 - Scope decisions (what's in/out)
 - Technology choices
 - Pattern decisions that affect multiple components
-
-## Repository Structure
-
-| Path | Purpose |
-|------|---------|
-| `src/colin/` | Library source code (Python ≥ 3.10) |
-| `├─compiler/` | Compilation engine and context |
-| `├─extensions/` | Jinja extensions ({% llm %}, filters) |
-| `├─plugins/` | Input, output, materialization plugins |
-| `├─llm/` | LLM provider interface and implementations |
-| `tests/` | Comprehensive pytest suite |
-| `docs/` | Architecture docs and ADRs |
 
 ## Testing Standards
 
