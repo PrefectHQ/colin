@@ -18,7 +18,7 @@ PROJECT_FILE = "colin.toml"
 
 DEFAULT_CONFIG = """\
 # Colin project configuration
-# https://github.com/jlowin/colin
+# https://github.com/prefecthq/colin
 
 [project]
 name = "{name}"
