@@ -1,7 +1,5 @@
-# Colin project configuration
-# https://github.com/jlowin/colin
-
 [project]
 name = "hello_world"
 model-path = "models"
 target-path = "target"
+default-llm-model = "anthropic:claude-haiku-4-5"
