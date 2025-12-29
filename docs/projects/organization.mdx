@@ -1,0 +1,185 @@
+---
+title: Project Organization
+sidebarTitle: Organization
+icon: folder-tree
+---
+
+A Colin project is a directory containing a `colin.toml` configuration file and a `models/` directory with your source documents. When you compile, Colin reads from `models/` and writes to `target/`.
+
+## Project Structure
+
+A typical project looks like this:
+
+```
+my-project/
+├── colin.toml          # Project configuration
+├── models/             # Source documents
+│   ├── company.md
+│   ├── products/
+│   │   ├── widget.md
+│   │   └── gadget.md
+│   └── team/
+│       └── overview.md
+└── target/             # Compiled output (generated)
+    ├── manifest.json
+    ├── company.md
+    ├── products/
+    │   ├── widget.md
+    │   └── gadget.md
+    └── team/
+        └── overview.md
+```
+
+Colin discovers all `.md` files in `models/` recursively, compiles them in dependency order, and mirrors the directory structure into `target/`.
+
+## Configuration
+
+The `colin.toml` file defines project settings:
+
+```toml colin.toml
+[project]
+name = "my-context"
+model-path = "models"
+target-path = "target"
+```
+
+| Setting | Description | Default |
+| :------ | :---------- | :------ |
+| `name` | Project name for display | Directory name |
+| `model-path` | Source documents directory | `models` |
+| `target-path` | Compiled output directory | `target` |
+| `default-llm-model` | Default model for LLM operations | `anthropic:claude-sonnet-4-5` |
+
+### MCP Servers
+
+Configure MCP servers for external data sources:
+
+```toml colin.toml
+[project]
+name = "my-context"
+
+[mcp.servers.github]
+command = "uvx"
+args = ["mcp-server-github"]
+
+[mcp.servers.linear]
+command = "npx"
+args = ["@linear/mcp-server"]
+```
+
+Reference MCP resources in documents with the `mcp_resource()` function:
+
+```markdown
+{{ mcp_resource('github', 'repo://owner/repo/readme') }}
+```
+
+## Initializing Projects
+
+Create a new project with `colin init`:
+
+```bash
+mkdir my-context && cd my-context
+colin init
+```
+
+This creates `colin.toml` and an empty `models/` directory. Add documents to `models/` and run `colin run` to compile.
+
+For an existing directory:
+
+```bash
+cd existing-project
+colin init
+```
+
+Colin creates the configuration file using the directory name as the project name.
+
+## Organizing Documents
+
+Use subdirectories to group related documents. The directory structure becomes part of each document's URI:
+
+```
+models/
+├── context/
+│   ├── company.md          → URI: context/company
+│   └── industry.md         → URI: context/industry
+├── products/
+│   ├── overview.md         → URI: products/overview
+│   └── features/
+│       ├── core.md         → URI: products/features/core
+│       └── enterprise.md   → URI: products/features/enterprise
+└── skills/
+    └── support-agent.md    → URI: skills/support-agent
+```
+
+Reference documents using their full URI path:
+
+```markdown models/skills/support-agent.md
+---
+name: Support Agent Context
+---
+
+# Company Background
+
+{{ ref('context/company').content }}
+
+# Product Knowledge
+
+{{ ref('products/overview').content }}
+{{ ref('products/features/core').content }}
+```
+
+### Naming Conventions
+
+Choose clear, descriptive names that indicate document purpose:
+
+**Source documents** contain raw or lightly processed information:
+- `sources/customer-calls.md`
+- `sources/linear-projects.md`
+
+**Context documents** synthesize information from multiple sources:
+- `context/project-health.md`
+- `context/customer-sentiment.md`
+
+**Output documents** produce final artifacts like skills or prompts:
+- `skills/project-status.md`
+- `prompts/support-agent.md`
+
+This convention makes dependency flow visible: sources feed context, context feeds outputs.
+
+## The Target Directory
+
+The `target/` directory contains all compiled outputs:
+
+```
+target/
+├── manifest.json       # Compilation metadata and cache
+├── company.md          # Compiled documents mirror
+├── products/           # source structure
+│   └── widget.md
+└── ...
+```
+
+**`manifest.json`** tracks compilation state: document hashes, dependency edges, LLM call cache, and timestamps. Colin uses this to determine what needs recompilation.
+
+Compiled documents are plain Markdown with all Jinja templating resolved and LLM outputs substituted. You can read them directly or serve them to other systems.
+
+### Cleaning Up
+
+Remove all compiled outputs with:
+
+```bash
+colin clean
+```
+
+This deletes the entire `target/` directory. The next `colin run` performs a full recompilation.
+
+## Finding the Project
+
+Colin searches for `colin.toml` starting from the current directory and walking up to parent directories. This lets you run commands from any subdirectory:
+
+```bash
+cd my-project/models/products
+colin run  # Finds colin.toml in my-project/
+```
+
+If no `colin.toml` exists in the directory tree, Colin uses sensible defaults: `models/` for source, `target/` for output, and the current directory name as the project name.

@@ -1,0 +1,227 @@
+---
+title: Materialization
+sidebarTitle: Materialization
+icon: layer-group
+---
+
+Materialization determines which documents Colin compiles and in what order. When you run `colin run`, Colin doesn't blindly recompile everything. It analyzes your project's dependency graph, detects what has changed since the last run, and compiles only the affected documents.
+
+This incremental approach keeps compilation fast. Small changes to your context rebuild quickly, while unchanged documents and their cached LLM results remain untouched.
+
+## Change Detection
+
+Colin determines if a document needs recompilation by checking two conditions: whether the source file changed, and whether any of its dependencies changed.
+
+### Source Hashing
+
+Each document's source file is hashed using SHA-256. Colin stores this hash in the manifest:
+
+```json
+{
+  "documents": {
+    "context/company": {
+      "source_hash": "a3f2c1b4e5d6",
+      "output_hash": "7e8f9a0b1c2d"
+    }
+  }
+}
+```
+
+On the next run, Colin computes the current hash and compares it against the stored value. If they differ, the document recompiles.
+
+### Dependency Checking
+
+Even if a document's source hasn't changed, it may need recompilation because something it depends on changed. Colin tracks which refs each document evaluated during its last compilation:
+
+```json
+{
+  "documents": {
+    "skills/support-agent": {
+      "source_hash": "d4e5f6a7b8c9",
+      "refs_evaluated": ["context/company", "context/products"]
+    }
+  }
+}
+```
+
+If either `context/company` or `context/products` recompiles during the current run, `skills/support-agent` must also recompile to incorporate the updated content.
+
+## Dependency Propagation
+
+Changes propagate downstream through the dependency graph. Colin builds this graph by parsing `ref()` calls from your templates before compilation begins.
+
+Consider a project with these dependencies:
+
+```
+sources/linear.md
+       ↓
+context/project-health.md
+       ↓
+skills/status-agent.md
+```
+
+When `sources/linear.md` changes:
+
+1. Colin detects the source hash changed
+2. It finds downstream dependents: `context/project-health.md`
+3. It continues traversing: `skills/status-agent.md` depends on `context/project-health.md`
+4. All three documents are marked for recompilation
+
+This downstream closure ensures that changes flow through your context graph correctly. A document's output only reflects its current inputs, never stale dependencies.
+
+### Shared Dependencies
+
+Documents can share dependencies. When the shared document changes, all dependents recompile:
+
+```
+           context/company.md
+          ↙                ↘
+products/overview.md    team/roster.md
+          ↘                ↙
+           skills/onboarding.md
+```
+
+If `context/company.md` changes, both `products/overview.md` and `team/roster.md` recompile, which then triggers `skills/onboarding.md` to recompile as well.
+
+## LLM Caching
+
+LLM calls are expensive in both time and cost. Colin caches their results based on input hashes.
+
+### Automatic Cache Keys
+
+Without an explicit ID, Colin generates a cache key from the call's input:
+
+```markdown
+{{ ref('sources/calls') | extract('top 5 complaints') }}
+```
+
+The cache key combines:
+- The input content (the ref's compiled output)
+- The operation type (`extract`)
+- The parameters (the prompt string)
+
+If all of these match a previous call, Colin returns the cached result without invoking the LLM.
+
+### Manual Cache Keys
+
+With an explicit ID, the cache key is stable across prompt changes:
+
+```markdown
+{{ ref('sources/calls') | extract('top 5 customer complaints', id='complaints') }}
+```
+
+Cache key: `complaints`
+
+You can refine the prompt wording without invalidating the cache. The LLM receives both the new input and its previous output, allowing it to maintain consistency when inputs are similar.
+
+### Cache Storage
+
+LLM call results live in the manifest alongside document metadata:
+
+```json
+{
+  "documents": {
+    "context/analysis": {
+      "llm_calls": {
+        "auto:7e8f9a0b": {
+          "input_hash": "c2d3e4f5",
+          "output_hash": "a1b2c3d4",
+          "output": "The analysis shows...",
+          "model": "anthropic:claude-sonnet-4-5",
+          "cost_usd": 0.003
+        },
+        "complaints": {
+          "input_hash": "f6a7b8c9",
+          "output_hash": "e5d4c3b2",
+          "output": "1. Slow response times...",
+          "model": "anthropic:claude-sonnet-4-5",
+          "cost_usd": 0.002
+        }
+      }
+    }
+  }
+}
+```
+
+Auto-generated keys start with `auto:` followed by a hash. Manual keys use the ID directly.
+
+## The Manifest
+
+The `manifest.json` file in your `target/` directory tracks all compilation state. It records:
+
+- Document metadata (source hashes, output hashes, timestamps)
+- Dependency edges (which refs each document evaluated)
+- LLM call cache (inputs, outputs, costs)
+- Compilation timestamps
+
+A typical manifest structure:
+
+```json
+{
+  "version": "1",
+  "compiled_at": "2024-01-15T10:30:00Z",
+  "documents": {
+    "context/company": {
+      "uri": "context/company",
+      "source_path": "/path/to/models/context/company.md",
+      "source_hash": "a3f2c1b4",
+      "output_hash": "7e8f9a0b",
+      "compiled_at": "2024-01-15T10:30:00Z",
+      "refs_evaluated": [],
+      "llm_calls": {},
+      "total_cost_usd": 0
+    },
+    "skills/agent": {
+      "uri": "skills/agent",
+      "source_path": "/path/to/models/skills/agent.md",
+      "source_hash": "d4e5f6a7",
+      "output_hash": "1c2d3e4f",
+      "compiled_at": "2024-01-15T10:30:00Z",
+      "refs_evaluated": ["context/company"],
+      "llm_calls": {
+        "summary": {
+          "call_id": "summary",
+          "input_hash": "b8c9d0e1",
+          "output_hash": "f2a3b4c5",
+          "output": "Our company provides...",
+          "model": "anthropic:claude-sonnet-4-5",
+          "cost_usd": 0.004,
+          "created_at": "2024-01-15T10:30:00Z"
+        }
+      },
+      "total_cost_usd": 0.004
+    }
+  }
+}
+```
+
+### Manifest Location
+
+The manifest writes to `target/manifest.json` by default. If you override the target directory with `--target`, the manifest goes there instead.
+
+## Force Recompilation
+
+Sometimes you want fresh results regardless of what changed. The `--force` flag discards the manifest and recompiles everything:
+
+```bash
+colin run --force
+```
+
+This is useful when:
+- You want new LLM outputs even though inputs haven't changed
+- External context (not tracked by Colin) has changed
+- You suspect the cache is stale or corrupted
+
+Force recompilation incurs the full cost of all LLM calls since nothing is cached.
+
+## Cleaning
+
+The `colin clean` command removes the entire `target/` directory, including the manifest:
+
+```bash
+colin clean
+```
+
+After cleaning, the next `colin run` behaves like a fresh project with no history. All documents compile and all LLM calls execute.
+
+Use cleaning when you want a complete reset, such as before archiving compiled outputs or when troubleshooting unexpected behavior.

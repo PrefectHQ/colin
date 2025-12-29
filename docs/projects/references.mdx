@@ -1,0 +1,145 @@
+---
+title: References
+sidebarTitle: References
+icon: link
+---
+
+The `ref()` function connects documents together. It fetches content from another document while registering a dependency edge in Colin's compilation graph.
+
+Colin uses these dependency edges to compile documents in the correct order and rebuild only what changes.
+
+## Basic Usage
+
+Call `ref()` with a document's URI to get its compiled content:
+
+```markdown models/product-brief.md
+---
+name: Product Brief
+---
+
+# About Us
+
+{{ ref('company').content }}
+
+# Our Products
+
+{{ ref('products/main').content }}
+```
+
+When this document compiles, Colin ensures `company` and `products/main` compile first. The `.content` property contains each document's full compiled output.
+
+## What ref() Returns
+
+The `ref()` function returns a `RefResult` object, not a raw string. This object carries metadata alongside the content:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | The compiled document output |
+| `name` | `str` | Document name from frontmatter (or filename) |
+| `description` | `str \| None` | Description from frontmatter |
+| `template` | `str` | Raw source template before compilation |
+| `updated` | `datetime` | When the document was last compiled |
+| `uri` | `str` | The document's URI |
+
+Access these properties when you need more than just content:
+
+```markdown models/index.md
+---
+name: Document Index
+---
+
+# Available Documents
+
+{% for doc_uri in ['company', 'products/main', 'team/overview'] %}
+{% set doc = ref(doc_uri) %}
+## {{ doc.name }}
+
+{{ doc.description or 'No description available.' }}
+
+{% endfor %}
+```
+
+## String Conversion
+
+When you use a `RefResult` directly in a string context (like `{{ ref('doc') }}`), it returns a placeholder rather than the full content. This prevents accidentally dumping large documents:
+
+```markdown
+{{ ref('company') }}
+```
+
+Outputs: `Ref('company')`
+
+Always use `.content` to get the actual content:
+
+```markdown
+{{ ref('company').content }}
+```
+
+## Dependency Registration
+
+Every `ref()` call registers a dependency edge. Colin tracks these edges to:
+
+1. **Order compilation** - Referenced documents compile before their dependents
+2. **Detect changes** - When a document changes, Colin recompiles all dependents
+3. **Build lineage** - The manifest records the full dependency graph
+
+Consider this chain:
+
+```
+company.md
+    ↓
+product-brief.md (refs company)
+    ↓
+sales-deck.md (refs product-brief)
+```
+
+If `company.md` changes, Colin recompiles all three. If only `sales-deck.md` changes, only it recompiles.
+
+## Using with Filters
+
+Combine `ref()` with filters to transform referenced content:
+
+```markdown models/summary.md
+---
+name: Executive Summary
+---
+
+# Key Points
+
+{{ ref('full-report') | extract('the 3 most important findings') }}
+```
+
+The `extract()` filter passes the `RefResult` through an LLM with your prompt. Since `RefResult` knows its content, the filter can access what it needs.
+
+Other useful patterns:
+
+```markdown
+{# Extract specific information #}
+{{ ref('customer-calls') | extract('top customer complaints') }}
+
+{# Chain multiple refs in an LLM block #}
+{% llm %}
+Compare these two analyses:
+
+Analysis A: {{ ref('q1-report').content }}
+Analysis B: {{ ref('q2-report').content }}
+
+Identify trends and changes.
+{% endllm %}
+```
+
+## URI Resolution
+
+URIs are relative paths from your `models/` directory, without the `.md` extension:
+
+| File | URI to Reference |
+| :--- | :--------------- |
+| `models/overview.md` | `ref('overview')` |
+| `models/team/leads.md` | `ref('team/leads')` |
+| `models/reports/2024/q1.md` | `ref('reports/2024/q1')` |
+
+Colin validates that referenced documents exist at compile time. A reference to a non-existent document fails immediately with a clear error:
+
+```
+RefNotFoundError: Referenced document 'missing-doc' not found in project.
+```

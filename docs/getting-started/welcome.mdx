@@ -4,9 +4,11 @@ sidebarTitle: Welcome!
 icon: hand-wave
 ---
 
-Colin (**Co**ntext **Lin**eage) is a **context compiler** for the AI era. It does for agent context what dbt did for SQL: takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
+Colin is a **context compiler** for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
 
-```yaml models/product-brief.md
+<CodeGroup>
+
+```markdown Model
 ---
 name: Product Brief
 ---
@@ -17,28 +19,30 @@ name: Product Brief
 
 # What Makes Us Different
 
-{{ ref('company') | extract('top 3 differentiators for enterprise buyers') }}
+{{ ref('company') | extract('top 3 differentiators') }}
 ```
 
-```yaml models/company.md
+```markdown Compiled
 ---
-name: Company Overview
+name: Product Brief
 ---
 
-Acme Corp builds developer tools that streamline CI/CD pipelines.
-Founded in 2020, we serve over 500 enterprise customers including
-Fortune 100 companies. Our platform reduces deployment time by 80%
-through intelligent caching and parallel execution.
+# About Us
+
+Acme Corp builds developer tools that streamline CI/CD
+pipelines. Founded in 2020, we serve over 500 enterprise
+customers including Fortune 100 companies.
+
+# What Makes Us Different
+
+1. **Intelligent Caching**: 80% faster deployments
+2. **Enterprise Scale**: Fortune 100 proven
+3. **Developer Experience**: Zero-config setup
 ```
 
-## The Core Insight
+</CodeGroup>
 
-Like dbt's `ref()`, Colin's `ref()` function does double duty:
-
-1. **Registers a dependency edge** in the graph
-2. **Returns content** for use in the template
-
-This enables automatic dependency tracking without explicit declarations. When you compile, Colin builds the dependency graph from the refs that actually execute, compiles documents in topological order, and caches LLM calls for reproducibility.
+The `ref()` function fetches content from another document while registering a dependency edge—so Colin recompiles this document when `company` changes. The `| extract()` filter passes content through an LLM with your prompt. Colin caches LLM calls by input hash, so unchanged inputs return cached results instantly.
 
 ## Why Colin?
 
@@ -46,7 +50,7 @@ Context is scattered everywhere—project trackers, customer conversations, docu
 
 Today, this synthesis is manual. Someone writes a skill by hand, copy-pasting from various sources, hoping they didn't miss anything. When sources change, the skill goes stale. There's no lineage, no caching, no way to know what depends on what.
 
-**Colin solves this:**
+Colin solves this with:
 
 **Interconnected context**: Real-world context isn't isolated. Your product docs reference your company overview. Your API specs reference your data models. Colin makes these relationships explicit and manageable.
 
@@ -55,6 +59,10 @@ Today, this synthesis is manual. Someone writes a skill by hand, copy-pasting fr
 **LLM caching**: LLM calls are cached by input hash. Same input, same output, no API call.
 
 **Full lineage**: The manifest tracks everything. You can see exactly what changed, when, and why—complete traceability across your context graph.
+
+## About the Name
+
+Colin stands for **Co**ntext **Lin**eage. It's also a nod to the [Hitchhiker's Guide to the Galaxy](https://en.wikipedia.org/wiki/Colin_(The_Hitchhiker%27s_Guide_to_the_Galaxy))—a helpful robot that, despite being "a genuine people personality," really just wanted to make itself useful.
 
 ## Get Started
 
