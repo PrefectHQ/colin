@@ -1,3 +1,14 @@
+
+<div align="center">
+
+<!-- omit in toc -->
+
+<picture>
+  <img width="550" alt="FastMCP Logo" src="docs/assets/logos/colin-burst.jpeg">
+</picture>
+
+</div>
+
 # Colin
 
 ***Context as code.***
