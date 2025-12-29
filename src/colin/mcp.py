@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig
+
+# Suppress fastmcp logging during compilation (interferes with Live display)
+logging.getLogger("fastmcp").setLevel(logging.CRITICAL)
 
 
 class MCPManager:
