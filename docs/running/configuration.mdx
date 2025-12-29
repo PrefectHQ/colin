@@ -1,0 +1,218 @@
+---
+title: Configuration
+sidebarTitle: Configuration
+icon: gear
+---
+
+Colin projects are configured through `colin.toml`, a TOML file in your project root. This file defines project metadata, directory paths, LLM settings, and MCP server connections.
+
+## Project Settings
+
+The `[project]` section contains core project configuration:
+
+```toml colin.toml
+[project]
+name = "my-context"
+model-path = "models"
+target-path = "target"
+default-llm-model = "anthropic:claude-sonnet-4-5"
+```
+
+| Setting | Description | Default |
+| :------ | :---------- | :------ |
+| `name` | Project name for display | Directory name |
+| `model-path` | Directory containing source documents | `models` |
+| `target-path` | Directory for compiled output | `target` |
+| `default-llm-model` | Default model for LLM operations | `anthropic:claude-sonnet-4-5` |
+
+### Directory Paths
+
+Paths are relative to the location of `colin.toml`:
+
+```toml
+[project]
+name = "documentation"
+model-path = "src/context"
+target-path = "dist"
+```
+
+With this configuration, Colin reads from `src/context/` and writes to `dist/`.
+
+### LLM Model
+
+The `default-llm-model` sets which model handles `{% llm %}` blocks and filters like `extract()`:
+
+```toml
+[project]
+default-llm-model = "anthropic:claude-haiku-3"
+```
+
+Model identifiers follow the format `provider:model-name`. Currently supported providers:
+
+| Provider | Example Models |
+| :------- | :------------- |
+| `anthropic` | `claude-sonnet-4-5`, `claude-haiku-3` |
+| `openai` | `gpt-4o`, `gpt-4o-mini` |
+
+Individual LLM blocks can override the default:
+
+```markdown
+{% llm model="anthropic:claude-sonnet-4-5" %}
+Complex analysis requiring a more capable model...
+{% endllm %}
+```
+
+## MCP Servers
+
+The `[mcp.servers]` section configures connections to MCP servers. Each server gets its own subsection named with the identifier you'll use in templates.
+
+### Stdio Servers
+
+Local process servers communicate via stdin/stdout:
+
+```toml colin.toml
+[mcp.servers.github]
+command = "uvx"
+args = ["mcp-server-github"]
+
+[mcp.servers.linear]
+command = "npx"
+args = ["-y", "@linear/mcp-server"]
+
+[mcp.servers.filesystem]
+command = "npx"
+args = ["@anthropic/mcp-server-filesystem", "/path/to/data"]
+```
+
+| Field | Description |
+| :---- | :---------- |
+| `command` | Executable to run |
+| `args` | Command-line arguments as an array |
+| `env` | Environment variables as a table |
+
+### Environment Variables
+
+Pass environment variables to server processes:
+
+```toml colin.toml
+[mcp.servers.postgres]
+command = "npx"
+args = ["@anthropic/mcp-server-postgres"]
+env = { DATABASE_URL = "postgres://user:pass@localhost/db" }
+```
+
+Reference shell environment variables with `${VAR}` syntax:
+
+```toml
+[mcp.servers.postgres]
+command = "npx"
+args = ["@anthropic/mcp-server-postgres"]
+env = { DATABASE_URL = "${DATABASE_URL}" }
+```
+
+Colin substitutes the value from your environment when starting the server.
+
+### Remote Servers
+
+HTTP and SSE servers connect over the network:
+
+```toml colin.toml
+[mcp.servers.remote-api]
+url = "https://api.example.com/mcp"
+```
+
+For servers requiring authentication headers:
+
+```toml colin.toml
+[mcp.servers.authenticated]
+url = "https://api.example.com/mcp"
+headers = { Authorization = "Bearer ${API_TOKEN}" }
+```
+
+### Using MCP Resources
+
+Reference configured servers in your documents:
+
+```markdown models/sources/projects.md
+---
+name: Project Data
+---
+
+{{ mcp_resource('linear', 'projects?team=engineering') }}
+```
+
+The first argument matches the server name in your configuration. The second is the resource URI, which varies by server.
+
+## Environment Variables
+
+Colin settings can be overridden via environment variables. Prefix the setting name with `COLIN_` and use uppercase:
+
+| Environment Variable | Configuration Equivalent |
+| :------------------- | :----------------------- |
+| `COLIN_DEFAULT_LLM_MODEL` | `default-llm-model` in project |
+
+Environment variables take precedence over `colin.toml` values, and `colin.toml` values take precedence over built-in defaults.
+
+## Complete Example
+
+A full configuration demonstrating all options:
+
+```toml colin.toml
+[project]
+name = "engineering-context"
+model-path = "context"
+target-path = "dist"
+default-llm-model = "anthropic:claude-sonnet-4-5"
+
+[mcp.servers.github]
+command = "uvx"
+args = ["mcp-server-github"]
+env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+
+[mcp.servers.linear]
+command = "npx"
+args = ["-y", "@linear/mcp-server"]
+env = { LINEAR_API_KEY = "${LINEAR_API_KEY}" }
+
+[mcp.servers.warehouse]
+command = "npx"
+args = ["@anthropic/mcp-server-postgres"]
+env = { DATABASE_URL = "${DATA_WAREHOUSE_URL}" }
+
+[mcp.servers.internal-api]
+url = "https://internal.company.com/mcp"
+headers = { Authorization = "Bearer ${INTERNAL_API_TOKEN}" }
+```
+
+This project:
+- Reads source documents from `context/`
+- Writes compiled output to `dist/`
+- Uses Claude Sonnet for LLM operations by default
+- Connects to GitHub, Linear, a Postgres warehouse, and an internal API
+
+## Minimal Configuration
+
+The simplest valid configuration:
+
+```toml colin.toml
+[project]
+name = "my-project"
+```
+
+Colin uses defaults for everything else:
+- Source documents in `models/`
+- Compiled output in `target/`
+- Claude Sonnet for LLM operations
+
+You can even omit the name, in which case Colin uses the directory name.
+
+## Configuration Precedence
+
+Settings resolve in this order (highest to lowest precedence):
+
+1. Command-line flags (`--target`, etc.)
+2. Environment variables (`COLIN_*`)
+3. Project configuration (`colin.toml`)
+4. Built-in defaults
+
+This allows flexible deployment where the same project can compile differently based on environment.

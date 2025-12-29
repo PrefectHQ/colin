@@ -1,0 +1,187 @@
+---
+title: Running the Compiler
+sidebarTitle: Run
+icon: play
+---
+
+The `colin run` command compiles your project. It discovers documents in your `models/` directory, resolves dependencies between them, and produces compiled output in `target/`. During compilation, Colin invokes LLM calls as needed, caches their results, and tracks changes to enable incremental rebuilds.
+
+A compilation run involves several phases: discovery finds all documents, graph building extracts dependency edges from `ref()` calls, topological sorting determines compilation order, and finally each document compiles with its dependencies already available.
+
+## Basic Usage
+
+From your project directory, run:
+
+```bash
+colin run
+```
+
+Colin displays progress as it compiles, showing each document and its operations:
+
+```
+Config:  colin.toml
+Project: my-context
+Target:  target/
+
+✓ company.md
+✓ products/overview.md
+  ✓ ref:company
+✓ skills/product-expert.md
+  ✓ ref:products/overview
+  ✓ llm:auto:a3f2c1
+```
+
+The output shows which documents were compiled and what operations occurred within each.
+
+## Reading the Output
+
+Colin's display uses icons to indicate operation status and type:
+
+| Icon | Meaning |
+| :--- | :------ |
+| `✓` | Compiled successfully |
+| `⚡` | Served from cache |
+| `→` | Reference or MCP fetch |
+| `✗` | Failed |
+
+When you see `⚡` for an LLM operation, Colin reused a cached result from a previous run. This happens when the input to the LLM call hasn't changed. The `→` icon indicates a reference was resolved, either from another document or an MCP resource.
+
+A typical run where some documents were cached:
+
+```
+✓ context/team-health.md
+  → ref:sources/linear
+  ⚡ llm:auto:b7e4d2
+  → mcp:github
+✓ skills/status-agent.md
+  → ref:context/team-health
+  ✓ llm:auto:c8f5e3
+```
+
+Here, `context/team-health.md` had a cached LLM result, while `skills/status-agent.md` made a fresh LLM call.
+
+## Flags
+
+### Force Recompilation
+
+The `--force` flag ignores cached results and recompiles everything:
+
+```bash
+colin run --force
+```
+
+Use this when you want fresh LLM outputs regardless of whether inputs changed. Force recompilation discards the manifest and starts from scratch, so all LLM calls execute again.
+
+### Dry Run
+
+The `--dry-run` flag shows what would compile without actually doing it:
+
+```bash
+colin run --dry-run
+```
+
+Output:
+
+```
+Config:  colin.toml
+Project: my-context
+Target:  target/
+
+Would run 3 documents:
+  context/company.md
+  context/products.md
+  skills/support-agent.md
+```
+
+This helps you understand what Colin will do before committing to potentially expensive LLM calls.
+
+### Quiet Mode
+
+The `-q` or `--quiet` flag suppresses progress output:
+
+```bash
+colin run -q
+```
+
+In quiet mode, Colin only outputs errors. Use this in scripts or CI environments where you only care about success or failure.
+
+### Target Override
+
+The `--target` flag overrides the target directory from `colin.toml`:
+
+```bash
+colin run --target ./output
+```
+
+Compiled documents and the manifest write to the specified directory instead of the default.
+
+## Incremental Builds
+
+Colin tracks changes to enable efficient incremental compilation. When you run `colin run`, it compares each document's current state against what was recorded in the manifest from the last run.
+
+A document recompiles when:
+
+1. **Its source changed** - The file content differs from the recorded hash
+2. **A dependency changed** - Any document it references was recompiled this run
+3. **It's new** - No record exists in the manifest
+
+Documents that haven't changed and whose dependencies are unchanged skip compilation entirely. Their compiled output from the previous run remains in `target/`.
+
+### Change Propagation
+
+When a document changes, Colin recompiles all documents that depend on it, transitively. Consider this dependency chain:
+
+```
+company.md
+    ↓
+products/overview.md (refs company)
+    ↓
+skills/support-agent.md (refs products/overview)
+```
+
+If you modify `company.md`, all three documents recompile because changes propagate downstream through the dependency graph. If you only modify `skills/support-agent.md`, only that document recompiles since nothing depends on it.
+
+The manifest tracks which refs each document evaluated during its last compilation. Colin uses this to trace the downstream closure of affected documents.
+
+## Compilation Order
+
+Colin compiles documents in topological order based on their dependencies. Documents with no dependencies compile first, then documents whose dependencies are complete, and so on.
+
+Within each level of the dependency graph, documents compile in parallel. A project with this structure:
+
+```
+a.md ─┐
+      ├─→ d.md ─→ e.md
+b.md ─┤
+      │
+c.md ─┘
+```
+
+Would compile as:
+
+1. Level 1: `a.md`, `b.md`, `c.md` (in parallel)
+2. Level 2: `d.md`
+3. Level 3: `e.md`
+
+This ordering ensures that when a document compiles, all documents it references are already available.
+
+## Error Handling
+
+When compilation fails, Colin reports errors clearly:
+
+```
+Compilation failed
+
+context/analysis.md
+├── ✗ LLM call failed: API rate limit exceeded
+└── ✗ Template error: Undefined variable 'missing_ref'
+
+skills/agent.md
+└── ✗ RefNotFoundError: Referenced document 'nonexistent' not found
+
+2 error(s) in 2 document(s)
+```
+
+Colin attempts to compile as many documents as possible, collecting all errors rather than stopping at the first failure. This gives you the complete picture of what needs fixing.
+
+Documents that fail don't update the manifest, so the next run will attempt them again. Successfully compiled documents are saved normally.

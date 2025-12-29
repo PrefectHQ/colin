@@ -1,0 +1,398 @@
+---
+title: LLM Workflows
+sidebarTitle: LLM Workflows
+icon: wand-magic-sparkles
+---
+
+Colin's LLM integration transforms static documents into dynamic, synthesized context. The `extract()` filter and `{% llm %}` blocks invoke language models during compilation, letting you summarize, analyze, and transform content automatically. Combined with `ref()`, these tools create powerful workflows where information flows through your document graph and gets refined at each step.
+
+LLM calls are deterministic within a compilation run. Colin caches results by input hash, so identical prompts return cached responses without additional API calls. This makes compilation fast and predictable while keeping costs under control.
+
+## The Extract Filter
+
+The `extract()` filter is the simplest way to invoke an LLM. It takes content and a prompt describing what to extract:
+
+```markdown models/summary.md
+---
+name: Key Points Summary
+---
+
+# Customer Feedback Summary
+
+{{ ref('sources/customer-calls') | extract('the top 5 customer complaints, ranked by frequency') }}
+```
+
+The filter passes the referenced content to the LLM along with your extraction prompt. The LLM's response replaces the entire expression in the compiled output.
+
+### Chaining Extractions
+
+Apply multiple extractions to distill information progressively:
+
+```markdown models/executive-brief.md
+---
+name: Executive Brief
+---
+
+# This Week's Highlights
+
+## Product Feedback
+{{ ref('sources/customer-calls') | extract('product-related feedback and feature requests') }}
+
+## Support Trends
+{{ ref('sources/support-tickets') | extract('recurring issues and resolution patterns') }}
+
+## Action Items
+{{ ref('sources/customer-calls') | extract('urgent items requiring immediate attention') }}
+```
+
+### RefResult Serialization
+
+When you pass a `RefResult` to `extract()`, Colin includes helpful context alongside the content:
+
+```
+# Document Name
+Description: The document description from frontmatter
+URI: the/document/uri
+
+[The actual document content]
+```
+
+This metadata helps the LLM understand the source material's purpose and context.
+
+## LLM Blocks
+
+For complex prompts that span multiple lines or incorporate multiple sources, use `{% llm %}` blocks:
+
+```markdown models/analysis.md
+---
+name: Competitive Analysis
+---
+
+# Market Position
+
+{% llm %}
+Compare our product positioning against the competition:
+
+## Our Product
+{{ ref('context/product-overview').content }}
+
+## Competitor A
+{{ ref('sources/competitor-a').content }}
+
+## Competitor B
+{{ ref('sources/competitor-b').content }}
+
+Identify:
+1. Our unique differentiators
+2. Gaps in our offering
+3. Opportunities for improvement
+{% endllm %}
+```
+
+The content inside the block becomes the prompt. Colin renders any Jinja expressions first (resolving refs, filters, etc.), then sends the fully rendered text to the LLM.
+
+### Model Selection
+
+Override the default model for specific blocks:
+
+```markdown models/detailed-analysis.md
+---
+name: Detailed Analysis
+---
+
+# Quick Summary
+
+{% llm model="anthropic:claude-haiku-3" %}
+Summarize in one paragraph:
+{{ ref('sources/quarterly-report').content }}
+{% endllm %}
+
+# Deep Analysis
+
+{% llm model="anthropic:claude-sonnet-4-5" %}
+Provide a comprehensive analysis of trends, risks, and recommendations:
+{{ ref('sources/quarterly-report').content }}
+{% endllm %}
+```
+
+Use faster, cheaper models for simple extractions and more capable models for complex reasoning.
+
+### Block IDs
+
+Assign explicit IDs to LLM blocks for stable caching across prompt iterations:
+
+```markdown models/recommendations.md
+---
+name: Weekly Recommendations
+---
+
+{% llm id="weekly-recs" %}
+Based on this week's data, provide strategic recommendations:
+
+{{ ref('context/metrics').content }}
+{{ ref('context/feedback').content }}
+
+Focus on actionable items for the coming week.
+{% endllm %}
+```
+
+With an explicit ID, the cache key remains stable even if you adjust the prompt wording. The LLM also receives its previous output, enabling it to maintain consistency across compilations.
+
+## Combining Multiple Refs
+
+LLM blocks shine when synthesizing information from multiple sources:
+
+```markdown models/context/team-health.md
+---
+name: Team Health Assessment
+---
+
+# Engineering Team Health
+
+{% llm %}
+Synthesize the following information into a cohesive team health assessment:
+
+## Project Status
+{{ ref('sources/linear-projects').content }}
+
+## Sprint Velocity
+{{ ref('sources/velocity-metrics').content }}
+
+## Team Feedback
+{{ ref('sources/retro-notes').content }}
+
+Provide:
+1. Overall health score (1-10) with justification
+2. Key strengths observed
+3. Areas of concern
+4. Recommended actions
+{% endllm %}
+```
+
+This pattern collects related information from across your document graph and produces unified analysis.
+
+### Multi-Stage Processing
+
+Build processing pipelines where each stage refines the output:
+
+```markdown models/sources/raw-calls.md
+---
+name: Customer Call Transcripts
+---
+
+[Raw transcript data here]
+```
+
+```markdown models/context/call-insights.md
+---
+name: Call Insights
+---
+
+{{ ref('sources/raw-calls') | extract('key themes and pain points mentioned across calls') }}
+```
+
+```markdown models/skills/support-agent.md
+---
+name: Support Agent Context
+---
+
+# Customer Context
+
+{% llm %}
+Transform these insights into guidance for support agents:
+
+{{ ref('context/call-insights').content }}
+
+Format as:
+- Common issues and recommended responses
+- Escalation triggers
+- Empathy points to acknowledge
+{% endllm %}
+```
+
+Each stage operates on increasingly refined information.
+
+## Caching Behavior
+
+Colin caches LLM calls by computing a hash of the input. For filters like `extract()`, the hash includes the content and the prompt. For `{% llm %}` blocks, it's the fully rendered block body.
+
+### Automatic Caching
+
+Without an explicit ID, Colin generates a cache key automatically:
+
+```markdown
+{{ ref('data') | extract('summary') }}
+```
+
+Cache key: `auto:hash(content + 'extract' + 'summary')`
+
+If either the content or the prompt changes, the cache misses and Colin makes a fresh LLM call.
+
+### Manual IDs for Stability
+
+With an explicit ID, the cache key is stable:
+
+```markdown
+{{ ref('data') | extract('summary', id='data-summary') }}
+```
+
+Cache key: `data-summary`
+
+The LLM still receives both the new input and its previous output. It can choose to return the previous output if the input is substantially similar, maintaining consistency across minor content changes.
+
+### Cache Invalidation
+
+The cache lives in the manifest. To force fresh LLM calls:
+
+```bash
+colin clean    # Removes manifest and cache
+colin run      # Full recompilation with fresh LLM calls
+```
+
+Or selectively recompile specific documents:
+
+```bash
+colin run context/analysis.md --force
+```
+
+## Practical Workflows
+
+### Summarization Pipeline
+
+Create layered summaries for different audiences:
+
+```markdown models/context/detailed-report.md
+---
+name: Detailed Weekly Report
+---
+
+{{ ref('sources/metrics').content }}
+{{ ref('sources/incidents').content }}
+{{ ref('sources/deployments').content }}
+```
+
+```markdown models/context/executive-summary.md
+---
+name: Executive Summary
+---
+
+{% llm %}
+Summarize this detailed report for executive leadership.
+Focus on business impact and strategic implications.
+Keep it under 200 words.
+
+{{ ref('context/detailed-report').content }}
+{% endllm %}
+```
+
+```markdown models/context/team-summary.md
+---
+name: Team Summary
+---
+
+{% llm %}
+Summarize this report for the engineering team.
+Include technical details and action items.
+Highlight wins and areas for improvement.
+
+{{ ref('context/detailed-report').content }}
+{% endllm %}
+```
+
+### Extraction and Synthesis
+
+Pull specific information from multiple sources, then synthesize:
+
+```markdown models/skills/product-expert.md
+---
+name: Product Expert Skill
+---
+
+# Product Knowledge Base
+
+## Features
+{{ ref('sources/product-docs') | extract('complete feature list with descriptions') }}
+
+## Known Issues
+{{ ref('sources/support-tickets') | extract('current known issues and workarounds') }}
+
+## Roadmap
+{{ ref('sources/roadmap') | extract('upcoming features in the next quarter') }}
+
+## Customer FAQ
+
+{% llm %}
+Based on the product information above, generate a FAQ section covering:
+- Most common customer questions
+- Setup and configuration issues
+- Integration capabilities
+- Pricing and licensing
+
+Features:
+{{ ref('sources/product-docs') | extract('complete feature list with descriptions') }}
+
+Known Issues:
+{{ ref('sources/support-tickets') | extract('current known issues and workarounds') }}
+{% endllm %}
+```
+
+### Dynamic Document Structure
+
+Use LLM output to drive document structure:
+
+```markdown models/skills/project-status.md
+---
+name: Project Status Skill
+---
+
+# Project Status
+
+{% for project in ['alpha', 'beta', 'gamma'] %}
+## Project {{ project | capitalize }}
+
+{% llm id="project-{{ project }}" %}
+Provide a status summary for this project:
+
+{{ ref('sources/linear-projects') | extract('information about project ' + project) }}
+
+Include:
+- Current phase and timeline
+- Key risks
+- Next milestones
+{% endllm %}
+
+{% endfor %}
+```
+
+The explicit ID with a variable ensures each project gets its own stable cache entry.
+
+### Cross-Document Analysis
+
+Analyze patterns across your entire context graph:
+
+```markdown models/insights/trends.md
+---
+name: Cross-Team Trends
+---
+
+# Organizational Trends
+
+{% llm %}
+Identify patterns and trends across these team reports:
+
+## Engineering
+{{ ref('context/engineering-health').content }}
+
+## Product
+{{ ref('context/product-health').content }}
+
+## Customer Success
+{{ ref('context/customer-health').content }}
+
+Look for:
+1. Common themes across teams
+2. Potential conflicts or misalignments
+3. Opportunities for cross-team collaboration
+4. Early warning signs
+{% endllm %}
+```

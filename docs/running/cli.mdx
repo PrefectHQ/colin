@@ -1,0 +1,217 @@
+---
+title: CLI Commands
+sidebarTitle: CLI
+icon: terminal
+---
+
+Colin provides a command-line interface for managing projects and running compilations. The CLI is designed around a simple workflow: initialize a project, add your documents, and run the compiler.
+
+## init
+
+The `colin init` command creates a new project:
+
+```bash
+colin init
+```
+
+This creates `colin.toml` with default settings and an empty `models/` directory in the current location:
+
+```
+Created: colin.toml
+Created: models/
+
+Add .md files to models/ and run `colin run`
+```
+
+### Options
+
+Customize the project during initialization:
+
+```bash
+colin init --name my-context --models src/docs --target dist
+```
+
+| Option | Description | Default |
+| :----- | :---------- | :------ |
+| `--name` | Project name | Directory name |
+| `--models` | Source documents directory | `models` |
+| `--target` | Compiled output directory | `target` |
+
+You can also initialize an existing directory:
+
+```bash
+cd existing-project
+colin init
+```
+
+If `colin.toml` already exists, the command fails with an error rather than overwriting.
+
+## run
+
+The `colin run` command compiles your project:
+
+```bash
+colin run
+```
+
+See [Running the Compiler](/running/run) for detailed documentation on compilation behavior, output interpretation, and flags.
+
+### Quick Reference
+
+```bash
+colin run              # Compile changed documents
+colin run --force      # Recompile everything
+colin run --dry-run    # Show what would compile
+colin run -q           # Suppress progress output
+colin run --target ./out  # Override output directory
+```
+
+## clean
+
+The `colin clean` command removes compiled outputs:
+
+```bash
+colin clean
+```
+
+By default, clean prompts for confirmation:
+
+```
+Config:  colin.toml
+Project: my-context
+Target:  target/
+
+Will remove:
+  target/manifest.json
+  target/compiled/company.md
+  target/compiled/products/overview.md
+
+Continue? (y/N)
+```
+
+Type `y` to proceed. The entire `target/` directory is deleted, including the manifest and all compiled documents.
+
+### Skip Confirmation
+
+Use `-y` or `--yes` to skip the confirmation prompt:
+
+```bash
+colin clean -y
+```
+
+After cleaning, the next `colin run` performs a full recompilation since no manifest exists.
+
+## mcp
+
+The `colin mcp` command group manages MCP server configuration. MCP servers connect Colin to external data sources like project trackers, databases, and APIs.
+
+### add
+
+Add an MCP server to your project:
+
+```bash
+# Stdio server (local process)
+colin mcp add github uvx mcp-server-github
+
+# With additional arguments
+colin mcp add linear npx -y @linear/mcp-server
+
+# With environment variables
+colin mcp add postgres npx @anthropic/mcp-server-postgres -e DATABASE_URL=postgres://...
+
+# HTTP/SSE server (remote)
+colin mcp add remote-api https://api.example.com/mcp --transport http
+```
+
+The first argument is the server name you'll use in templates. The second is the command (for stdio) or URL (for http/sse).
+
+| Option | Description |
+| :----- | :---------- |
+| `-t, --transport` | Transport type: `stdio`, `sse`, or `http` |
+| `-e, --env` | Environment variables in `KEY=VALUE` format |
+
+Transport defaults to `stdio` for commands and `http` for URLs.
+
+### list
+
+View configured servers:
+
+```bash
+colin mcp list
+```
+
+Output:
+
+```
+┌────────┬───────┬─────────────────────────────┐
+│ Name   │ Type  │ Connection                  │
+├────────┼───────┼─────────────────────────────┤
+│ github │ stdio │ uvx mcp-server-github       │
+│ linear │ stdio │ npx -y @linear/mcp-server   │
+└────────┴───────┴─────────────────────────────┘
+```
+
+### remove
+
+Remove a server from configuration:
+
+```bash
+colin mcp remove github
+```
+
+### test
+
+Verify a server connection works:
+
+```bash
+colin mcp test github
+```
+
+Colin starts the server, connects to it, and lists available resources:
+
+```
+Testing connection to github...
+✓ Connected to github
+
+Resources (3):
+  repo://owner/repo/readme - Repository README
+  repo://owner/repo/issues - Open issues
+  repo://owner/repo/pulls - Pull requests
+```
+
+Use this to discover what resources a server provides before referencing them in your documents.
+
+## Project Resolution
+
+Colin finds your project by searching for `colin.toml` starting from the current directory and walking up parent directories. This lets you run commands from any subdirectory:
+
+```bash
+cd my-project/models/products
+colin run  # Finds colin.toml in my-project/
+```
+
+Most commands accept a `--project` option to specify a different project directory:
+
+```bash
+colin run --project /path/to/other-project
+```
+
+## Exit Codes
+
+Colin uses standard exit codes:
+
+| Code | Meaning |
+| :--- | :------ |
+| `0` | Success |
+| `1` | Error (compilation failed, project not found, etc.) |
+
+In scripts, check the exit code to determine success:
+
+```bash
+if colin run -q; then
+    echo "Compilation succeeded"
+else
+    echo "Compilation failed"
+    exit 1
+fi
+```

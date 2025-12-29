@@ -1,0 +1,141 @@
+---
+title: Documents
+sidebarTitle: Documents
+icon: file-lines
+---
+
+A Colin document is a Markdown file that can contain Jinja templating. Documents form the building blocks of your context graph, and each one compiles to a standalone output that can reference and incorporate content from other documents.
+
+Documents live in your project's `models/` directory (or whatever you configure as `model-path` in `colin.toml`). When you run `colin run`, Colin discovers all `.md` files in this directory and compiles them based on their dependencies.
+
+## File Structure
+
+Every document consists of two parts: optional YAML frontmatter followed by the document body.
+
+```markdown models/company.md
+---
+name: Company Overview
+description: Core information about our company
+---
+
+Acme Corp builds developer tools that streamline CI/CD pipelines.
+Founded in 2020, we serve over 500 enterprise customers.
+```
+
+The frontmatter defines metadata about the document. The body contains Markdown content, optionally enhanced with Jinja templating for dynamic behavior.
+
+## Frontmatter
+
+Frontmatter is optional. When present, it's YAML wrapped in `---` markers at the top of the file:
+
+```yaml
+---
+name: Product Brief
+description: Summary of product capabilities for sales team
+---
+```
+
+Two fields are particularly useful:
+
+**`name`** - A human-readable identifier for the document. When omitted, Colin derives the name from the filename.
+
+**`description`** - Explains what this document contains. This metadata travels with the document when referenced, helping LLMs understand context.
+
+Documents without frontmatter work fine—Colin infers the name from the filename and leaves other metadata empty. This is useful for simple content files or when you're referencing non-Markdown sources.
+
+Project-level configuration (output formats, paths, MCP servers) belongs in `colin.toml`, not frontmatter. See [Configuration](/running/configuration) for details.
+
+## Jinja Templating
+
+The document body supports standard Jinja2 templating syntax. This enables dynamic content through expressions, filters, and control structures.
+
+### Expressions
+
+Use double braces to output values:
+
+```markdown models/status.md
+---
+name: Project Status
+---
+
+# Project Status
+
+Last updated: {{ now().strftime('%Y-%m-%d') }}
+```
+
+### Control Structures
+
+Standard Jinja control flow works in documents:
+
+```markdown models/team-roster.md
+---
+name: Team Roster
+---
+
+# Team
+
+{% for member in ['Alice', 'Bob', 'Charlie'] %}
+- {{ member }}
+{% endfor %}
+```
+
+### Filters
+
+Filters transform values using the pipe syntax:
+
+```markdown models/summary.md
+---
+name: Summary
+---
+
+{{ ref('report').content | upper }}
+```
+
+Colin provides special LLM-powered filters like `extract()` for intelligent content transformation. See the [Context](/context/overview) documentation for details on available filters.
+
+## LLM Blocks
+
+For complex transformations, use `{% llm %}` blocks to invoke LLM processing:
+
+```markdown models/analysis.md
+---
+name: Competitive Analysis
+---
+
+# Analysis
+
+{% llm %}
+Compare these two products and identify key differentiators:
+
+Product A: {{ ref('product-a').content }}
+Product B: {{ ref('product-b').content }}
+
+Focus on pricing, features, and target market.
+{% endllm %}
+```
+
+The content inside the block becomes the prompt. Colin sends it to the configured LLM and replaces the block with the response. LLM calls are cached by input hash, so unchanged prompts return cached results on subsequent compiles.
+
+You can specify a model override:
+
+```markdown
+{% llm model="anthropic:claude-sonnet-4-5" %}
+Summarize this content for an executive audience.
+{% endllm %}
+```
+
+## Naming
+
+Document URIs derive from their file paths relative to the models directory. Subdirectories become part of the URI:
+
+| File Path | URI |
+| :-------- | :-- |
+| `models/overview.md` | `overview` |
+| `models/products/widget.md` | `products/widget` |
+| `models/team/engineering/leads.md` | `team/engineering/leads` |
+
+When referencing documents, use the URI without the `.md` extension:
+
+```markdown
+{{ ref('products/widget').content }}
+```
