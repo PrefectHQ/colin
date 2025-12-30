@@ -2,7 +2,7 @@
 <div align="center">
 
 <picture>
-  <img width="550" alt="Colin Logo" src="docs/assets/logos/colin-burst.jpeg">
+  <img width="550" alt="Colin Logo" src="docs/assets/logos/c-watercolor-waves.jpeg">
 </picture>
 
 </div>
