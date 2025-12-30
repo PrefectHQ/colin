@@ -64,22 +64,25 @@ Complex analysis requiring a more capable model...
 
 ## MCP Servers
 
-The `[mcp.servers]` section configures connections to MCP servers. Each server gets its own subsection named with the identifier you'll use in templates.
+MCP servers are configured under `[[providers.mcp]]`. Each entry has a `name` that you'll use in templates.
 
 ### Stdio Servers
 
 Local process servers communicate via stdin/stdout:
 
 ```toml colin.toml
-[mcp.servers.github]
+[[providers.mcp]]
+name = "github"
 command = "uvx"
 args = ["mcp-server-github"]
 
-[mcp.servers.linear]
+[[providers.mcp]]
+name = "linear"
 command = "npx"
 args = ["-y", "@linear/mcp-server"]
 
-[mcp.servers.filesystem]
+[[providers.mcp]]
+name = "filesystem"
 command = "npx"
 args = ["@anthropic/mcp-server-filesystem", "/path/to/data"]
 ```
@@ -90,12 +93,15 @@ args = ["@anthropic/mcp-server-filesystem", "/path/to/data"]
 | `args` | Command-line arguments as an array |
 | `env` | Environment variables as a table |
 
+Optional `scheme-suffix` overrides the URI scheme suffix (defaults to `name`). Templates still use the `name`, but ref URIs use `mcp.<scheme-suffix>://...`.
+
 ### Environment Variables
 
 Pass environment variables to server processes:
 
 ```toml colin.toml
-[mcp.servers.postgres]
+[[providers.mcp]]
+name = "postgres"
 command = "npx"
 args = ["@anthropic/mcp-server-postgres"]
 env = { DATABASE_URL = "postgres://user:pass@localhost/db" }
@@ -104,7 +110,8 @@ env = { DATABASE_URL = "postgres://user:pass@localhost/db" }
 Reference shell environment variables with `${VAR}` syntax:
 
 ```toml
-[mcp.servers.postgres]
+[[providers.mcp]]
+name = "postgres"
 command = "npx"
 args = ["@anthropic/mcp-server-postgres"]
 env = { DATABASE_URL = "${DATABASE_URL}" }
@@ -117,14 +124,16 @@ Colin substitutes the value from your environment when starting the server.
 HTTP and SSE servers connect over the network:
 
 ```toml colin.toml
-[mcp.servers.remote-api]
+[[providers.mcp]]
+name = "remote-api"
 url = "https://api.example.com/mcp"
 ```
 
 For servers requiring authentication headers:
 
 ```toml colin.toml
-[mcp.servers.authenticated]
+[[providers.mcp]]
+name = "authenticated"
 url = "https://api.example.com/mcp"
 headers = { Authorization = "Bearer ${API_TOKEN}" }
 ```
@@ -138,10 +147,10 @@ Reference configured servers in your documents:
 name: Project Data
 ---
 
-{{ mcp_resource('linear', 'projects?team=engineering') }}
+{{ mcp.linear.resource('projects?team=engineering') }}
 ```
 
-The first argument matches the server name in your configuration. The second is the resource URI, which varies by server.
+The server name comes from the configured `name`, and the argument is the resource URI, which varies by server.
 
 ## Environment Variables
 
@@ -164,22 +173,26 @@ model-path = "context"
 target-path = "dist"
 default-llm-model = "anthropic:claude-sonnet-4-5"
 
-[mcp.servers.github]
+[[providers.mcp]]
+name = "github"
 command = "uvx"
 args = ["mcp-server-github"]
 env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 
-[mcp.servers.linear]
+[[providers.mcp]]
+name = "linear"
 command = "npx"
 args = ["-y", "@linear/mcp-server"]
 env = { LINEAR_API_KEY = "${LINEAR_API_KEY}" }
 
-[mcp.servers.warehouse]
+[[providers.mcp]]
+name = "warehouse"
 command = "npx"
 args = ["@anthropic/mcp-server-postgres"]
 env = { DATABASE_URL = "${DATA_WAREHOUSE_URL}" }
 
-[mcp.servers.internal-api]
+[[providers.mcp]]
+name = "internal-api"
 url = "https://internal.company.com/mcp"
 headers = { Authorization = "Bearer ${INTERNAL_API_TOKEN}" }
 ```

@@ -165,6 +165,9 @@ class RefResult(BaseModel):
     uri: str
     """The ref URI."""
 
+    source: object = None
+    """Original domain object (MCPResource, CompiledDocument, etc.)."""
+
     def __str__(self) -> str:
         """Return placeholder to avoid accidentally dumping large content."""
         return f"Ref({self.uri!r})"

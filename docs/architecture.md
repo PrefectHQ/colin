@@ -1,7 +1,7 @@
 # Colin Architecture
 
 > **Status**: MVP in development
-> **Last Updated**: 2024-12-27
+> **Last Updated**: 2025-01-06
 
 Colin (**Co**ntext **Lin**eage) is a context compiler for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
 
@@ -16,80 +16,57 @@ This enables automatic dependency tracking without explicit declarations.
 ## System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                           Colin CLI                               │
-│  compile [--no-cache] [--dry-run]                              │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                         Colin CLI                             │
+│  run / compile / mcp                                           │
+└──────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        Colin Core                               │
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │   Loader    │  │   Graph     │  │   Compiler              │ │
-│  │             │  │             │  │                         │ │
-│  │ - Discovery │  │ - URI→URI   │  │ - Jinja env            │ │
-│  │ - Frontmatter│ │ - Topo sort │  │ - LLM blocks           │ │
-│  │ - AST parse │  │ - Cycle     │  │ - Filters              │ │
-│  │             │  │   detect    │  │ - Caching              │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    Manifest (JSON)                          ││
-│  │  - Document metadata (hashes, refs, costs)                  ││
-│  │  - LLM call cache                                           ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-                              │
-          ┌───────────────────┼───────────────────┐
-          ▼                   ▼                   ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  Input Plugins  │  │ Output Plugins  │  │ Materialization │
-│                 │  │                 │  │                 │
-│  - file (MVP)   │  │  - markdown     │  │  - dag (MVP)    │
-│  - mcp (future) │  │    (MVP)        │  │  - bfs (future) │
-│  - colin://     │  │  - skill        │  │                 │
-│    (future)     │  │    (future)     │  │                 │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        Compile Engine                         │
+│  - Discovery + frontmatter                                    │
+│  - Dependency graph                                           │
+│  - Jinja environment + LLM blocks                             │
+│  - Manifest update (refs, LLM calls)                          │
+└──────────────────────────────────────────────────────────────┘
+          │                      │                    │
+          ▼                      ▼                    ▼
+┌────────────────────┐  ┌───────────────────┐  ┌──────────────────┐
+│ Providers          │  │ Storage           │  │ Manifest         │
+│ - project://       │  │ - artifacts       │  │ - refs_evaluated │
+│ - mcp.<name>://    │  │ - outputs         │  │ - llm_calls      │
+│ - custom schemes   │  │                   │  │ - costs          │
+└────────────────────┘  └───────────────────┘  └──────────────────┘
 ```
 
 ## Package Structure
 
 ```
 src/colin/
-├── __init__.py
-├── __main__.py           # python -m colin entry point
-├── cli.py                # cyclopts CLI
+├── api/                  # project, compile, and mcp helpers
+├── cli/                  # cyclopts CLI commands
+├── compiler/             # engine, context, jinja env, state
+├── extensions/           # Jinja extensions + filters
+├── providers/            # providers + storage backends
+│   ├── base.py           # Provider base class
+│   ├── context.py        # ProviderContext + Reference
+│   ├── manager.py        # Provider registry + lifecycle
+│   ├── namespace.py      # Template namespace binding
+│   ├── mcp.py            # MCP provider
+│   ├── llm.py            # LLM provider functions
+│   ├── project.py        # project:// provider
+│   └── storage/          # Storage providers (read+write)
+├── renders/              # Renderers (markdown/json/yaml)
+├── llm/                  # LLM prompt helpers
 ├── models.py             # Pydantic models
-├── loader.py             # Document discovery + frontmatter
-├── graph.py              # Dependency graph + topo sort
-├── storage.py            # Manifest JSON read/write
-├── exceptions.py         # Custom exceptions
-├── compiler/
-│   ├── context.py        # CompileContext (tracks refs, LLM calls)
-│   ├── engine.py         # Main compile orchestration
-│   └── jinja_env.py      # Async Jinja environment
-├── extensions/
-│   ├── llm_block.py      # {% llm %}...{% endllm %}
-│   └── filters.py        # | extract() filter
-├── llm/
-│   ├── base.py           # LLMProvider protocol
-│   └── stub.py           # StubLLMProvider (for testing)
-└── plugins/
-    ├── base.py           # Plugin protocols
-    ├── inputs/
-    │   └── file.py       # Local file input
-    ├── outputs/
-    │   └── markdown.py   # Raw markdown output
-    └── materialization/
-        └── dag.py        # Topological DAG
+└── plugins/              # Legacy protocols (not wired to engine)
 ```
 
 ## Key Data Flows
 
 ### Compile Flow
 
-1. **Discover** - Find all `.colin` files in source directories
+1. **Discover** - Find all `.md` models in the source directory
 2. **Load** - Parse frontmatter and template content
 3. **Extract refs** - Two-pass AST parsing to find `ref()` calls
 4. **Build graph** - Create dependency edges from refs
@@ -97,7 +74,7 @@ src/colin/
 6. **Expand downstream** - Find all affected documents
 7. **Topological sort** - Order compilation by dependencies
 8. **Compile** - Render each template with Jinja
-9. **Write outputs** - Save to dist/ directory
+9. **Write outputs** - Save compiled outputs via artifact storage
 10. **Update manifest** - Record hashes, refs, LLM calls
 
 ### ref() Call Flow
@@ -105,17 +82,18 @@ src/colin/
 ```
 ref('context/foo')
     │
-    ├─ Records dependency edge: current_doc → context/foo
-    │
-    ├─ Fetches compiled content from dist/context/foo.md
-    │
+    ├─ Normalizes to project://context/foo.md
+    ├─ Records dependency edge: current_doc → project://context/foo.md
+    ├─ Routes by scheme:
+    │   - project:// → artifact storage
+    │   - other://   → provider.read(path)
     └─ Returns RefResult object:
        - .name: "foo" (from frontmatter or URI)
        - .description: "..." (from frontmatter)
        - .content: "..." (compiled output)
        - .template: "..." (raw source)
        - .updated: datetime
-       - .uri: "context/foo"
+       - .uri: "project://context/foo.md"
        - __str__() → .content
 ```
 
@@ -148,6 +126,8 @@ See `docs/decisions/` for detailed ADRs:
 - **005-ref-returns-object**: Why RefResult, not string
 - **006-plugin-architecture**: Why plugins from day one
 - **007-implicit-previous**: Why no explicit `{{ previous }}` variable
+- **012-provider-architecture**: Providers and storage separation
+- **013-provider-template-functions**: Provider namespace + template functions
 
 ## Frontmatter Structure
 
@@ -162,39 +142,23 @@ description: ...      # Passed through to output
 ---
 ```
 
-## Plugin Protocols
+## Providers and Template Functions
 
-### InputPlugin
-```python
-class InputPlugin(Protocol):
-    scheme: str  # "file", "mcp", "colin"
-    async def fetch(self, uri: str) -> RefResult: ...
-    async def hash(self, uri: str) -> str: ...
+Providers handle scheme-based reads (`project://`, `mcp.<name>://`, and custom schemes). Storage providers also write compiled outputs.
+
+Providers can contribute template functions via `Provider.get_functions()`. These are bound under a shared namespace:
+
+```jinja
+{{ providers.mcp.github.resource("repo://owner/repo/readme") }}
+{{ mcp.github.resource("repo://owner/repo/readme") }}
+{{ extract(ref("context/summary").content, "summarize") }}
 ```
 
-### OutputPlugin
-```python
-class OutputPlugin(Protocol):
-    name: str  # "markdown", "skill"
-    async def emit(self, doc: CompiledDocument, output_dir: Path) -> list[Path]: ...
-```
-
-### MaterializationPlugin
-```python
-class MaterializationPlugin(Protocol):
-    name: str  # "dag", "bfs"
-    async def materialize(
-        self,
-        changed: set[str],
-        graph: DependencyGraph,
-        compile_fn: Callable[[str], Awaitable[CompiledDocument]],
-    ) -> list[str]: ...
-```
+Provider functions may return raw strings or referenceable values; referenceable returns are normalized into `RefResult` and tracked in `refs_evaluated`.
 
 ## MVP Limitations
 
 Current implementation excludes:
-- MCP integration
 - Remote `colin://` refs
 - `{% pin %}` blocks
 - Watch mode

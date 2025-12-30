@@ -17,7 +17,6 @@ from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
-from colin.mcp import MCPManager
 from colin.models import (
     ColinConfig,
     ColinDocument,
@@ -26,6 +25,8 @@ from colin.models import (
     Frontmatter,
     Manifest,
 )
+from colin.providers.context import ProviderContext
+from colin.providers.manager import create_provider_manager
 from colin.providers.project import ProjectProvider
 from colin.providers.storage.base import Storage
 from colin.renders import get_renderer
@@ -121,7 +122,9 @@ class CompileEngine:
                     return dep
             return None
 
-        async def compile_one(uri: str) -> tuple[str, CompiledDocument | Exception | None]:
+        async def compile_one(
+            uri: str, provider_manager
+        ) -> tuple[str, CompiledDocument | Exception | None]:
             """Compile a single document, catching exceptions.
 
             Returns None if the document was skipped.
@@ -141,19 +144,19 @@ class CompileEngine:
             try:
                 with doc_state if doc_state else _nullcontext():
                     result = await self._compile_document(
-                        doc, compiled_outputs, mcp_manager, doc_state
+                        doc, compiled_outputs, provider_manager, doc_state
                     )
                     return (uri, result)
             except Exception as e:
                 failed_uris.add(uri)
                 return (uri, e)
 
-        # Create MCP manager for resource access
-        mcp_manager = MCPManager(self.config.mcp)
-        try:
+        async with create_provider_manager(self.config) as provider_manager:
             for level in compile_order:
                 # Compile all documents in this level in parallel
-                results = await asyncio.gather(*[compile_one(uri) for uri in level])
+                results = await asyncio.gather(
+                    *[compile_one(uri, provider_manager) for uri in level]
+                )
 
                 # Process results
                 for uri, result in results:
@@ -167,8 +170,6 @@ class CompileEngine:
                         compiled_outputs[uri] = result
                         await self._write_output(result)
                         self._update_manifest(result)
-        finally:
-            await mcp_manager.close()
 
         # Raise collected errors if any
         if errors:
@@ -202,7 +203,8 @@ class CompileEngine:
         doc = self._load_document(source_file)
 
         # Compile
-        result = await self._compile_document(doc, {})
+        async with create_provider_manager(self.config) as provider_manager:
+            result = await self._compile_document(doc, {}, provider_manager)
 
         # Write output
         await self._write_output(result)
@@ -359,7 +361,7 @@ class CompileEngine:
         self,
         doc: ColinDocument,
         compiled_outputs: dict[str, CompiledDocument],
-        mcp_manager: MCPManager | None = None,
+        provider_manager,
         doc_state: OperationState | None = None,
     ) -> CompiledDocument:
         """Compile a single document.
@@ -367,7 +369,7 @@ class CompileEngine:
         Args:
             doc: The document to compile.
             compiled_outputs: Already-compiled documents from this run.
-            mcp_manager: MCP manager for resource access.
+            provider_manager: Provider manager for external resource access.
             doc_state: Optional state for progress tracking.
 
         Returns:
@@ -383,12 +385,24 @@ class CompileEngine:
             default_model=self.default_model,
             project_provider=self._project_provider,
             compiled_outputs=compiled_outputs,
-            mcp_manager=mcp_manager,
+            provider_manager=provider_manager,
             doc_state=doc_state,
         )
 
         # Bind context to environment
-        bind_context_to_environment(env, context)
+        bind_context_to_environment(
+            env,
+            context,
+            provider_manager=provider_manager,
+            provider_ctx=ProviderContext(
+                manifest=self.manifest,
+                document_uri=doc.uri,
+                doc_state=doc_state,
+                ref=context.ref,
+                track_ref=context.track_ref,
+                extract=context.extract,
+            ),
+        )
 
         # Compile template
         template = env.from_string(doc.template_content)

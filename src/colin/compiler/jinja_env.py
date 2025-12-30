@@ -11,6 +11,8 @@ from colin.compiler.extensions.llm_block import LLMBlockExtension
 
 if TYPE_CHECKING:
     from colin.compiler.context import CompileContext
+    from colin.providers.context import ProviderContext
+    from colin.providers.manager import ProviderManager
 
 
 def create_jinja_environment() -> Environment:
@@ -31,6 +33,8 @@ def create_jinja_environment() -> Environment:
 def bind_context_to_environment(
     env: Environment,
     context: CompileContext,
+    provider_manager: ProviderManager,
+    provider_ctx: ProviderContext,
 ) -> Environment:
     """Bind compile context functions to the environment.
 
@@ -49,8 +53,14 @@ def bind_context_to_environment(
 
     # Core functions
     env.globals["ref"] = context.ref
-    env.globals["mcp_resource"] = context.mcp_resource
-    env.globals["mcp_prompt"] = context.mcp_prompt
+
+    providers = provider_manager.namespace(provider_ctx)
+    env.globals["providers"] = providers
+
+    if hasattr(providers, "mcp"):
+        env.globals["mcp"] = getattr(providers, "mcp")
+    if hasattr(providers, "llm"):
+        env.globals["extract"] = getattr(getattr(providers, "llm"), "extract")
 
     # LLM filters
     env.filters["extract"] = create_extract_filter(context)

@@ -204,25 +204,21 @@ class JSONRenderer(Renderer):
 
 ### MCP as a Provider
 
-MCP servers are providers that return raw content from `read()`, plus helper methods that return RefResult for convenience:
+MCP servers are providers that return raw content from `read()`, plus template functions registered under `providers.mcp.<name>`:
 
 ```python
 class MCPProvider(Provider):
-    scheme: str  # Set to "mcp-{instance}"
+    scheme: str  # Set to "mcp" or "mcp.<instance>"
 
     async def read(self, path: str) -> str:
         """Parse path, fetch resource/prompt, return content."""
         ...
 
-    async def mcp_resource(self, resource_uri: str) -> RefResult:
-        """Convenience method - creates RefResult directly."""
-        content = await self._read_resource(resource_uri)
-        return RefResult(content=content, ...)
-
-    async def mcp_prompt(self, name: str, **args: str) -> RefResult:
-        """Convenience method - creates RefResult directly."""
-        content = await self._get_prompt(name, args)
-        return RefResult(content=content, ...)
+    def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
+        return {
+            "resource": self._template_resource,
+            "prompt": self._template_prompt,
+        }
 ```
 
 ## Rationale

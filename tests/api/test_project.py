@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from colin.api.project import _parse_providers, load_project
 
 
@@ -9,9 +11,9 @@ class TestParseProviders:
     """Tests for _parse_providers function."""
 
     def test_direct_provider_config(self) -> None:
-        """[providers.s3] bucket = '...' creates scheme 's3'."""
+        """[[providers.s3]] without name creates scheme 's3'."""
         data = {
-            "s3": {"bucket": "my-bucket", "region": "us-east-1"},
+            "s3": [{"bucket": "my-bucket", "region": "us-east-1"}],
         }
 
         result = _parse_providers(data)
@@ -19,36 +21,36 @@ class TestParseProviders:
         assert "s3" in result
         assert result["s3"].scheme == "s3"
         assert result["s3"].provider_type == "s3"
-        assert result["s3"].instance_name is None
+        assert result["s3"].name is None
         assert result["s3"].config == {"bucket": "my-bucket", "region": "us-east-1"}
 
     def test_nested_provider_instances(self) -> None:
-        """[providers.s3.dev] and [providers.s3.prod] create 's3-dev' and 's3-prod'."""
+        """Named instances create dot schemes."""
         data = {
-            "s3": {
-                "dev": {"bucket": "dev-bucket"},
-                "prod": {"bucket": "prod-bucket"},
-            },
+            "s3": [
+                {"name": "dev", "bucket": "dev-bucket"},
+                {"name": "prod", "bucket": "prod-bucket"},
+            ],
         }
 
         result = _parse_providers(data)
 
-        assert "s3-dev" in result
-        assert result["s3-dev"].scheme == "s3-dev"
-        assert result["s3-dev"].provider_type == "s3"
-        assert result["s3-dev"].instance_name == "dev"
-        assert result["s3-dev"].config == {"bucket": "dev-bucket"}
+        assert "s3.dev" in result
+        assert result["s3.dev"].scheme == "s3.dev"
+        assert result["s3.dev"].provider_type == "s3"
+        assert result["s3.dev"].name == "dev"
+        assert result["s3.dev"].config == {"bucket": "dev-bucket"}
 
-        assert "s3-prod" in result
-        assert result["s3-prod"].scheme == "s3-prod"
-        assert result["s3-prod"].provider_type == "s3"
-        assert result["s3-prod"].instance_name == "prod"
-        assert result["s3-prod"].config == {"bucket": "prod-bucket"}
+        assert "s3.prod" in result
+        assert result["s3.prod"].scheme == "s3.prod"
+        assert result["s3.prod"].provider_type == "s3"
+        assert result["s3.prod"].name == "prod"
+        assert result["s3.prod"].config == {"bucket": "prod-bucket"}
 
     def test_empty_provider_config(self) -> None:
-        """[providers.markdown] with no config creates scheme 'markdown'."""
+        """Empty [[providers.markdown]] creates scheme 'markdown'."""
         data = {
-            "markdown": {},
+            "markdown": [{}],
         }
 
         result = _parse_providers(data)
@@ -60,38 +62,36 @@ class TestParseProviders:
     def test_multiple_provider_types(self) -> None:
         """Multiple provider types are parsed correctly."""
         data = {
-            "s3": {"bucket": "bucket"},
-            "mcp": {
-                "linear": {"command": "npx @linear/mcp"},
-                "github": {"command": "npx @github/mcp"},
-            },
+            "s3": [{"bucket": "bucket"}],
+            "mcp": [
+                {"name": "linear", "command": "npx @linear/mcp"},
+                {"name": "github", "command": "npx @github/mcp"},
+            ],
         }
 
         result = _parse_providers(data)
 
         assert "s3" in result
-        assert "mcp-linear" in result
-        assert "mcp-github" in result
+        assert "mcp.linear" in result
+        assert "mcp.github" in result
 
     def test_single_nested_instance(self) -> None:
-        """[providers.mcp.linear] with single instance works."""
+        """Single named instance parses correctly."""
         data = {
-            "mcp": {
-                "linear": {"command": "npx", "args": ["@linear/mcp"]},
-            },
+            "mcp": [{"name": "linear", "command": "npx", "args": ["@linear/mcp"]}],
         }
 
         result = _parse_providers(data)
 
-        assert "mcp-linear" in result
-        assert result["mcp-linear"].provider_type == "mcp"
-        assert result["mcp-linear"].instance_name == "linear"
-        assert result["mcp-linear"].config == {"command": "npx", "args": ["@linear/mcp"]}
+        assert "mcp.linear" in result
+        assert result["mcp.linear"].provider_type == "mcp"
+        assert result["mcp.linear"].name == "linear"
+        assert result["mcp.linear"].config == {"command": "npx", "args": ["@linear/mcp"]}
 
     def test_provider_with_list_config(self) -> None:
         """Provider config can contain lists."""
         data = {
-            "custom": {"paths": ["/path/one", "/path/two"], "enabled": True},
+            "custom": [{"paths": ["/path/one", "/path/two"], "enabled": True}],
         }
 
         result = _parse_providers(data)
@@ -101,17 +101,18 @@ class TestParseProviders:
         assert result["custom"].config["enabled"] is True
 
     def test_deeply_nested_config_treated_as_direct(self) -> None:
-        """Nested dicts in direct config are preserved, not treated as instances."""
+        """Nested dicts in config are preserved."""
         data = {
-            "api": {
-                "endpoint": "https://api.example.com",
-                "headers": {"Authorization": "Bearer token"},
-            },
+            "api": [
+                {
+                    "endpoint": "https://api.example.com",
+                    "headers": {"Authorization": "Bearer token"},
+                }
+            ],
         }
 
         result = _parse_providers(data)
 
-        # Since not all values are dicts, treated as direct config
         assert "api" in result
         assert result["api"].scheme == "api"
         assert result["api"].config["endpoint"] == "https://api.example.com"
@@ -126,28 +127,62 @@ class TestParseProviders:
     def test_mcp_provider_url_config(self) -> None:
         """MCP provider can have URL config for remote servers."""
         data = {
-            "mcp": {
-                "remote": {"url": "http://localhost:8000/mcp"},
-            },
+            "mcp": [{"name": "remote", "url": "http://localhost:8000/mcp"}],
         }
 
         result = _parse_providers(data)
 
-        assert "mcp-remote" in result
-        assert result["mcp-remote"].config["url"] == "http://localhost:8000/mcp"
+        assert "mcp.remote" in result
+        assert result["mcp.remote"].config["url"] == "http://localhost:8000/mcp"
 
     def test_provider_instance_names_with_hyphens(self) -> None:
         """Instance names can contain hyphens."""
         data = {
-            "mcp": {
-                "my-custom-server": {"command": "server"},
-            },
+            "mcp": [{"name": "my-custom-server", "command": "server"}],
         }
 
         result = _parse_providers(data)
 
-        assert "mcp-my-custom-server" in result
-        assert result["mcp-my-custom-server"].instance_name == "my-custom-server"
+        assert "mcp.my-custom-server" in result
+        assert result["mcp.my-custom-server"].name == "my-custom-server"
+
+    def test_provider_scheme_suffix_override(self) -> None:
+        """scheme-suffix overrides the scheme suffix for named instances."""
+        data = {
+            "s3": [{"name": "dev", "scheme-suffix": "stage", "bucket": "dev-bucket"}],
+        }
+
+        result = _parse_providers(data)
+
+        assert "s3.stage" in result
+        assert result["s3.stage"].name == "dev"
+        assert result["s3.stage"].scheme_suffix == "stage"
+
+    def test_scheme_suffix_requires_name(self) -> None:
+        """scheme-suffix without a name raises an error."""
+        data = {"s3": [{"scheme-suffix": "stage", "bucket": "dev-bucket"}]}
+
+        with pytest.raises(ValueError, match="scheme-suffix requires a name"):
+            _parse_providers(data)
+
+    def test_requires_array_of_tables(self) -> None:
+        """Providers must use array-of-tables syntax."""
+        data = {"s3": {"bucket": "bucket"}}
+
+        with pytest.raises(ValueError, match="array-of-tables"):
+            _parse_providers(data)
+
+    def test_duplicate_instance_name_rejected(self) -> None:
+        """Duplicate instance names are rejected."""
+        data = {
+            "s3": [
+                {"name": "dev", "bucket": "one"},
+                {"name": "dev", "bucket": "two"},
+            ],
+        }
+
+        with pytest.raises(ValueError, match="duplicate name"):
+            _parse_providers(data)
 
 
 class TestLoadProject:
@@ -178,10 +213,11 @@ target-path = "dist"
 [project]
 name = "test-project"
 
-[providers.s3]
+[[providers.s3]]
 bucket = "my-bucket"
 
-[providers.mcp.linear]
+[[providers.mcp]]
+name = "linear"
 command = "npx @linear/mcp"
 """)
 
@@ -190,8 +226,22 @@ command = "npx @linear/mcp"
         assert "s3" in config.providers
         assert config.providers["s3"].config["bucket"] == "my-bucket"
 
-        assert "mcp-linear" in config.providers
-        assert config.providers["mcp-linear"].config["command"] == "npx @linear/mcp"
+        assert "mcp.linear" in config.providers
+        assert config.providers["mcp.linear"].config["command"] == "npx @linear/mcp"
+
+    def test_load_project_rejects_mcp_section(self, tmp_path: Path) -> None:
+        """Legacy mcp section is rejected."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[mcp.servers.linear]
+command = "npx @linear/mcp"
+""")
+
+        with pytest.raises(ValueError, match="providers.mcp"):
+            load_project(config_file)
 
     def test_load_project_with_storage_config(self, tmp_path: Path) -> None:
         """Load project with explicit storage configuration."""

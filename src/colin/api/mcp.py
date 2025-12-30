@@ -1,10 +1,32 @@
 """MCP server management API functions."""
 
 from pathlib import Path
+from typing import Any
 
-from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
+from fastmcp.mcp_config import RemoteMCPServer, StdioMCPServer
 
-from colin.api.project import find_project_file, load_project, save_project
+from colin.api.project import (
+    ProviderInstanceConfig,
+    find_project_file,
+    load_project,
+    save_project,
+)
+
+
+def _build_mcp_server(config: dict[str, Any]) -> StdioMCPServer | RemoteMCPServer:
+    """Build an MCP server config from provider config."""
+    if "url" in config:
+        return RemoteMCPServer(
+            url=str(config["url"]),
+            headers=config.get("headers", {}),
+        )
+    if "command" in config:
+        return StdioMCPServer(
+            command=str(config["command"]),
+            args=config.get("args", []),
+            env=config.get("env", {}),
+        )
+    raise ValueError("MCP server config requires 'command' or 'url'")
 
 
 def add_server(
@@ -29,10 +51,16 @@ def add_server(
 
     config = load_project(project_file)
 
-    if name in config.mcp.mcpServers:
-        raise ValueError(f"MCP server '{name}' already exists")
+    for instance in config.providers.values():
+        if instance.provider_type == "mcp" and instance.name == name:
+            raise ValueError(f"MCP server '{name}' already exists")
 
-    config.mcp.mcpServers[name] = server
+    instance = ProviderInstanceConfig(
+        provider_type="mcp",
+        name=name,
+        config=server.model_dump(exclude_none=True, exclude_defaults=True),
+    )
+    config.providers[instance.scheme] = instance
     save_project(project_file, config)
 
 
@@ -53,21 +81,27 @@ def remove_server(project_dir: Path, name: str) -> None:
 
     config = load_project(project_file)
 
-    if name not in config.mcp.mcpServers:
+    to_delete: str | None = None
+    for scheme, instance in config.providers.items():
+        if instance.provider_type == "mcp" and instance.name == name:
+            to_delete = scheme
+            break
+
+    if to_delete is None:
         raise ValueError(f"MCP server '{name}' not found")
 
-    del config.mcp.mcpServers[name]
+    del config.providers[to_delete]
     save_project(project_file, config)
 
 
-def list_servers(project_dir: Path) -> MCPConfig:
+def list_servers(project_dir: Path) -> dict[str, StdioMCPServer | RemoteMCPServer]:
     """Get configured MCP servers.
 
     Args:
         project_dir: Project directory.
 
     Returns:
-        MCPConfig with server configurations.
+        Mapping of server name to MCP server configuration.
 
     Raises:
         FileNotFoundError: If no colin.toml found.
@@ -77,4 +111,9 @@ def list_servers(project_dir: Path) -> MCPConfig:
         raise FileNotFoundError(f"No colin.toml found in {project_dir}")
 
     config = load_project(project_file)
-    return config.mcp
+    servers: dict[str, StdioMCPServer | RemoteMCPServer] = {}
+    for instance in config.providers.values():
+        if instance.provider_type != "mcp" or instance.name is None:
+            continue
+        servers[instance.name] = _build_mcp_server(instance.config)
+    return servers

@@ -8,8 +8,7 @@ from typing import Any
 
 import tomli
 import tomli_w
-from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from colin.api.manifest import load_manifest
 from colin.settings import settings
@@ -41,17 +40,32 @@ class ProviderInstanceConfig(BaseModel):
     provider_type: str
     """Provider type name (e.g., 's3', 'mcp')."""
 
-    instance_name: str | None = None
-    """Instance name if specified (e.g., 'dev' for [providers.s3.dev])."""
+    name: str | None = None
+    """Instance name if specified (e.g., 'dev' for [[providers.s3]])."""
+
+    scheme_suffix: str | None = None
+    """Optional scheme suffix override (defaults to name)."""
 
     config: dict[str, Any] = Field(default_factory=dict)
     """Provider-specific configuration."""
 
+    @model_validator(mode="after")
+    def _validate_names(self) -> ProviderInstanceConfig:
+        if self.name is not None and not str(self.name).strip():
+            raise ValueError("Provider name cannot be empty")
+        if self.scheme_suffix is not None:
+            if self.name is None:
+                raise ValueError("scheme_suffix requires name")
+            if not str(self.scheme_suffix).strip():
+                raise ValueError("scheme_suffix cannot be empty")
+        return self
+
     @property
     def scheme(self) -> str:
-        """Derived URI scheme (e.g., 's3' or 's3-dev')."""
-        if self.instance_name:
-            return f"{self.provider_type}-{self.instance_name}"
+        """Derived URI scheme (e.g., 's3' or 's3.dev')."""
+        if self.name:
+            suffix = self.scheme_suffix or self.name
+            return f"{self.provider_type}.{suffix}"
         return self.provider_type
 
 
@@ -71,7 +85,6 @@ class ProjectConfig(BaseModel):
     manifest_path: Path
     """Absolute path to manifest file."""
     default_llm_model: str | None = None
-    mcp: MCPConfig = MCPConfig()
 
     # Provider configuration
     project_storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -102,11 +115,11 @@ def find_project_file(start: Path | None = None) -> Path | None:
 
 
 def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstanceConfig]:
-    """Parse [providers.*] configuration into ProviderInstanceConfig instances.
+    """Parse [[providers.*]] configuration into ProviderInstanceConfig instances.
 
-    Handles both:
-    - [providers.s3] → scheme 's3'
-    - [providers.s3.dev] → scheme 's3-dev'
+    Each provider type uses array-of-table entries:
+    - [[providers.s3]] name omitted → scheme 's3'
+    - [[providers.s3]] name = 'dev' → scheme 's3.dev'
 
     Args:
         providers_data: Raw providers section from TOML.
@@ -115,33 +128,58 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
         Dictionary mapping scheme to ProviderInstanceConfig.
     """
     result: dict[str, ProviderInstanceConfig] = {}
+    defaults_seen: set[str] = set()
+    names_seen: dict[str, set[str]] = {}
 
     for provider_type, value in providers_data.items():
-        if isinstance(value, dict):
-            # Check if this is a provider config or nested instances
-            # If all values are dicts, it's nested instances like [providers.s3.dev]
-            # If any value is not a dict, it's a direct config like [providers.s3]
-            has_nested = all(isinstance(v, dict) for v in value.values()) and value
-            has_direct = any(not isinstance(v, dict) for v in value.values())
+        if not isinstance(value, list):
+            raise ValueError(
+                f"[providers.{provider_type}] must use array-of-tables "
+                f"([[providers.{provider_type}]])"
+            )
 
-            if has_direct or not value:
-                # Direct config: [providers.s3] bucket = "..."
-                instance = ProviderInstanceConfig(
-                    provider_type=provider_type,
-                    instance_name=None,
-                    config=value,
+        for entry in value:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"Provider config for {provider_type} must be a table, got {type(entry)}"
                 )
-                result[instance.scheme] = instance
-            elif has_nested:
-                # Nested instances: [providers.s3.dev] and [providers.s3.prod]
-                for instance_name, instance_config in value.items():
-                    if isinstance(instance_config, dict):
-                        instance = ProviderInstanceConfig(
-                            provider_type=provider_type,
-                            instance_name=instance_name,
-                            config=instance_config,
-                        )
-                        result[instance.scheme] = instance
+
+            name = entry.get("name")
+            scheme_suffix = entry.get("scheme-suffix", entry.get("scheme_suffix"))
+
+            if name is None and scheme_suffix is not None:
+                raise ValueError(f"[providers.{provider_type}] scheme-suffix requires a name")
+
+            if name is None:
+                if provider_type in defaults_seen:
+                    raise ValueError(
+                        f"[providers.{provider_type}] only one default instance is allowed"
+                    )
+                defaults_seen.add(provider_type)
+            else:
+                seen = names_seen.setdefault(provider_type, set())
+                if name in seen:
+                    raise ValueError(f"[providers.{provider_type}] duplicate name '{name}'")
+                seen.add(name)
+
+            config = {
+                key: value
+                for key, value in entry.items()
+                if key not in {"name", "scheme-suffix", "scheme_suffix"}
+            }
+
+            instance = ProviderInstanceConfig(
+                provider_type=provider_type,
+                name=name,
+                scheme_suffix=scheme_suffix,
+                config=config,
+            )
+
+            if instance.scheme in result:
+                raise ValueError(
+                    f"Duplicate provider scheme '{instance.scheme}' in providers.{provider_type}"
+                )
+            result[instance.scheme] = instance
 
     return result
 
@@ -158,10 +196,10 @@ def load_project(path: Path) -> ProjectConfig:
     with open(path, "rb") as f:
         data = tomli.load(f)
 
-    project = data.get("project", {})
-    mcp_data = data.get("mcp", {})
-    servers_data = mcp_data.get("servers", {})
+    if "mcp" in data:
+        raise ValueError("MCP servers must be configured under [[providers.mcp]]")
 
+    project = data.get("project", {})
     # Resolve paths relative to project root
     project_root = path.parent.resolve()
     model_path_rel = project.get("model-path", "models")
@@ -176,21 +214,6 @@ def load_project(path: Path) -> ProjectConfig:
         manifest_path = (project_root / manifest_path_rel).resolve()
     else:
         manifest_path = target_path / settings.manifest_file
-
-    # Convert [mcp.servers.name] format to MCPConfig
-    mcp_servers: dict[str, StdioMCPServer | RemoteMCPServer] = {}
-    for name, server_data in servers_data.items():
-        if "url" in server_data:
-            mcp_servers[name] = RemoteMCPServer(
-                url=server_data["url"],
-                headers=server_data.get("headers", {}),
-            )
-        elif "command" in server_data:
-            mcp_servers[name] = StdioMCPServer(
-                command=server_data["command"],
-                args=server_data.get("args", []),
-                env=server_data.get("env", {}),
-            )
 
     # Parse project storage config
     project_storage_data = project.get("storage", {})
@@ -220,7 +243,6 @@ def load_project(path: Path) -> ProjectConfig:
         target_path=target_path,
         manifest_path=manifest_path,
         default_llm_model=project.get("default-llm-model"),
-        mcp=MCPConfig(mcpServers=mcp_servers),
         project_storage=project_storage,
         artifacts_storage=artifacts_storage,
         providers=providers,
@@ -317,12 +339,17 @@ def save_project(path: Path, config: ProjectConfig) -> None:
 
     data: dict[str, Any] = {"project": project_data}
 
-    # Convert MCPConfig to [mcp.servers.name] format
-    if config.mcp.mcpServers:
-        servers = {}
-        for name, server in config.mcp.mcpServers.items():
-            servers[name] = server.model_dump(exclude_none=True, exclude_defaults=True)
-        data["mcp"] = {"servers": servers}
+    providers_data: dict[str, list[dict[str, Any]]] = {}
+    for instance in config.providers.values():
+        entry = dict(instance.config)
+        if instance.name is not None:
+            entry["name"] = instance.name
+        if instance.scheme_suffix is not None:
+            entry["scheme-suffix"] = instance.scheme_suffix
+        providers_data.setdefault(instance.provider_type, []).append(entry)
+
+    if providers_data:
+        data["providers"] = providers_data
 
     with open(path, "wb") as f:
         tomli_w.dump(data, f)
