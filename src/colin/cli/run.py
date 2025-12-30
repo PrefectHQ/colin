@@ -118,7 +118,7 @@ async def run(
     project: Path = Path("."),
     *,
     target: Path | None = None,
-    force: bool = False,
+    no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
     dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
 ) -> None:
@@ -127,7 +127,7 @@ async def run(
     Args:
         project: Project directory (default: current directory).
         target: Override target directory (default: from colin.toml).
-        force: Force recompile all documents.
+        no_cache: Ignore cached results and recompile all documents.
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
     """
@@ -152,7 +152,7 @@ async def run(
                 await api.compile_project(
                     project_dir=project,
                     target_dir=target,
-                    force=force,
+                    force=no_cache,
                     dry_run=True,
                 ),
             )
@@ -170,7 +170,7 @@ async def run(
             await api.compile_project(
                 project_dir=project,
                 target_dir=target,
-                force=force,
+                force=no_cache,
                 dry_run=False,
                 state=state,
             )
@@ -190,7 +190,7 @@ async def run(
                 api.compile_project(
                     project_dir=project,
                     target_dir=target,
-                    force=force,
+                    force=no_cache,
                     dry_run=False,
                     state=state,
                 )
