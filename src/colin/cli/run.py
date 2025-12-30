@@ -159,7 +159,7 @@ async def run(
             print_project_info(project_file, project_name, target_dir)
             console.print(f"[bold]Would run {len(dry_result)} documents:[/]")
             for uri, _ in dry_result:
-                console.print(f"  {uri}.md")
+                console.print(f"  {uri}")
             return
 
         # Create state for progress tracking

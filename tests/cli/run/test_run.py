@@ -34,3 +34,13 @@ def test_clean_does_nothing_if_no_target(tmp_path: Path, monkeypatch, cli: Calla
 
     # Clean should not error even if target doesn't exist
     cli("clean", "--yes")
+
+
+def test_dry_run_shows_correct_uri(test_project: Path, capsys, cli: Callable[..., None]):
+    """colin run --dry-run shows URIs without double .md extension."""
+    cli("run", "--dry-run")
+
+    captured = capsys.readouterr()
+    # Should show project://greeting.md, not project://greeting.md.md
+    assert "project://greeting.md.md" not in captured.out
+    assert "project://greeting.md" in captured.out
