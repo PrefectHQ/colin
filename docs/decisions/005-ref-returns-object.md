@@ -2,6 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2024-12-27
+**Updated**: 2025-01-06
 
 ## Context
 
@@ -22,14 +23,15 @@ class RefResult:
     template: str            # The raw uncompiled source
     updated: datetime        # When it was last compiled
     uri: str                 # The ref URI
+    source: object | None    # Original domain object (MCPResource, etc.)
 
     def __str__(self) -> str:
-        return self.content
+        return f"Ref({self.uri!r})"
 ```
 
-The `__str__()` method returns `.content`, so template interpolation just works:
+The `__str__()` method returns a placeholder to prevent accidentally dumping large content. Use `.content` explicitly:
 ```jinja
-{{ ref('context/foo') }}              {# Outputs content #}
+{{ ref('context/foo').content }}      {# Outputs content #}
 {{ ref('context/foo').name }}         {# Access name #}
 {{ ref('context/foo').updated }}      {# Access timestamp #}
 ```

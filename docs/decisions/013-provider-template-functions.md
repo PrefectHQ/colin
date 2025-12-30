@@ -2,6 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2025-01-06
+**Updated**: 2025-01-06
 
 ## Context
 
@@ -19,12 +20,6 @@ Provider functions live under a unified namespace:
 providers.<type>.<name>.<function>(...)
 ```
 
-Default instances (no `name`) may be called with shorthand:
-
-```
-providers.<type>.<function>(...)
-```
-
 `mcp` is always aliased to `providers.mcp`, and `extract` is aliased to `providers.llm.extract`.
 
 ### Configuration Format
@@ -32,42 +27,73 @@ providers.<type>.<function>(...)
 Provider instances are defined using array-of-tables:
 
 ```toml
-[[providers.s3]]
-bucket = "main"
-
-[[providers.s3]]
-name = "dev"
-bucket = "dev"
-
 [[providers.mcp]]
 name = "github"
 command = "uvx"
 args = ["mcp-server-github"]
+
+[[providers.mcp]]
+name = "linear"
+command = "npx"
+args = ["@linear/mcp-server"]
 ```
 
-Each entry supports:
-- `name`: optional instance name (default instance when omitted)
-- `scheme-suffix`: optional override for the URI scheme suffix (defaults to `name`)
-
-### Schemes
-
-Schemes are derived as:
-- Default instance: `provider_type`
-- Named instance: `provider_type.<scheme-suffix>`
-
-Example: `providers.s3.dev` -> `s3.dev://...`
+Each MCP entry requires a `name`. This name becomes the accessor in templates.
 
 ### Provider Function Returns
 
-Providers register functions via `Provider.get_functions()`. Functions can return:
-- `str`: returned as-is (no dependency)
-- `Reference`: converted to `RefResult` and tracked as a ref
-- `RefResult`: tracked as a ref
+Provider functions return domain objects, not `RefResult`. Domain objects implement the `Referenceable` protocol:
 
-This keeps dependency tracking centralized in the template wrapper while allowing providers to emit referenceable results.
+```python
+@runtime_checkable
+class Referenceable(Protocol):
+    @property
+    def uri(self) -> str: ...
+    def to_ref_result(self) -> RefResult: ...
+```
+
+MCP provider returns `MCPResource` and `MCPPrompt`:
+
+```python
+@dataclass
+class MCPResource:
+    uri: str
+    content: str
+    name: str
+    description: str | None = None
+
+    def to_ref_result(self) -> RefResult:
+        return RefResult(..., source=self)
+```
+
+### Dependency Tracking
+
+Provider functions do NOT automatically track dependencies. To track a dependency, wrap with `ref()`:
+
+```jinja
+{# Not tracked - returns MCPResource #}
+{{ mcp.github.resource('repo://...').content }}
+
+{# Tracked - returns RefResult #}
+{{ ref(mcp.github.resource('repo://...')).content }}
+```
+
+The `ref()` function accepts both URI strings and `Referenceable` objects. For Referenceable objects, it calls `to_ref_result()` and records the dependency.
+
+### Accessing Original Objects
+
+`RefResult.source` preserves the original domain object:
+
+```jinja
+{% set r = ref(mcp.github.resource('repo://...')) %}
+{{ r.content }}        {# RefResult.content #}
+{{ r.source.uri }}     {# MCPResource.uri #}
+```
 
 ## Consequences
 
-- `mcp_resource()` and `mcp_prompt()` are replaced by `mcp.<server>.resource()` and `mcp.<server>.prompt()`
-- Provider configuration is always array-of-tables
-- Multiple provider instances coexist without function name collisions
+- Provider functions return domain objects (MCPResource, MCPPrompt)
+- `ref()` accepts `str | Referenceable`
+- Dependency tracking is explicit via `ref()` wrapper
+- `RefResult.source` provides escape hatch to original object
+- `mcp.<server>.resource()` and `mcp.<server>.prompt()` replace old functions
