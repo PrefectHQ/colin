@@ -262,8 +262,8 @@ def init(
         project_file, model_dir = api.init_project(
             directory=project_dir,
             name=name,
-            model_path=models,
-            target_path=target,
+            model_path_rel=models,
+            target_path_rel=target,
         )
 
         cwd = Path.cwd()

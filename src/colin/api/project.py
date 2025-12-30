@@ -9,7 +9,7 @@ from typing import Any
 import tomli
 import tomli_w
 from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from colin.api.manifest import load_manifest
 from colin.settings import settings
@@ -28,14 +28,57 @@ name = "{name}"
 """
 
 
+class StorageConfig(BaseModel):
+    """Configuration for project or artifacts storage."""
+
+    provider: str = "file"
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderInstanceConfig(BaseModel):
+    """Configuration for a provider instance."""
+
+    provider_type: str
+    """Provider type name (e.g., 's3', 'mcp')."""
+
+    instance_name: str | None = None
+    """Instance name if specified (e.g., 'dev' for [providers.s3.dev])."""
+
+    config: dict[str, Any] = Field(default_factory=dict)
+    """Provider-specific configuration."""
+
+    @property
+    def scheme(self) -> str:
+        """Derived URI scheme (e.g., 's3' or 's3-dev')."""
+        if self.instance_name:
+            return f"{self.provider_type}-{self.instance_name}"
+        return self.provider_type
+
+
 class ProjectConfig(BaseModel):
-    """Colin project configuration."""
+    """Colin project configuration with resolved paths.
+
+    All paths are absolute and resolved at load time.
+    """
 
     name: str = "colin-project"
-    model_path: str = "models"
-    target_path: str = "target"
+    project_root: Path
+    """Absolute path to project directory (where colin.toml lives)."""
+    model_path: Path
+    """Absolute path to models directory."""
+    target_path: Path
+    """Absolute path to target directory."""
+    manifest_path: Path
+    """Absolute path to manifest file."""
     default_llm_model: str | None = None
     mcp: MCPConfig = MCPConfig()
+
+    # Provider configuration
+    project_storage: StorageConfig = Field(default_factory=StorageConfig)
+    artifacts_storage: StorageConfig | None = None
+    providers: dict[str, ProviderInstanceConfig] = Field(default_factory=dict)
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 def find_project_file(start: Path | None = None) -> Path | None:
@@ -58,6 +101,51 @@ def find_project_file(start: Path | None = None) -> Path | None:
     return None
 
 
+def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstanceConfig]:
+    """Parse [providers.*] configuration into ProviderInstanceConfig instances.
+
+    Handles both:
+    - [providers.s3] → scheme 's3'
+    - [providers.s3.dev] → scheme 's3-dev'
+
+    Args:
+        providers_data: Raw providers section from TOML.
+
+    Returns:
+        Dictionary mapping scheme to ProviderInstanceConfig.
+    """
+    result: dict[str, ProviderInstanceConfig] = {}
+
+    for provider_type, value in providers_data.items():
+        if isinstance(value, dict):
+            # Check if this is a provider config or nested instances
+            # If all values are dicts, it's nested instances like [providers.s3.dev]
+            # If any value is not a dict, it's a direct config like [providers.s3]
+            has_nested = all(isinstance(v, dict) for v in value.values()) and value
+            has_direct = any(not isinstance(v, dict) for v in value.values())
+
+            if has_direct or not value:
+                # Direct config: [providers.s3] bucket = "..."
+                instance = ProviderInstanceConfig(
+                    provider_type=provider_type,
+                    instance_name=None,
+                    config=value,
+                )
+                result[instance.scheme] = instance
+            elif has_nested:
+                # Nested instances: [providers.s3.dev] and [providers.s3.prod]
+                for instance_name, instance_config in value.items():
+                    if isinstance(instance_config, dict):
+                        instance = ProviderInstanceConfig(
+                            provider_type=provider_type,
+                            instance_name=instance_name,
+                            config=instance_config,
+                        )
+                        result[instance.scheme] = instance
+
+    return result
+
+
 def load_project(path: Path) -> ProjectConfig:
     """Load project configuration from colin.toml.
 
@@ -65,7 +153,7 @@ def load_project(path: Path) -> ProjectConfig:
         path: Path to colin.toml file.
 
     Returns:
-        ProjectConfig with settings.
+        ProjectConfig with resolved absolute paths.
     """
     with open(path, "rb") as f:
         data = tomli.load(f)
@@ -73,6 +161,21 @@ def load_project(path: Path) -> ProjectConfig:
     project = data.get("project", {})
     mcp_data = data.get("mcp", {})
     servers_data = mcp_data.get("servers", {})
+
+    # Resolve paths relative to project root
+    project_root = path.parent.resolve()
+    model_path_rel = project.get("model-path", "models")
+    target_path_rel = project.get("target-path", "target")
+    manifest_path_rel = project.get("manifest-path")
+
+    model_path = (project_root / model_path_rel).resolve()
+    target_path = (project_root / target_path_rel).resolve()
+
+    # Manifest path: explicit config or default to {target}/manifest.json
+    if manifest_path_rel:
+        manifest_path = (project_root / manifest_path_rel).resolve()
+    else:
+        manifest_path = target_path / settings.manifest_file
 
     # Convert [mcp.servers.name] format to MCPConfig
     mcp_servers: dict[str, StdioMCPServer | RemoteMCPServer] = {}
@@ -89,12 +192,38 @@ def load_project(path: Path) -> ProjectConfig:
                 env=server_data.get("env", {}),
             )
 
+    # Parse project storage config
+    project_storage_data = project.get("storage", {})
+    project_storage = StorageConfig(
+        provider=project_storage_data.get("provider", "file"),
+        config={k: v for k, v in project_storage_data.items() if k != "provider"},
+    )
+
+    # Parse artifacts storage config (optional, defaults to project storage)
+    artifacts_data = data.get("artifacts", {})
+    artifacts_storage_data = artifacts_data.get("storage")
+    artifacts_storage = None
+    if artifacts_storage_data:
+        artifacts_storage = StorageConfig(
+            provider=artifacts_storage_data.get("provider", "file"),
+            config={k: v for k, v in artifacts_storage_data.items() if k != "provider"},
+        )
+
+    # Parse provider instances
+    providers_data = data.get("providers", {})
+    providers = _parse_providers(providers_data)
+
     return ProjectConfig(
         name=project.get("name", "colin-project"),
-        model_path=project.get("model-path", "models"),
-        target_path=project.get("target-path", "target"),
+        project_root=project_root,
+        model_path=model_path,
+        target_path=target_path,
+        manifest_path=manifest_path,
         default_llm_model=project.get("default-llm-model"),
         mcp=MCPConfig(mcpServers=mcp_servers),
+        project_storage=project_storage,
+        artifacts_storage=artifacts_storage,
+        providers=providers,
     )
 
 
@@ -120,16 +249,16 @@ def create_project(directory: Path, name: str | None = None) -> Path:
 def init_project(
     directory: Path,
     name: str | None = None,
-    model_path: str = "models",
-    target_path: str = "target",
+    model_path_rel: str = "models",
+    target_path_rel: str = "target",
 ) -> tuple[Path, Path]:
     """Initialize a new Colin project with colin.toml and models directory.
 
     Args:
         directory: Directory to create project in.
         name: Project name (default: directory name).
-        model_path: Path to models directory (default: "models").
-        target_path: Path to target directory (default: "target").
+        model_path_rel: Relative path to models directory (default: "models").
+        target_path_rel: Relative path to target directory (default: "target").
 
     Returns:
         Tuple of (colin.toml path, models directory path).
@@ -142,33 +271,46 @@ def init_project(
     if project_file.exists():
         raise FileExistsError(f"Project already exists: {project_file}")
 
+    # Resolve paths
+    project_root = directory.resolve()
+    model_path = (project_root / model_path_rel).resolve()
+    target_path = (project_root / target_path_rel).resolve()
+    manifest_path = target_path / settings.manifest_file
+
     # Create colin.toml with full config
     project_name = name or directory.name
     config = ProjectConfig(
         name=project_name,
+        project_root=project_root,
         model_path=model_path,
         target_path=target_path,
+        manifest_path=manifest_path,
     )
     save_project(project_file, config)
 
     # Create models directory
-    model_dir = directory / model_path
-    model_dir.mkdir(parents=True, exist_ok=True)
+    model_path.mkdir(parents=True, exist_ok=True)
 
-    return project_file, model_dir
+    return project_file, model_path
 
 
 def save_project(path: Path, config: ProjectConfig) -> None:
     """Save project configuration to colin.toml.
 
+    Converts absolute paths back to relative paths for serialization.
+
     Args:
         path: Path to colin.toml file.
         config: Configuration to save.
     """
+    # Convert absolute paths to relative for TOML
+    model_path_rel = config.model_path.relative_to(config.project_root)
+    target_path_rel = config.target_path.relative_to(config.project_root)
+
     project_data: dict[str, Any] = {
         "name": config.name,
-        "model-path": config.model_path,
-        "target-path": config.target_path,
+        "model-path": str(model_path_rel),
+        "target-path": str(target_path_rel),
     }
     if config.default_llm_model:
         project_data["default-llm-model"] = config.default_llm_model
@@ -208,13 +350,14 @@ def get_project_status(project_dir: Path) -> dict:
     if project_file:
         config = load_project(project_file)
         project_name = config.name
-        target_dir = project_file.parent / config.target_path
+        target_dir = config.target_path
+        manifest_path = config.manifest_path
     else:
         project_dir = project_dir.resolve()
         project_name = project_dir.name
         target_dir = project_dir / "target"
+        manifest_path = target_dir / settings.manifest_file
 
-    manifest_path = target_dir / settings.manifest_file
     manifest = load_manifest(manifest_path)
 
     total_llm_calls = sum(len(doc.llm_calls) for doc in manifest.documents.values())
@@ -252,7 +395,7 @@ def clean_project(project_dir: Path) -> list[Path]:
 
     if project_file:
         config = load_project(project_file)
-        target_dir = project_file.parent / config.target_path
+        target_dir = config.target_path
     else:
         target_dir = project_dir.resolve() / "target"
 

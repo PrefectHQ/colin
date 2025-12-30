@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from colin.api.project import ProjectConfig
 from colin.compiler import CompileEngine
-from colin.models import Manifest
-from colin.plugins.inputs.file import ProjectInput
+from colin.providers.storage.file import FileStorage
 
 
 class TestCompileEngine:
@@ -17,20 +17,23 @@ class TestCompileEngine:
     def engine_setup(
         self, tmp_path: Path, mock_agent: MagicMock
     ) -> tuple[CompileEngine, Path, Path]:
-        source_dir = tmp_path / "context"
+        source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
-        output_dir.mkdir()
+        output_dir = tmp_path / "target" / "compiled"
+        output_dir.mkdir(parents=True)
 
-        manifest = Manifest()
-        input_plugin = ProjectInput(
-            model_dirs=[source_dir],
-            target_dir=output_dir,
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=source_dir,
+            target_path=tmp_path / "target",
+            manifest_path=tmp_path / "target" / "manifest.json",
         )
+        artifact_storage = FileStorage(base_path=output_dir)
 
         engine = CompileEngine(
-            manifest=manifest,
-            input_plugin=input_plugin,
+            config=config,
+            artifact_storage=artifact_storage,
             default_model="test-model",
         )
         return engine, source_dir, output_dir

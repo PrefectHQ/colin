@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from fastmcp.mcp_config import RemoteMCPServer, StdioMCPServer
 
 from colin.api.project import load_project
 from colin.cli import app
@@ -19,6 +20,7 @@ class TestMCPAdd:
         config = load_project(project / "colin.toml")
         assert "greeter" in config.mcp.mcpServers
         server = config.mcp.mcpServers["greeter"]
+        assert isinstance(server, StdioMCPServer)
         assert server.command == "python"
         assert server.args == ["server.py"]
 
@@ -29,6 +31,7 @@ class TestMCPAdd:
         config = load_project(project / "colin.toml")
         assert "remote" in config.mcp.mcpServers
         server = config.mcp.mcpServers["remote"]
+        assert isinstance(server, RemoteMCPServer)
         assert server.url == "http://localhost:8000/mcp"
 
     def test_add_with_env(self, project: Path, cli: Callable[..., None]):
@@ -37,6 +40,7 @@ class TestMCPAdd:
 
         config = load_project(project / "colin.toml")
         server = config.mcp.mcpServers["api"]
+        assert isinstance(server, StdioMCPServer)
         assert server.env == {"API_KEY": "secret"}
 
     def test_add_rejects_env_with_http(self, project: Path, capsys):

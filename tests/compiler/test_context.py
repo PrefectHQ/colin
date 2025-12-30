@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,10 +10,8 @@ import pytest
 from colin.compiler import CompileContext
 from colin.exceptions import RefNotFoundError
 from colin.models import DocumentMeta, LLMCall, Manifest
-from colin.plugins.inputs.file import ProjectInput
-
-if TYPE_CHECKING:
-    pass
+from colin.providers.project import ProjectProvider
+from colin.providers.storage.file import FileStorage
 
 
 class TestCompileContext:
@@ -26,16 +23,14 @@ class TestCompileContext:
         output_dir.mkdir()
 
         manifest = Manifest()
-        input_plugin = ProjectInput(
-            model_dirs=[source_dir],
-            target_dir=output_dir,
-        )
+        file_storage = FileStorage(base_path=output_dir)
+        project_provider = ProjectProvider(provider=file_storage)
 
         return CompileContext(
             manifest=manifest,
             document_uri="test-doc",
             default_model="test-model",
-            input_plugin=input_plugin,
+            project_provider=project_provider,
         )
 
     async def test_ref_tracks_dependency(self, context: CompileContext, tmp_path: Path) -> None:
@@ -56,8 +51,8 @@ class TestCompileContext:
 
         result = await context.ref("doc")
 
-        assert result.name == "Doc"
-        assert result.description == "A doc"
+        # When reading from storage, name is derived from URI (not frontmatter)
+        assert result.name == "doc.md"
         assert result.content == "Compiled content"
         assert str(result) == "Ref('project://doc.md')"
 
@@ -101,7 +96,6 @@ class TestCompileContext:
             "test-doc",
             DocumentMeta(
                 uri="test-doc",
-                source_path=str(tmp_path / "test.md"),
                 source_hash="abc",
                 llm_calls={
                     "auto:1234567890123456": LLMCall(

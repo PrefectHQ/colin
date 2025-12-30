@@ -1,0 +1,238 @@
+"""Tests for project configuration parsing."""
+
+from pathlib import Path
+
+from colin.api.project import _parse_providers, load_project
+
+
+class TestParseProviders:
+    """Tests for _parse_providers function."""
+
+    def test_direct_provider_config(self) -> None:
+        """[providers.s3] bucket = '...' creates scheme 's3'."""
+        data = {
+            "s3": {"bucket": "my-bucket", "region": "us-east-1"},
+        }
+
+        result = _parse_providers(data)
+
+        assert "s3" in result
+        assert result["s3"].scheme == "s3"
+        assert result["s3"].provider_type == "s3"
+        assert result["s3"].instance_name is None
+        assert result["s3"].config == {"bucket": "my-bucket", "region": "us-east-1"}
+
+    def test_nested_provider_instances(self) -> None:
+        """[providers.s3.dev] and [providers.s3.prod] create 's3-dev' and 's3-prod'."""
+        data = {
+            "s3": {
+                "dev": {"bucket": "dev-bucket"},
+                "prod": {"bucket": "prod-bucket"},
+            },
+        }
+
+        result = _parse_providers(data)
+
+        assert "s3-dev" in result
+        assert result["s3-dev"].scheme == "s3-dev"
+        assert result["s3-dev"].provider_type == "s3"
+        assert result["s3-dev"].instance_name == "dev"
+        assert result["s3-dev"].config == {"bucket": "dev-bucket"}
+
+        assert "s3-prod" in result
+        assert result["s3-prod"].scheme == "s3-prod"
+        assert result["s3-prod"].provider_type == "s3"
+        assert result["s3-prod"].instance_name == "prod"
+        assert result["s3-prod"].config == {"bucket": "prod-bucket"}
+
+    def test_empty_provider_config(self) -> None:
+        """[providers.markdown] with no config creates scheme 'markdown'."""
+        data = {
+            "markdown": {},
+        }
+
+        result = _parse_providers(data)
+
+        assert "markdown" in result
+        assert result["markdown"].scheme == "markdown"
+        assert result["markdown"].config == {}
+
+    def test_multiple_provider_types(self) -> None:
+        """Multiple provider types are parsed correctly."""
+        data = {
+            "s3": {"bucket": "bucket"},
+            "mcp": {
+                "linear": {"command": "npx @linear/mcp"},
+                "github": {"command": "npx @github/mcp"},
+            },
+        }
+
+        result = _parse_providers(data)
+
+        assert "s3" in result
+        assert "mcp-linear" in result
+        assert "mcp-github" in result
+
+    def test_single_nested_instance(self) -> None:
+        """[providers.mcp.linear] with single instance works."""
+        data = {
+            "mcp": {
+                "linear": {"command": "npx", "args": ["@linear/mcp"]},
+            },
+        }
+
+        result = _parse_providers(data)
+
+        assert "mcp-linear" in result
+        assert result["mcp-linear"].provider_type == "mcp"
+        assert result["mcp-linear"].instance_name == "linear"
+        assert result["mcp-linear"].config == {"command": "npx", "args": ["@linear/mcp"]}
+
+    def test_provider_with_list_config(self) -> None:
+        """Provider config can contain lists."""
+        data = {
+            "custom": {"paths": ["/path/one", "/path/two"], "enabled": True},
+        }
+
+        result = _parse_providers(data)
+
+        assert "custom" in result
+        assert result["custom"].config["paths"] == ["/path/one", "/path/two"]
+        assert result["custom"].config["enabled"] is True
+
+    def test_deeply_nested_config_treated_as_direct(self) -> None:
+        """Nested dicts in direct config are preserved, not treated as instances."""
+        data = {
+            "api": {
+                "endpoint": "https://api.example.com",
+                "headers": {"Authorization": "Bearer token"},
+            },
+        }
+
+        result = _parse_providers(data)
+
+        # Since not all values are dicts, treated as direct config
+        assert "api" in result
+        assert result["api"].scheme == "api"
+        assert result["api"].config["endpoint"] == "https://api.example.com"
+        assert result["api"].config["headers"] == {"Authorization": "Bearer token"}
+
+    def test_no_providers(self) -> None:
+        """Empty providers section returns empty dict."""
+        result = _parse_providers({})
+
+        assert result == {}
+
+    def test_mcp_provider_url_config(self) -> None:
+        """MCP provider can have URL config for remote servers."""
+        data = {
+            "mcp": {
+                "remote": {"url": "http://localhost:8000/mcp"},
+            },
+        }
+
+        result = _parse_providers(data)
+
+        assert "mcp-remote" in result
+        assert result["mcp-remote"].config["url"] == "http://localhost:8000/mcp"
+
+    def test_provider_instance_names_with_hyphens(self) -> None:
+        """Instance names can contain hyphens."""
+        data = {
+            "mcp": {
+                "my-custom-server": {"command": "server"},
+            },
+        }
+
+        result = _parse_providers(data)
+
+        assert "mcp-my-custom-server" in result
+        assert result["mcp-my-custom-server"].instance_name == "my-custom-server"
+
+
+class TestLoadProject:
+    """Tests for load_project function."""
+
+    def test_load_basic_project(self, tmp_path: Path) -> None:
+        """Load a basic project config."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+model-path = "src/models"
+target-path = "dist"
+""")
+
+        config = load_project(config_file)
+
+        assert config.name == "test-project"
+        assert config.project_root == tmp_path
+        assert config.model_path == tmp_path / "src/models"
+        assert config.target_path == tmp_path / "dist"
+        assert config.manifest_path == tmp_path / "dist" / "manifest.json"
+
+    def test_load_project_with_providers(self, tmp_path: Path) -> None:
+        """Load project with provider configuration."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[providers.s3]
+bucket = "my-bucket"
+
+[providers.mcp.linear]
+command = "npx @linear/mcp"
+""")
+
+        config = load_project(config_file)
+
+        assert "s3" in config.providers
+        assert config.providers["s3"].config["bucket"] == "my-bucket"
+
+        assert "mcp-linear" in config.providers
+        assert config.providers["mcp-linear"].config["command"] == "npx @linear/mcp"
+
+    def test_load_project_with_storage_config(self, tmp_path: Path) -> None:
+        """Load project with explicit storage configuration."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[project.storage]
+provider = "file"
+model_path = "custom/models"
+
+[artifacts.storage]
+provider = "s3"
+bucket = "outputs"
+""")
+
+        config = load_project(config_file)
+
+        assert config.project_storage.provider == "file"
+        assert config.project_storage.config["model_path"] == "custom/models"
+
+        assert config.artifacts_storage is not None
+        assert config.artifacts_storage.provider == "s3"
+        assert config.artifacts_storage.config["bucket"] == "outputs"
+
+    def test_load_project_defaults(self, tmp_path: Path) -> None:
+        """Load project with minimal config uses defaults."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "minimal"
+""")
+
+        config = load_project(config_file)
+
+        assert config.name == "minimal"
+        assert config.project_root == tmp_path
+        assert config.model_path == tmp_path / "models"
+        assert config.target_path == tmp_path / "target"
+        assert config.manifest_path == tmp_path / "target" / "manifest.json"
+        assert config.project_storage.provider == "file"
+        assert config.artifacts_storage is None
+        assert config.providers == {}

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -60,14 +59,27 @@ class Frontmatter(BaseModel):
     """Document metadata (everything outside the colin: block)."""
 
 
+class ArtifactRef(BaseModel):
+    """Reference to a written artifact, stored in manifest."""
+
+    uri: str
+    """Concrete URI where artifact was written (e.g., 's3://bucket/greeting.json')."""
+
+    format: str
+    """Format used (e.g., 'json', 'markdown')."""
+
+    hash: str
+    """Content hash for staleness detection."""
+
+
 class DocumentMeta(BaseModel):
     """Metadata for a compiled document, stored in manifest."""
 
     uri: str
-    """Document URI (e.g., 'context/eng-health')."""
+    """Document URI (e.g., 'project://greeting.md')."""
 
-    source_path: str
-    """Absolute path to the .colin source file."""
+    source_path: str | None = None
+    """Absolute path to the source file (deprecated, use uri)."""
 
     source_hash: str
     """Hash of the source file content."""
@@ -86,6 +98,9 @@ class DocumentMeta(BaseModel):
 
     total_cost_usd: float = 0.0
     """Total cost of all LLM calls for this document."""
+
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    """Artifacts written for this document (concrete URIs)."""
 
 
 class Manifest(BaseModel):
@@ -161,9 +176,6 @@ class ColinDocument(BaseModel):
     uri: str
     """Document URI."""
 
-    source_path: Path
-    """Path to the source file."""
-
     frontmatter: Frontmatter
     """Parsed frontmatter."""
 
@@ -179,9 +191,6 @@ class CompiledDocument(BaseModel):
 
     uri: str
     """Document URI."""
-
-    source_path: Path
-    """Path to the source file."""
 
     frontmatter: Frontmatter
     """Parsed frontmatter."""
