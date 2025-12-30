@@ -57,3 +57,15 @@ def test_init_custom_target_path(tmp_path: Path, monkeypatch, cli: Callable[...,
 
     config_content = (tmp_path / "colin.toml").read_text()
     assert 'target-path = "build"' in config_content
+
+
+def test_init_creates_new_directory(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
+    """colin init creates project in a new subdirectory."""
+    monkeypatch.chdir(tmp_path)
+
+    cli("init", "my-project")
+
+    project_dir = tmp_path / "my-project"
+    assert project_dir.is_dir()
+    assert (project_dir / "colin.toml").exists()
+    assert (project_dir / "models").is_dir()
