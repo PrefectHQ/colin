@@ -20,6 +20,7 @@ When you call `ref()`, you get back a `RefResult` object with several useful pro
 | `template` | `str` | Raw source template before compilation |
 | `updated` | `datetime` | When the document was last compiled |
 | `uri` | `str` | The document's URI |
+| `source` | `object \| None` | Original domain object (for provider resources) |
 
 These properties enable sophisticated document processing. You can build indexes, generate summaries, or make decisions based on metadata without parsing content yourself.
 
@@ -231,3 +232,36 @@ name: Conditional Report
 ```
 
 Both `context/financials` and `context/operations` appear in the dependency graph regardless of the `include_financials` value. This ensures Colin can correctly order compilation even when conditional branches might activate in future compiles.
+
+## External Dependencies
+
+Colin tracks dependencies from external sources like MCP servers alongside local documents. When you use `ref()` with a provider object, Colin records it in `refs_evaluated`:
+
+```markdown models/context/project-status.md
+---
+name: Project Status
+---
+
+{# MCP resource tracked as a dependency #}
+{{ ref(mcp.linear.resource('projects?team=engineering')).content }}
+
+{# Local document also tracked #}
+{{ ref('context/team-members').content }}
+```
+
+The manifest records both types of dependencies:
+
+```json
+{
+  "documents": {
+    "context/project-status": {
+      "refs_evaluated": [
+        "mcp.linear://?resource=projects%3Fteam%3Dengineering",
+        "project://context/team-members.md"
+      ]
+    }
+  }
+}
+```
+
+This unified tracking means changes to any dependency—local or external—trigger recompilation of dependent documents.

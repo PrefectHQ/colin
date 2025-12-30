@@ -40,6 +40,7 @@ The `ref()` function returns a `RefResult` object, not a raw string. This object
 | `template` | `str` | Raw source template before compilation |
 | `updated` | `datetime` | When the document was last compiled |
 | `uri` | `str` | The document's URI |
+| `source` | `object \| None` | Original domain object (for provider resources) |
 
 Access these properties when you need more than just content:
 
@@ -143,3 +144,58 @@ Colin validates that referenced documents exist at compile time. A reference to 
 ```
 RefNotFoundError: Referenced document 'missing-doc' not found in project.
 ```
+
+## Referencing Provider Objects
+
+Beyond URI strings, `ref()` can also accept objects from providers like MCP. Provider functions return domain objects that can be passed directly to `ref()` for dependency tracking:
+
+```markdown models/sources/project-data.md
+---
+name: Project Data
+---
+
+{# Fetch MCP resource and track it as a dependency #}
+{{ ref(mcp.linear.resource('projects?team=engineering')).content }}
+```
+
+This is equivalent to calling the provider function and having Colin track the dependency. The `ref()` function:
+
+1. Calls the object's `to_ref_result()` method to convert it
+2. Records the dependency in the manifest
+3. Returns a standard `RefResult`
+
+### When to Use ref() with Provider Objects
+
+Use `ref()` when you want Colin to track the resource as a dependency:
+
+```markdown
+{# Tracked dependency - appears in refs_evaluated #}
+{{ ref(mcp.github.resource('repo://owner/repo/README.md')).content }}
+```
+
+Skip `ref()` when you just want the content without tracking:
+
+```markdown
+{# Not tracked - just fetches the content #}
+{{ mcp.github.resource('repo://owner/repo/README.md').content }}
+```
+
+### Accessing the Original Object
+
+When you use `ref()` with a provider object, the original domain object is preserved in the `.source` property:
+
+```markdown models/analysis.md
+---
+name: Resource Analysis
+---
+
+{% set resource = ref(mcp.github.resource('repo://owner/repo/README.md')) %}
+
+Content: {{ resource.content }}
+Name: {{ resource.name }}
+
+{# Access provider-specific fields via .source #}
+URI: {{ resource.source.uri }}
+```
+
+The `.source` property is the escape hatch for accessing any custom fields the provider adds to its domain objects.

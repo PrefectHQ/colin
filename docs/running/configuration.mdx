@@ -64,7 +64,7 @@ Complex analysis requiring a more capable model...
 
 ## MCP Servers
 
-MCP servers are configured under `[[providers.mcp]]`. Each entry has a `name` that you'll use in templates.
+MCP servers are configured under `[[providers.mcp]]`. Each entry requires a `name` that becomes accessible in templates as `mcp.<name>`. See [Providers](/context/providers) for usage documentation.
 
 ### Stdio Servers
 
@@ -202,30 +202,3 @@ This project:
 - Writes compiled output to `dist/`
 - Uses Claude Sonnet for LLM operations by default
 - Connects to GitHub, Linear, a Postgres warehouse, and an internal API
-
-## Minimal Configuration
-
-The simplest valid configuration:
-
-```toml colin.toml
-[project]
-name = "my-project"
-```
-
-Colin uses defaults for everything else:
-- Source documents in `models/`
-- Compiled output in `target/`
-- Claude Sonnet for LLM operations
-
-You can even omit the name, in which case Colin uses the directory name.
-
-## Configuration Precedence
-
-Settings resolve in this order (highest to lowest precedence):
-
-1. Command-line flags (`--target`, etc.)
-2. Environment variables (`COLIN_*`)
-3. Project configuration (`colin.toml`)
-4. Built-in defaults
-
-This allows flexible deployment where the same project can compile differently based on environment.
