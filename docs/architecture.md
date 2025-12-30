@@ -18,7 +18,7 @@ This enables automatic dependency tracking without explicit declarations.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                           Colin CLI                               │
-│  compile [--force] [--dry-run]                                  │
+│  compile [--no-cache] [--dry-run]                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼

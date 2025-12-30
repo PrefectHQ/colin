@@ -62,15 +62,15 @@ Here, `context/team-health.md` had a cached LLM result, while `skills/status-age
 
 ## Flags
 
-### Force Recompilation
+### No Cache
 
-The `--force` flag ignores cached results and recompiles everything:
+The `--no-cache` flag ignores cached results and recompiles everything:
 
 ```bash
-colin run --force
+colin run --no-cache
 ```
 
-Use this when you want fresh LLM outputs regardless of whether inputs changed. Force recompilation discards the manifest and starts from scratch, so all LLM calls execute again.
+Use this when you want fresh LLM outputs regardless of whether inputs changed. This discards the manifest and starts from scratch, so all LLM calls execute again.
 
 ### Dry Run
 

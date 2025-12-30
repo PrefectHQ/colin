@@ -169,7 +169,7 @@ Manual IDs let you iterate on prompts without regenerating everything.
 ```bash
 colin init [name]          # Create new project
 colin run                  # Compile all documents
-colin run --force          # Recompile everything
+colin run --no-cache       # Recompile everything
 colin run --dry-run        # Show what would compile
 colin status               # Show project status
 colin clean                # Remove outputs and cache

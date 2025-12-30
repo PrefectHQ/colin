@@ -199,12 +199,12 @@ A typical manifest structure:
 
 The manifest writes to `target/manifest.json` by default. If you override the target directory with `--target`, the manifest goes there instead.
 
-## Force Recompilation
+## No Cache
 
-Sometimes you want fresh results regardless of what changed. The `--force` flag discards the manifest and recompiles everything:
+Sometimes you want fresh results regardless of what changed. The `--no-cache` flag discards the manifest and recompiles everything:
 
 ```bash
-colin run --force
+colin run --no-cache
 ```
 
 This is useful when:
@@ -212,7 +212,7 @@ This is useful when:
 - External context (not tracked by Colin) has changed
 - You suspect the cache is stale or corrupted
 
-Force recompilation incurs the full cost of all LLM calls since nothing is cached.
+This incurs the full cost of all LLM calls since nothing is cached.
 
 ## Cleaning
 
