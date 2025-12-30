@@ -16,7 +16,7 @@
     "light": "#0284c7",
     "primary": "#0ea5e9"
   },
-  "description": "A context compiler for the AI era.",
+  "description": "A context engine for the AI era.",
   "errors": {
     "404": {
       "description": "You've wandered outside the context.",

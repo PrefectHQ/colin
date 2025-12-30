@@ -59,11 +59,13 @@ def add(
     # Determine transport type
     if transport is None:
         if command_or_url.startswith(("http://", "https://")):
-            transport = "http"
+            if command_or_url.endswith("/sse"):
+                transport = "sse"
+            else:
+                transport = "http"
         else:
             transport = "stdio"
 
-    transport = transport.lower()
     if transport not in ("stdio", "sse", "http"):
         err_console.print(f"[red]Error:[/] Invalid transport: {transport}")
         err_console.print("[dim]Valid options: stdio, sse, http[/]")

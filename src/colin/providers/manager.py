@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-import logging
 
-from colin.api.project import ProviderInstanceConfig, ProjectConfig
+from colin.api.project import ProjectConfig, ProviderInstanceConfig
 from colin.providers.base import Provider
 from colin.providers.context import ProviderContext
 from colin.providers.namespace import Namespace, build_namespace
@@ -29,9 +29,7 @@ def create_provider(config: ProviderInstanceConfig) -> Provider:
     """Create a provider instance from configuration."""
     if config.provider_type not in _PROVIDER_FACTORIES:
         available = ", ".join(sorted(_PROVIDER_FACTORIES)) or "(none)"
-        raise ValueError(
-            f"Unknown provider type '{config.provider_type}'. Available: {available}"
-        )
+        raise ValueError(f"Unknown provider type '{config.provider_type}'. Available: {available}")
     provider = _PROVIDER_FACTORIES[config.provider_type](config)
     provider.scheme = config.scheme
     return provider
