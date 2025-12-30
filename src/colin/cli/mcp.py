@@ -3,7 +3,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import cyclopts
 from cyclopts import Parameter
@@ -27,7 +27,7 @@ def add(
     args: Annotated[list[str] | None, Parameter(negative=())] = None,
     *,
     transport: Annotated[
-        str | None,
+        Literal["stdio", "sse", "http"] | None,
         Parameter(name=["-t", "--transport"]),
     ] = None,
     env: Annotated[
@@ -49,7 +49,7 @@ def add(
       colin mcp add greeter uvx fastmcp run server.py
 
     Args:
-        name: Server name (used in templates as mcp_resource('name', ...)).
+        name: Server name (used in templates as mcp.<name>.resource(...)).
         command_or_url: Command to run (stdio) or URL (http/sse).
         args: Additional arguments for stdio command.
         transport: Transport type: stdio, sse, or http. Defaults to stdio.
@@ -141,9 +141,9 @@ def list_servers(
         project: Project directory.
     """
     try:
-        mcp_config = api.mcp.list_servers(project_dir=project)
+        servers = api.mcp.list_servers(project_dir=project)
 
-        if not mcp_config.mcpServers:
+        if not servers:
             console.print("[dim]No MCP servers configured.[/]")
             return
 
@@ -152,7 +152,7 @@ def list_servers(
         table.add_column("Type")
         table.add_column("Connection")
 
-        for name, server in mcp_config.mcpServers.items():
+        for name, server in servers.items():
             if isinstance(server, RemoteMCPServer):
                 server_type = "http"
                 connection = server.url
@@ -185,18 +185,18 @@ def test(
         project: Project directory.
     """
     try:
-        mcp_config = api.mcp.list_servers(project_dir=project)
+        servers = api.mcp.list_servers(project_dir=project)
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
 
-    if name not in mcp_config.mcpServers:
+    if name not in servers:
         err_console.print(f"[red]Error:[/] MCP server '{name}' not found")
         err_console.print("[dim]Use `colin mcp list` to see configured servers[/]")
         sys.exit(1)
 
-    server = mcp_config.mcpServers[name]
+    server = servers[name]
     console.print(f"[dim]Testing connection to[/] {name}...")
 
     async def do_test() -> None:

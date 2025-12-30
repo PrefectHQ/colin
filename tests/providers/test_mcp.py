@@ -11,26 +11,26 @@ class TestBuildMcpUri:
 
     def test_build_resource_uri(self) -> None:
         """Build URI for resource access."""
-        uri = build_mcp_uri("mcp-linear", resource="colin://issues/ABC-123")
+        uri = build_mcp_uri("mcp.linear", resource="colin://issues/ABC-123")
 
-        assert uri == "mcp-linear://?resource=colin%3A%2F%2Fissues%2FABC-123"
+        assert uri == "mcp.linear://?resource=colin%3A%2F%2Fissues%2FABC-123"
 
     def test_build_prompt_uri(self) -> None:
         """Build URI for prompt access."""
-        uri = build_mcp_uri("mcp-github", prompt="summarize")
+        uri = build_mcp_uri("mcp.github", prompt="summarize")
 
-        assert uri == "mcp-github://?prompt=summarize"
+        assert uri == "mcp.github://?prompt=summarize"
 
     def test_build_prompt_uri_with_args(self) -> None:
         """Build URI for prompt with arguments."""
-        uri = build_mcp_uri("mcp-github", prompt="summarize", url="https://github.com/org/repo")
+        uri = build_mcp_uri("mcp.github", prompt="summarize", url="https://github.com/org/repo")
 
         assert "prompt=summarize" in uri
         assert "url=https" in uri
 
     def test_encodes_special_characters_in_resource(self) -> None:
         """Resource URIs with special characters are properly encoded."""
-        uri = build_mcp_uri("mcp-test", resource="s3://bucket/path?query=value&other=123")
+        uri = build_mcp_uri("mcp.test", resource="s3://bucket/path?query=value&other=123")
 
         # The : // ? = & should all be encoded
         assert "resource=s3%3A%2F%2F" in uri
@@ -39,14 +39,14 @@ class TestBuildMcpUri:
 
     def test_encodes_spaces_in_resource(self) -> None:
         """Resource URIs with spaces are properly encoded."""
-        uri = build_mcp_uri("mcp-test", resource="file://path/with spaces/file.txt")
+        uri = build_mcp_uri("mcp.test", resource="file://path/with spaces/file.txt")
 
         assert "+spaces" in uri or "%20spaces" in uri
 
     def test_prompt_with_multiple_args(self) -> None:
         """Prompt with multiple arguments includes all of them."""
         uri = build_mcp_uri(
-            "mcp-test",
+            "mcp.test",
             prompt="generate",
             template="report",
             format="markdown",
@@ -60,23 +60,23 @@ class TestBuildMcpUri:
 
     def test_empty_resource_not_included(self) -> None:
         """Empty resource string is not included in URI."""
-        uri = build_mcp_uri("mcp-test", resource="")
+        uri = build_mcp_uri("mcp.test", resource="")
 
         # Empty resource should not add resource param
-        assert uri == "mcp-test://?"
+        assert uri == "mcp.test://?"
 
     def test_neither_resource_nor_prompt(self) -> None:
         """URI with neither resource nor prompt is valid but empty."""
-        uri = build_mcp_uri("mcp-test")
+        uri = build_mcp_uri("mcp.test")
 
-        assert uri == "mcp-test://?"
+        assert uri == "mcp.test://?"
 
 
 class TestMCPProvider:
     """Tests for MCPProvider."""
 
-    def test_requires_instance_name(self) -> None:
-        """MCP provider requires an instance name."""
+    def test_rejects_empty_instance_name(self) -> None:
+        """MCP provider rejects empty instance name."""
         with pytest.raises(ValueError, match="requires an instance name"):
             MCPProvider("", StdioMCPServer(command="test"))
 
@@ -85,21 +85,21 @@ class TestMCPProvider:
         server = StdioMCPServer(command="npx", args=["@linear/mcp"])
         provider = MCPProvider("linear", server)
 
-        assert provider.scheme == "mcp-linear"
+        assert provider.scheme == "mcp.linear"
 
     def test_creates_with_remote_server(self) -> None:
         """Create provider with remote server config."""
         server = RemoteMCPServer(url="http://localhost:8000/mcp")
         provider = MCPProvider("remote", server)
 
-        assert provider.scheme == "mcp-remote"
+        assert provider.scheme == "mcp.remote"
 
     def test_creates_with_command_only(self) -> None:
         """Create with just command, no args."""
         server = StdioMCPServer(command="mcp-server")
         provider = MCPProvider("simple", server)
 
-        assert provider.scheme == "mcp-simple"
+        assert provider.scheme == "mcp.simple"
 
     def test_creates_with_command_and_env(self) -> None:
         """Create with command, args, and environment variables."""
@@ -110,7 +110,7 @@ class TestMCPProvider:
         )
         provider = MCPProvider("configured", server)
 
-        assert provider.scheme == "mcp-configured"
+        assert provider.scheme == "mcp.configured"
 
     def test_creates_with_url_and_headers(self) -> None:
         """Create with URL and custom headers."""
@@ -120,28 +120,34 @@ class TestMCPProvider:
         )
         provider = MCPProvider("authenticated", server)
 
-        assert provider.scheme == "mcp-authenticated"
+        assert provider.scheme == "mcp.authenticated"
 
     def test_scheme_includes_instance_name(self) -> None:
-        """Scheme is always mcp-{instance}."""
+        """Scheme is always mcp.<instance>."""
         provider1 = MCPProvider("github", StdioMCPServer(command="npx", args=["@github/mcp"]))
         provider2 = MCPProvider("linear", StdioMCPServer(command="npx", args=["@linear/mcp"]))
         provider3 = MCPProvider("my-custom-server", RemoteMCPServer(url="http://localhost:3000"))
 
-        assert provider1.scheme == "mcp-github"
-        assert provider2.scheme == "mcp-linear"
-        assert provider3.scheme == "mcp-my-custom-server"
+        assert provider1.scheme == "mcp.github"
+        assert provider2.scheme == "mcp.linear"
+        assert provider3.scheme == "mcp.my-custom-server"
+
+    def test_default_instance_scheme(self) -> None:
+        """Default instance uses bare mcp scheme."""
+        provider = MCPProvider(None, StdioMCPServer(command="npx", args=["@github/mcp"]))
+
+        assert provider.scheme == "mcp"
 
     async def test_read_rejects_invalid_uri(self) -> None:
         """read() rejects URI without resource or prompt."""
         provider = MCPProvider("test", StdioMCPServer(command="test"))
 
         with pytest.raises(ValueError, match="Invalid MCP URI"):
-            await provider.read("mcp-test://?other=value")
+            await provider.read("mcp.test://?other=value")
 
     async def test_read_rejects_empty_query_string(self) -> None:
         """read() rejects URI with empty query string."""
         provider = MCPProvider("test", StdioMCPServer(command="test"))
 
         with pytest.raises(ValueError, match="Invalid MCP URI"):
-            await provider.read("mcp-test://?")
+            await provider.read("mcp.test://?")

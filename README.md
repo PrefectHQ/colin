@@ -63,7 +63,7 @@ description: Recent meeting notes from the team
 ---
 
 {# Pull notes from your Notion MCP server #}
-{{ mcp_resource('notion', 'pages/meeting-notes') }}
+{{ mcp.notion.resource('pages/meeting-notes') }}
 ```
 
 Create a skill that extracts what matters in `models/project-status.md`:
@@ -191,10 +191,12 @@ target-path = "target"   # Compiled output
 Connect to MCP servers for external data:
 
 ```toml
-[mcp.servers.linear]
+[[providers.mcp]]
+name = "linear"
 url = "https://linear-mcp.example.com"
 
-[mcp.servers.github]
+[[providers.mcp]]
+name = "github"
 command = "uvx"
 args = ["mcp-server-github"]
 ```

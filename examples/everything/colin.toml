@@ -7,7 +7,8 @@ default-llm-model = "anthropic:claude-haiku-4-5"
 models = "models"
 target = "target"
 
-[mcp.servers.demo]
+[[providers.mcp]]
+name = "demo"
 command = "uvx"
 args = [
     "--with",

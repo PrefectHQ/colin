@@ -60,6 +60,7 @@
           {
             "group": "Context",
             "pages": [
+              "context/providers",
               "context/dependencies",
               "context/mcp",
               "context/llm-workflows"

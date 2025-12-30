@@ -16,15 +16,18 @@ Define MCP servers in your `colin.toml`:
 [project]
 name = "my-context"
 
-[mcp.servers.github]
+[[providers.mcp]]
+name = "github"
 command = "uvx"
 args = ["mcp-server-github"]
 
-[mcp.servers.linear]
+[[providers.mcp]]
+name = "linear"
 command = "npx"
 args = ["@linear/mcp-server"]
 
-[mcp.servers.postgres]
+[[providers.mcp]]
+name = "postgres"
 command = "npx"
 args = ["@anthropic/mcp-server-postgres"]
 env = { DATABASE_URL = "${DATABASE_URL}" }
@@ -39,7 +42,8 @@ Colin supports two server configurations:
 **Stdio servers** run as local processes and communicate via stdin/stdout:
 
 ```toml
-[mcp.servers.filesystem]
+[[providers.mcp]]
+name = "filesystem"
 command = "npx"
 args = ["@anthropic/mcp-server-filesystem", "/path/to/data"]
 ```
@@ -47,13 +51,14 @@ args = ["@anthropic/mcp-server-filesystem", "/path/to/data"]
 **Remote servers** connect over HTTP/SSE:
 
 ```toml
-[mcp.servers.remote-api]
+[[providers.mcp]]
+name = "remote-api"
 url = "http://localhost:8080/mcp"
 ```
 
 ## Reading Resources
 
-The `mcp_resource()` function fetches content from an MCP server:
+Use the MCP provider namespace to fetch content from a server. The `mcp` global is an alias for `providers.mcp`:
 
 ```markdown models/sources/github-readme.md
 ---
@@ -61,10 +66,10 @@ name: GitHub README
 description: Latest README from the main repository
 ---
 
-{{ mcp_resource('github', 'repo://owner/repo/contents/README.md') }}
+{{ mcp.github.resource('repo://owner/repo/contents/README.md') }}
 ```
 
-The first argument is the server name from your configuration. The second is the resource URI, which varies by server type.
+Use `mcp.<server>.resource(...)` where `<server>` matches your configured name. The argument is the resource URI, which varies by server type.
 
 ### Resource URIs
 
@@ -72,31 +77,31 @@ Each MCP server defines its own URI scheme. Consult the server's documentation f
 
 **GitHub server:**
 ```markdown
-{{ mcp_resource('github', 'repo://owner/repo/contents/README.md') }}
-{{ mcp_resource('github', 'repo://owner/repo/issues') }}
+{{ mcp.github.resource('repo://owner/repo/contents/README.md') }}
+{{ mcp.github.resource('repo://owner/repo/issues') }}
 ```
 
 **Linear server:**
 ```markdown
-{{ mcp_resource('linear', 'projects') }}
-{{ mcp_resource('linear', 'issues?teamId=TEAM-123') }}
+{{ mcp.linear.resource('projects') }}
+{{ mcp.linear.resource('issues?teamId=TEAM-123') }}
 ```
 
 **Filesystem server:**
 ```markdown
-{{ mcp_resource('filesystem', 'file:///data/config.json') }}
+{{ mcp.filesystem.resource('file:///data/config.json') }}
 ```
 
 ## Prompts from Servers
 
-Some MCP servers provide prompt templates. The `mcp_prompt()` function retrieves these:
+Some MCP servers provide prompt templates. Use `mcp.<server>.prompt()` to retrieve them:
 
 ```markdown models/analysis.md
 ---
 name: Code Analysis
 ---
 
-{% set review_prompt = mcp_prompt('github', 'review-checklist', repo='owner/repo') %}
+{% set review_prompt = mcp.github.prompt('review-checklist', repo='owner/repo') %}
 
 {{ review_prompt }}
 
@@ -115,7 +120,7 @@ Prompt arguments are passed as keyword parameters after the prompt name.
 
 MCP resources integrate with Colin's dependency system. When you fetch an MCP resource, Colin records this in the manifest alongside local document references.
 
-For explicit dependency tracking, use MCP resources in combination with `ref()`. While the current implementation tracks MCP calls within a document's metadata, future versions will support full graph integration:
+MCP resources are tracked like any other ref. Fetching a resource records its URI in `refs_evaluated` so downstream dependencies remain accurate:
 
 ```markdown models/context/project-health.md
 ---
@@ -124,7 +129,7 @@ name: Project Health
 
 # Project Status
 
-{% set projects = mcp_resource('linear', 'projects?team=engineering') %}
+{% set projects = mcp.linear.resource('projects?team=engineering') %}
 
 {{ projects }}
 
@@ -136,14 +141,13 @@ Analyze the health of these projects:
 {% endllm %}
 ```
 
-The manifest records which MCP resources were accessed during compilation:
+The manifest records MCP resources as standard refs:
 
 ```json
 {
   "documents": {
     "context/project-health": {
-      "refs_evaluated": [],
-      "mcp_resources": ["linear:projects?team=engineering"]
+      "refs_evaluated": ["mcp.linear://?resource=projects%3Fteam%3Dengineering"]
     }
   }
 }
@@ -161,7 +165,7 @@ name: Linear Projects
 description: Current engineering projects from Linear
 ---
 
-{{ mcp_resource('linear', 'projects?team=engineering') }}
+{{ mcp.linear.resource('projects?team=engineering') }}
 ```
 
 ```markdown models/context/project-summary.md
@@ -180,7 +184,8 @@ description: Synthesized project status for agents
 Connect to a Postgres database for live data:
 
 ```toml colin.toml
-[mcp.servers.warehouse]
+[[providers.mcp]]
+name = "warehouse"
 command = "npx"
 args = ["@anthropic/mcp-server-postgres"]
 env = { DATABASE_URL = "${DATABASE_URL}" }
@@ -192,7 +197,7 @@ name: Customer Metrics
 description: Key customer health metrics from data warehouse
 ---
 
-{{ mcp_resource('warehouse', 'query://SELECT customer_id, health_score, last_activity FROM customer_health ORDER BY health_score ASC LIMIT 20') }}
+{{ mcp.warehouse.resource('query://SELECT customer_id, health_score, last_activity FROM customer_health ORDER BY health_score ASC LIMIT 20') }}
 ```
 
 ### GitHub Repository Context
@@ -208,15 +213,15 @@ name: Repository Overview
 
 ## README
 
-{{ mcp_resource('github', 'repo://acme/platform/contents/README.md') }}
+{{ mcp.github.resource('repo://acme/platform/contents/README.md') }}
 
 ## Recent Issues
 
-{{ mcp_resource('github', 'repo://acme/platform/issues?state=open&per_page=10') }}
+{{ mcp.github.resource('repo://acme/platform/issues?state=open&per_page=10') }}
 
 ## Contributing Guidelines
 
-{{ mcp_resource('github', 'repo://acme/platform/contents/CONTRIBUTING.md') }}
+{{ mcp.github.resource('repo://acme/platform/contents/CONTRIBUTING.md') }}
 ```
 
 ### Combining Multiple Sources
@@ -237,7 +242,7 @@ description: Comprehensive engineering team status for support agents
 
 ## Repository Health
 
-{% set github_issues = mcp_resource('github', 'repo://acme/platform/issues?state=open') %}
+{% set github_issues = mcp.github.resource('repo://acme/platform/issues?state=open') %}
 {{ github_issues }}
 
 ## Team Analysis
@@ -263,8 +268,8 @@ Colin provides CLI commands for managing MCP server configuration.
 ### Adding Servers
 
 ```bash
-colin mcp add github --command uvx --args mcp-server-github
-colin mcp add linear --command npx --args @linear/mcp-server
+colin mcp add github uvx mcp-server-github
+colin mcp add linear npx @linear/mcp-server
 ```
 
 ### Listing Servers

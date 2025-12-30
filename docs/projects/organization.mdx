@@ -58,19 +58,21 @@ Configure MCP servers for external data sources:
 [project]
 name = "my-context"
 
-[mcp.servers.github]
+[[providers.mcp]]
+name = "github"
 command = "uvx"
 args = ["mcp-server-github"]
 
-[mcp.servers.linear]
+[[providers.mcp]]
+name = "linear"
 command = "npx"
 args = ["@linear/mcp-server"]
 ```
 
-Reference MCP resources in documents with the `mcp_resource()` function:
+Reference MCP resources in documents with `mcp.<server>.resource()`:
 
 ```markdown
-{{ mcp_resource('github', 'repo://owner/repo/readme') }}
+{{ mcp.github.resource('repo://owner/repo/readme') }}
 ```
 
 ## Initializing Projects

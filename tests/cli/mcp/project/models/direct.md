@@ -1,4 +1,4 @@
 ---
 name: Direct MCP
 ---
-Message: {{ mcp_resource('greeter', 'colin://hello') }}
+Message: {{ mcp.greeter.resource('colin://hello') }}

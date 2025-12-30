@@ -14,9 +14,10 @@ from colin.exceptions import RefNotFoundError
 from colin.llm.prompts import render_complete_prompt, render_extract_prompt
 from colin.llm.types import LLMOutput, UseExisting
 from colin.models import CompiledDocument, LLMCall, RefResult
+from colin.providers.manager import ProviderManager
+from colin.providers.referenceable import Referenceable
 
 if TYPE_CHECKING:
-    from colin.mcp import MCPManager
     from colin.models import Manifest
     from colin.providers.project import ProjectProvider
 
@@ -50,7 +51,7 @@ class CompileContext:
         default_model: str,
         project_provider: ProjectProvider,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
-        mcp_manager: MCPManager | None = None,
+        provider_manager: ProviderManager | None = None,
         doc_state: OperationState | None = None,
     ) -> None:
         """Initialize the compile context.
@@ -61,7 +62,7 @@ class CompileContext:
             default_model: Default LLM model to use.
             project_provider: Provider for reading compiled outputs (refs).
             compiled_outputs: Already-compiled documents from current run.
-            mcp_manager: MCP manager for server connections.
+            provider_manager: Provider manager for external schemes.
             doc_state: Optional state for progress tracking.
         """
         self.manifest = manifest
@@ -69,7 +70,7 @@ class CompileContext:
         self.default_model = default_model
         self.project_provider = project_provider
         self.compiled_outputs = compiled_outputs or {}
-        self.mcp_manager = mcp_manager
+        self.provider_manager = provider_manager or ProviderManager()
         self.doc_state = doc_state
 
         # Tracking during render
@@ -77,18 +78,19 @@ class CompileContext:
         self.llm_calls: dict[str, LLMCall] = {}
         self.total_cost: float = 0.0
 
-    async def ref(self, uri: str) -> RefResult:
-        """Fetch content from a referenced document.
+    async def ref(self, target: str | Referenceable) -> RefResult:
+        """Fetch content from a referenced document or referenceable object.
 
         This:
-        1. Normalizes shorthand refs to project:// URIs
-        2. Records the dependency edge
-        3. Returns the compiled content of the referenced document
+        1. Handles referenceable objects by calling to_ref_result()
+        2. Normalizes shorthand refs to project:// URIs
+        3. Records the dependency edge
+        4. Returns the compiled content of the referenced document
 
         Shorthand URIs (e.g., 'data') are normalized to project://data.md.
 
         Args:
-            uri: URI of the document to reference (shorthand or full).
+            target: URI string or object implementing Referenceable protocol.
 
         Returns:
             RefResult with content and metadata.
@@ -96,44 +98,75 @@ class CompileContext:
         Raises:
             RefNotFoundError: If the referenced document doesn't exist.
         """
+        # Handle referenceable objects (e.g., MCPResource, MCPPrompt)
+        if isinstance(target, Referenceable):
+            result = target.to_ref_result()
+            self.track_ref(result.uri)
+            return result
+
         # Normalize shorthand refs to project:// URIs
-        uri = self._normalize_uri(uri)
+        uri = self._normalize_uri(target)
+        scheme, path = self._split_uri(uri)
 
         # Record the dependency (only track first ref to each URI)
         is_first_ref = uri not in self.refs_evaluated
         if is_first_ref:
             self.refs_evaluated.append(uri)
 
-        # Check in-memory compiled outputs first (from current compile run)
-        if uri in self.compiled_outputs:
-            compiled = self.compiled_outputs[uri]
-            name_val = compiled.frontmatter.metadata.get("name")
-            desc_val = compiled.frontmatter.metadata.get("description")
-            # Track as completed ref (no processing needed for in-memory)
-            if is_first_ref and self.doc_state is not None:
-                op = self.doc_state.child("ref", detail=_strip_scheme(uri))
-                op.status = Status.DONE
-            return RefResult(
-                name=name_val if isinstance(name_val, str) else uri.split("/")[-1],
-                description=desc_val if isinstance(desc_val, str) else None,
-                content=compiled.output,
-                template="",  # Not needed for in-memory refs
-                updated=datetime.now(timezone.utc),
-                uri=uri,
-            )
+        if scheme == "project":
+            # Check in-memory compiled outputs first (from current compile run)
+            if uri in self.compiled_outputs:
+                compiled = self.compiled_outputs[uri]
+                name_val = compiled.frontmatter.metadata.get("name")
+                desc_val = compiled.frontmatter.metadata.get("description")
+                # Track as completed ref (no processing needed for in-memory)
+                if is_first_ref and self.doc_state is not None:
+                    op = self.doc_state.child("ref", detail=_strip_scheme(uri))
+                    op.status = Status.DONE
+                return RefResult(
+                    name=name_val if isinstance(name_val, str) else uri.split("/")[-1],
+                    description=desc_val if isinstance(desc_val, str) else None,
+                    content=compiled.output,
+                    template="",  # Not needed for in-memory refs
+                    updated=datetime.now(timezone.utc),
+                    uri=uri,
+                )
 
-        # Fetch from storage via project provider
-        async def fetch_from_provider() -> RefResult:
-            # Strip scheme for provider (routing already happened)
-            path = uri.replace("project://", "")
+            # Fetch from storage via project provider
+            async def fetch_from_provider() -> RefResult:
+                try:
+                    content = await self.project_provider.read(path)
+                except FileNotFoundError as e:
+                    raise RefNotFoundError(f"Referenced document not found: {uri}") from e
+
+                # Create RefResult from raw content
+                return RefResult(
+                    name=path.split("/")[-1],  # Filename from path
+                    description=None,
+                    content=content,
+                    template="",
+                    updated=datetime.now(timezone.utc),
+                    uri=uri,
+                )
+
+            if is_first_ref and self.doc_state is not None:
+                with self.doc_state.child("ref", detail=_strip_scheme(uri)):
+                    return await fetch_from_provider()
+            return await fetch_from_provider()
+
+        async def fetch_external() -> RefResult:
             try:
-                content = await self.project_provider.read(path)
+                provider = self.provider_manager.get_provider(scheme)
+            except KeyError as e:
+                raise ValueError(f"No provider registered for scheme '{scheme}'") from e
+            try:
+                content = await provider.read(path)
             except FileNotFoundError as e:
                 raise RefNotFoundError(f"Referenced document not found: {uri}") from e
 
-            # Create RefResult from raw content
+            name = path.split("/")[-1] or uri
             return RefResult(
-                name=path.split("/")[-1],  # Filename from path
+                name=name,
                 description=None,
                 content=content,
                 template="",
@@ -143,9 +176,8 @@ class CompileContext:
 
         if is_first_ref and self.doc_state is not None:
             with self.doc_state.child("ref", detail=_strip_scheme(uri)):
-                return await fetch_from_provider()
-        else:
-            return await fetch_from_provider()
+                return await fetch_external()
+        return await fetch_external()
 
     def _normalize_uri(self, uri: str) -> str:
         """Normalize a URI to project:// format.
@@ -157,6 +189,16 @@ class CompileContext:
         if not uri.endswith(".md"):
             uri = f"{uri}.md"
         return f"project://{uri}"
+
+    def _split_uri(self, uri: str) -> tuple[str, str]:
+        """Split a URI into scheme and path."""
+        scheme, path = uri.split("://", 1)
+        return scheme, path
+
+    def track_ref(self, uri: str) -> None:
+        """Record a ref dependency without fetching content."""
+        if uri not in self.refs_evaluated:
+            self.refs_evaluated.append(uri)
 
     async def extract(
         self,
@@ -336,57 +378,3 @@ class CompileContext:
             16-character hash string.
         """
         return hashlib.sha256(content.encode()).hexdigest()[:16]
-
-    async def mcp_resource(self, server: str, uri: str) -> str:
-        """Read a resource from an MCP server.
-
-        Args:
-            server: Server name as configured in colin.toml.
-            uri: Resource URI.
-
-        Returns:
-            Resource content as string.
-
-        Raises:
-            ValueError: If MCP manager not configured or server unknown.
-        """
-        if self.mcp_manager is None:
-            raise ValueError("No MCP servers configured")
-
-        op = (
-            self.doc_state.child("mcp", detail=f"{server}.resource({_strip_scheme(uri)})")
-            if self.doc_state
-            else None
-        )
-        with op if op else _nullcontext():
-            return await self.mcp_manager.read_resource(server, uri)
-
-    async def mcp_prompt(
-        self,
-        server: str,
-        name: str,
-        arguments: dict[str, str] | None = None,
-    ) -> str:
-        """Get a prompt from an MCP server.
-
-        Args:
-            server: Server name as configured in colin.toml.
-            name: Prompt name.
-            arguments: Prompt arguments as dict.
-
-        Returns:
-            Rendered prompt content as string.
-
-        Raises:
-            ValueError: If MCP manager not configured or server unknown.
-        """
-        if self.mcp_manager is None:
-            raise ValueError("No MCP servers configured")
-
-        op = (
-            self.doc_state.child("mcp", detail=f"{server}.prompt({name})")
-            if self.doc_state
-            else None
-        )
-        with op if op else _nullcontext():
-            return await self.mcp_manager.get_prompt(server, name, arguments)

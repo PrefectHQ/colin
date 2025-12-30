@@ -1,0 +1,108 @@
+---
+title: Providers
+sidebarTitle: Providers
+icon: puzzle-piece
+---
+
+Providers connect Colin templates to external data sources. A provider handles a specific type of integration—fetching resources from MCP servers, calling language models, or reading from APIs. Each provider exposes functions you call directly in your templates.
+
+Providers return domain objects with `.content` and metadata. You can use these objects directly or wrap them with `ref()` to track dependencies in the manifest.
+
+## MCP Provider
+
+The MCP provider connects to Model Context Protocol servers. Configure servers in `colin.toml`, then access them in templates as `mcp.<name>`:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "github"
+command = "uvx"
+args = ["mcp-server-github"]
+
+[[providers.mcp]]
+name = "linear"
+command = "npx"
+args = ["@linear/mcp-server"]
+```
+
+Each MCP server requires a `name`. This name becomes the accessor in templates.
+
+### Reading Resources
+
+Use `mcp.<name>.resource()` to fetch content:
+
+```markdown
+{{ mcp.github.resource('repo://owner/repo/README.md') }}
+{{ mcp.linear.resource('projects?team=engineering') }}
+```
+
+This returns an `MCPResource` object with `.content`, `.name`, and `.uri` properties.
+
+### Using Prompts
+
+Some MCP servers provide prompt templates:
+
+```markdown
+{% set review = mcp.github.prompt('code-review', repo='owner/repo') %}
+{{ review.content }}
+```
+
+### Accessing Metadata
+
+Provider functions return domain objects, not raw strings. Access the content and metadata directly:
+
+```markdown
+{% set resource = mcp.github.resource('repo://owner/repo/README.md') %}
+
+{{ resource.content }}
+
+Name: {{ resource.name }}
+URI: {{ resource.uri }}
+```
+
+## Dependency Tracking
+
+By default, provider function calls are not tracked as dependencies. To record a dependency in the manifest, wrap the result with `ref()`:
+
+```markdown
+{# Not tracked #}
+{{ mcp.github.resource('repo://...').content }}
+
+{# Tracked as a dependency #}
+{{ ref(mcp.github.resource('repo://...')).content }}
+```
+
+When you use `ref()`, Colin records the resource in `refs_evaluated`. Changes to tracked dependencies trigger recompilation of dependent documents.
+
+The wrapped result is a `RefResult`. Access the original domain object via `.source`:
+
+```markdown
+{% set tracked = ref(mcp.github.resource('repo://owner/repo/README.md')) %}
+
+{{ tracked.content }}
+{{ tracked.source.uri }}
+```
+
+See [References](/projects/references#referencing-provider-objects) for more details.
+
+## Configuring MCP Servers
+
+MCP servers are configured under `[[providers.mcp]]` in `colin.toml`. See [Configuration](/running/configuration#mcp-servers) for complete options including environment variables, remote servers, and authentication.
+
+Basic configuration:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "github"
+command = "uvx"
+args = ["mcp-server-github"]
+env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+```
+
+| Field | Description |
+| :---- | :---------- |
+| `name` | Required. Identifier used in templates as `mcp.<name>` |
+| `command` | Executable to run (for stdio servers) |
+| `args` | Command-line arguments |
+| `env` | Environment variables passed to the server |
+| `url` | Server URL (for remote servers) |
+| `headers` | HTTP headers (for remote servers) |

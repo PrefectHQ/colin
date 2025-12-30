@@ -4,7 +4,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from fastmcp.mcp_config import RemoteMCPServer, StdioMCPServer
 
 from colin.api.project import load_project
 from colin.cli import app
@@ -18,30 +17,30 @@ class TestMCPAdd:
         cli("mcp", "add", "greeter", "python", "server.py")
 
         config = load_project(project / "colin.toml")
-        assert "greeter" in config.mcp.mcpServers
-        server = config.mcp.mcpServers["greeter"]
-        assert isinstance(server, StdioMCPServer)
-        assert server.command == "python"
-        assert server.args == ["server.py"]
+        assert "mcp.greeter" in config.providers
+        instance = config.providers["mcp.greeter"]
+        assert instance.provider_type == "mcp"
+        assert instance.name == "greeter"
+        assert instance.config["command"] == "python"
+        assert instance.config["args"] == ["server.py"]
 
     def test_add_url_server(self, project: Path, cli: Callable[..., None]):
         """Adding an HTTP MCP server updates colin.toml."""
         cli("mcp", "add", "remote", "http://localhost:8000/mcp")
 
         config = load_project(project / "colin.toml")
-        assert "remote" in config.mcp.mcpServers
-        server = config.mcp.mcpServers["remote"]
-        assert isinstance(server, RemoteMCPServer)
-        assert server.url == "http://localhost:8000/mcp"
+        assert "mcp.remote" in config.providers
+        instance = config.providers["mcp.remote"]
+        assert instance.provider_type == "mcp"
+        assert instance.config["url"] == "http://localhost:8000/mcp"
 
     def test_add_with_env(self, project: Path, cli: Callable[..., None]):
         """Adding a server with env vars works."""
         cli("mcp", "add", "api", "npx", "server", "-e", "API_KEY=secret")
 
         config = load_project(project / "colin.toml")
-        server = config.mcp.mcpServers["api"]
-        assert isinstance(server, StdioMCPServer)
-        assert server.env == {"API_KEY": "secret"}
+        instance = config.providers["mcp.api"]
+        assert instance.config["env"] == {"API_KEY": "secret"}
 
     def test_add_rejects_env_with_http(self, project: Path, capsys):
         """Adding http server with --env fails."""
@@ -65,7 +64,7 @@ class TestMCPAdd:
         cli("mcp", "add", "remote", "http://localhost:8000", "-t", "sse")
 
         config = load_project(project / "colin.toml")
-        assert "remote" in config.mcp.mcpServers
+        assert "mcp.remote" in config.providers
 
 
 class TestMCPRemove:
@@ -76,12 +75,12 @@ class TestMCPRemove:
         cli("mcp", "add", "temp", "python")
 
         config = load_project(project / "colin.toml")
-        assert "temp" in config.mcp.mcpServers
+        assert "mcp.temp" in config.providers
 
         cli("mcp", "remove", "temp")
 
         config = load_project(project / "colin.toml")
-        assert "temp" not in config.mcp.mcpServers
+        assert "mcp.temp" not in config.providers
 
     def test_remove_nonexistent_fails(self, project: Path, capsys):
         """Removing a nonexistent server fails."""

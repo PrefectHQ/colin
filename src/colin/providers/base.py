@@ -1,13 +1,14 @@
 """Provider base class for URI handlers."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 
 
 class Provider(ABC):
     """Base class for all providers. Low-level I/O for a URI scheme.
 
     Providers handle reading content from a URI scheme. The scheme is used
-    for routing (e.g., 'project', 'mcp-linear'), and read() receives just
+    for routing (e.g., 'project', 'mcp.linear'), and read() receives just
     the path portion after scheme stripping.
 
     Returns raw content (str), not RefResult. The ref() function handles
@@ -17,7 +18,7 @@ class Provider(ABC):
     """
 
     scheme: str
-    """URI scheme this provider handles (e.g., 'project', 's3', 'mcp-linear')."""
+    """URI scheme this provider handles (e.g., 'project', 's3', 'mcp.linear')."""
 
     @abstractmethod
     async def read(self, path: str) -> str:
@@ -33,3 +34,7 @@ class Provider(ABC):
             FileNotFoundError: If resource doesn't exist.
         """
         ...
+
+    def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
+        """Return template functions this provider contributes."""
+        return {}

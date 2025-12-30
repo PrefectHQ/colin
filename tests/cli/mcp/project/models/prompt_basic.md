@@ -1,4 +1,4 @@
 ---
 name: Basic MCP Prompt
 ---
-Prompt: {{ mcp_prompt('greeter', 'greet') }}
+Prompt: {{ mcp.greeter.prompt('greet') }}

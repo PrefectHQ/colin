@@ -28,11 +28,11 @@ A Jinja block directive that creates additional output files:
 {% endfile %}
 ```
 
-File blocks can contain any Jinja directives, including `{{ mcp_resource() }}`:
+File blocks can contain any Jinja directives, including MCP resources:
 
 ```jinja
 {% file "tools/analyzer.py" %}
-{{ mcp_resource('scripts', 'scripts://analyzer') }}
+{{ mcp.scripts.resource('scripts://analyzer') }}
 {% endfile %}
 ```
 

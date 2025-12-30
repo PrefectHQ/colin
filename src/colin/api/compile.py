@@ -101,7 +101,6 @@ async def compile_project(
             target_path=target_dir,
             manifest_path=target_dir / settings.manifest_file,
             default_llm_model=config.default_llm_model,
-            mcp=config.mcp,
             project_storage=config.project_storage,
             artifacts_storage=config.artifacts_storage,
             providers=config.providers,

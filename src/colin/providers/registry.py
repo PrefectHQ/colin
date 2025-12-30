@@ -51,7 +51,7 @@ def get_provider(scheme: str) -> Provider:
     """Get provider for a URI scheme.
 
     Args:
-        scheme: URI scheme (e.g., 's3', 'mcp-linear').
+        scheme: URI scheme (e.g., 's3', 'mcp.linear').
 
     Returns:
         Provider instance.

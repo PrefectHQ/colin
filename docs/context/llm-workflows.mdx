@@ -4,13 +4,13 @@ sidebarTitle: LLM Workflows
 icon: wand-magic-sparkles
 ---
 
-Colin's LLM integration transforms static documents into dynamic, synthesized context. The `extract()` filter and `{% llm %}` blocks invoke language models during compilation, letting you summarize, analyze, and transform content automatically. Combined with `ref()`, these tools create powerful workflows where information flows through your document graph and gets refined at each step.
+Colin's LLM integration transforms static documents into dynamic, synthesized context. The `extract()` function and `{% llm %}` blocks invoke language models during compilation, letting you summarize, analyze, and transform content automatically. Combined with `ref()`, these tools create powerful workflows where information flows through your document graph and gets refined at each step.
 
 LLM calls are deterministic within a compilation run. Colin caches results by input hash, so identical prompts return cached responses without additional API calls. This makes compilation fast and predictable while keeping costs under control.
 
-## The Extract Filter
+## The Extract Function
 
-The `extract()` filter is the simplest way to invoke an LLM. It takes content and a prompt describing what to extract:
+The `extract()` function is the simplest way to invoke an LLM. It takes content and a prompt describing what to extract:
 
 ```markdown models/summary.md
 ---
@@ -19,10 +19,20 @@ name: Key Points Summary
 
 # Customer Feedback Summary
 
+{{ extract(ref('sources/customer-calls').content, 'the top 5 customer complaints, ranked by frequency') }}
+```
+
+The function passes the content to the LLM along with your extraction prompt. The LLM's response replaces the entire expression in the compiled output.
+
+### Filter Syntax
+
+You can also use `extract()` as a Jinja filter for more readable chaining:
+
+```markdown
 {{ ref('sources/customer-calls') | extract('the top 5 customer complaints, ranked by frequency') }}
 ```
 
-The filter passes the referenced content to the LLM along with your extraction prompt. The LLM's response replaces the entire expression in the compiled output.
+Both syntaxes are equivalent. The filter syntax is often more readable when working with refs, while the function syntax works better with variables or complex expressions.
 
 ### Chaining Extractions
 
