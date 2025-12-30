@@ -1,4 +1,4 @@
-"""Colin - A context compiler for the AI era."""
+"""Colin - A context engine for the AI era."""
 
 try:
     from importlib.metadata import version

@@ -1,10 +1,8 @@
 
 <div align="center">
 
-<!-- omit in toc -->
-
 <picture>
-  <img width="550" alt="FastMCP Logo" src="docs/assets/logos/colin-burst.jpeg">
+  <img width="550" alt="Colin Logo" src="docs/assets/logos/colin-burst.jpeg">
 </picture>
 
 </div>
@@ -13,9 +11,7 @@
 
 ***Context as code.***
 
-Colin does for context what dbt did for SQL. It's a context compiler: pull data from scattered sources—files, APIs, databases, MCP servers—and use LLMs to synthesize, summarize, and transform it into Agent Skills and other formats agents can use. Declare dependencies with `ref()`, and Colin builds the graph, compiles in order, and recompiles only what changes.
-
-Writing context by hand means copy-pasting from various sources, hoping nothing was missed, and watching it go stale. Colin keeps your context compiled, cached, and traceable—with full lineage from sources to outputs.
+Colin is a context engine for building context pipelines—extract from sources, transform with LLMs, load to outputs. Write templates that reference other documents, pull from GitHub, Linear, Slack, databases via MCP. When sources change, Colin recompiles. Your context and skills stay fresh automatically.
 
 ```bash
 pip install colin
@@ -28,61 +24,131 @@ colin run
 
 ## The Problem
 
-Context is everywhere:
+Your agent's context is scattered everywhere—project trackers, customer calls, documentation, databases. Someone writes it up as a skill or prompt. A month later:
 
-- **Local files** (Markdown, JSON, YAML)
-- **MCP servers** (Linear, GitHub, Slack, databases)
-- **Documentation** (Notion, Google Docs, wikis)
-- **APIs** and data warehouses
+- The deployment process changed
+- Staging got renamed
+- The API added new endpoints
+- Q3 priorities are now Q4 priorities
 
-Agents need this context synthesized and kept current. Today, someone writes a skill by hand, copy-pastes from various sources, hopes nothing was missed, and watches it go stale. There's no dependency tracking. No caching. No way to know what depends on what.
+The context is stale. The agent is wrong. Nobody noticed.
 
-## How It Works
+Manual maintenance doesn't scale. There's no dependency tracking, no way to know what depends on what, no alert when upstream sources change.
 
-Write Markdown files with Jinja templating. Use `ref()` to pull in other documents, `| extract()` to pull out specific information with an LLM, and `{% llm %}` blocks for freeform synthesis.
+## How Colin Works
 
-Colin compiles them in dependency order, caches LLM calls, and recompiles only what's affected when sources change.
+Write markdown templates that reference live data. Colin builds the dependency graph and compiles in order:
+
+```markdown
+---
+name: Project Status
+---
+
+# Current Sprint
+
+{{ mcp.linear.resource('projects/current-sprint').content }}
+
+## Key Risks
+
+{{ ref('team/capacity') | extract('blockers and concerns') }}
+
+## Customer Context
+
+{% llm %}
+Summarize recent customer feedback relevant to this sprint:
+
+{{ mcp.intercom.resource('conversations/last-7-days').content }}
+{% endllm %}
+```
+
+When you run `colin run`:
+
+1. Colin resolves dependencies in topological order
+2. Checks if sources changed (documents, MCP resources, etc.)
+3. Recompiles only what's affected
+4. Runs LLM calls to synthesize and extract (cached by input)
+5. Outputs compiled context to `target/`
+
+When any source updates, everything that depends on it recompiles automatically. Like dbt's `ref()`, but for context.
+
+---
+
+## Core Primitives
+
+### ref() — Connect Documents
+
+Reference other documents. Colin builds the graph and compiles in order:
+
+```jinja
+{{ ref('company/overview').content }}
+```
+
+When `company/overview` changes, everything that references it recompiles.
+
+### extract() — Pull What Matters
+
+LLM extracts specific information from content:
+
+```jinja
+{{ ref('meeting-notes') | extract('action items and owners') }}
+{{ ref('customer-calls') | extract('feature requests mentioned') }}
+```
+
+### mcp.server.resource() — Fetch Live Data
+
+Pull from external sources via MCP:
+
+```jinja
+{{ mcp.linear.resource('projects/engineering').content }}
+{{ mcp.github.resource('repo://org/repo/README.md').content }}
+```
+
+### {% llm %} — Synthesize Across Sources
+
+Freeform LLM synthesis:
+
+```jinja
+{% llm %}
+Compare these two analyses and identify trends:
+
+{{ ref('q3-report').content }}
+{{ ref('q4-report').content }}
+{% endllm %}
+```
 
 ---
 
 ## Quick Start
-
-Initialize a project:
 
 ```bash
 colin init my-project
 cd my-project
 ```
 
-Create a source document `models/meeting-notes.md` that pulls from an MCP server:
+Create `models/company.md`:
 
 ```markdown
 ---
-name: Meeting Notes
-description: Recent meeting notes from the team
+name: Company Overview
 ---
 
-{# Pull notes from your Notion MCP server #}
-{{ mcp.notion.resource('pages/meeting-notes') }}
+We build developer tools for CI/CD pipelines.
 ```
 
-Create a skill that extracts what matters in `models/project-status.md`:
+Create `models/pitch.md`:
 
 ```markdown
 ---
-name: Project Status
-description: Current project status for agents
+name: Sales Pitch
 ---
 
-# Project Status
+# About Us
 
-**Last updated:** {{ ref('meeting-notes').updated }}
+{{ ref('company').content }}
 
-## Open Action Items
-{{ ref('meeting-notes') | extract('action items and who owns them') }}
+# Why Choose Us
 
-## Customer Risks
-{{ ref('meeting-notes') | extract('customer risks or concerns') }}
+{{ ref('company') | extract('key selling points') }}
 ```
 
 Compile:
@@ -91,89 +157,21 @@ Compile:
 colin run
 ```
 
-Colin discovers both documents, builds the dependency graph, compiles `meeting-notes` first, then `project-status` with the extracted content. LLM calls are cached—reruns are instant unless the source changes.
-
-Output lands in `target/compiled/`.
-
-**No LLM?** Use `ref()` directly for templating without AI:
-
-```jinja
-{{ ref('meeting-notes').content }}
-```
+Colin compiles `company` first (no dependencies), then `pitch` (depends on `company`). Output lands in `target/compiled/`. Change `company.md` and `pitch.md` recompiles automatically.
 
 ---
 
-## Core Concepts
+## Use Cases
 
-### ref() — Dependency Resolution
+**Agent Skills**: Context your agent loads on-demand—stays current as sources change.
 
-Reference other documents. Colin builds the graph and compiles in order:
+**System Prompts**: Dynamic prompts that update automatically when team info, processes, or priorities shift.
 
-```jinja
-{{ ref('context/team-roster') }}
-```
+**Team Briefings**: Status reports assembled from project trackers, synthesized by LLMs.
 
-Returns a `RefResult` with:
-
-- `.content` — compiled output
-- `.name` — from frontmatter
-- `.description` — from frontmatter
-- `.template` — raw source
-
-### {% llm %} — LLM Transformations
-
-LLM-powered synthesis:
-
-```jinja
-{% llm %}
-Given: {{ ref('sources/metrics') }}
-Identify the top 3 concerns.
-{% endllm %}
-```
-
-With model selection:
-
-```jinja
-{% llm model="anthropic:claude-sonnet-4-5" %}
-Summarize the week's activity.
-{% endllm %}
-```
-
-### | extract — Focused Extraction
-
-Pull specific information from content:
-
-```jinja
-{{ ref('sources/slack') | extract('action items from this week') }}
-{{ ref('sources/calls') | extract('feature requests mentioned') }}
-```
-
-### Caching
-
-LLM calls are cached based on inputs:
-
-- **Auto caching**: Same input + same prompt = cached result
-- **Manual IDs**: Stable across prompt changes, receives previous output
-
-```jinja
-{{ content | extract('summary') }}                    {# auto cache #}
-{{ content | extract('summary', id='main-summary') }} {# manual ID #}
-```
-
-Manual IDs let you iterate on prompts without regenerating everything.
+**Documentation**: Internal docs that pull from multiple sources and never go stale.
 
 ---
-
-## CLI
-
-```bash
-colin init [name]          # Create new project
-colin run                  # Compile all documents
-colin run --no-cache       # Recompile everything
-colin run --dry-run        # Show what would compile
-colin status               # Show project status
-colin clean                # Remove outputs and cache
-```
 
 ## Configuration
 
@@ -181,19 +179,15 @@ colin clean                # Remove outputs and cache
 
 ```toml
 [project]
-name = "my-project"
-model-path = "models"    # Source documents
-target-path = "target"   # Compiled output
-```
+name = "my-context"
+model-path = "models"
+target-path = "target"
+default-llm-model = "anthropic:claude-sonnet-4-5"
 
-### MCP Servers
-
-Connect to MCP servers for external data:
-
-```toml
 [[providers.mcp]]
 name = "linear"
-url = "https://linear-mcp.example.com"
+command = "npx"
+args = ["@anthropic/mcp-server-linear"]
 
 [[providers.mcp]]
 name = "github"
@@ -201,9 +195,15 @@ command = "uvx"
 args = ["mcp-server-github"]
 ```
 
+## CLI
+
 ```bash
-colin mcp add linear --url https://...
-colin mcp list
+colin init [name]      # Create new project
+colin run              # Compile all documents
+colin run --no-cache   # Recompile everything
+colin status           # Show project status
+colin clean            # Remove outputs and cache
+colin mcp              # Manage MCP servers
 ```
 
 ---

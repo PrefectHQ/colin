@@ -53,6 +53,7 @@ def build_instance_namespace(instance: ProviderInstanceEntry, ctx: ProviderConte
     """Build a namespace for a single provider instance."""
     funcs: dict[str, object] = {}
     for name, func in instance.functions.items():
+
         async def wrapper(*args: object, _func=func, _ctx=ctx, **kwargs: object) -> object:
             return await _func(_ctx, *args, **kwargs)
 

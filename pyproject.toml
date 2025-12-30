@@ -1,7 +1,7 @@
 [project]
 name = "colin"
 dynamic = ["version"]
-description = "A context compiler for the AI era"
+description = "A context engine for the AI era"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

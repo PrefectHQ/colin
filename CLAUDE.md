@@ -1,6 +1,6 @@
 # Colin Development Guidelines
 
-Colin (**Co**ntext **Lin**eage) is a context compiler for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
+Colin (**Co**ntext **Lin**eage) is a context engine for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and produces outputs your agents can use.
 
 ## Required Development Workflow
 

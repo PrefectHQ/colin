@@ -4,11 +4,11 @@ sidebarTitle: Welcome!
 icon: hand-wave
 ---
 
-Colin is a **context compiler** for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and compiles them to output formats.
+Colin is a **context engine** for building context pipelines—extract from sources, transform with LLMs, load to outputs. Write templates that reference other documents, pull from GitHub, Linear, Slack, databases via MCP. When sources change, Colin recompiles. Your context and skills stay fresh automatically.
 
 <CodeGroup>
 
-```markdown Model
+```markdown Template
 ---
 name: Product Brief
 ---
@@ -17,12 +17,12 @@ name: Product Brief
 
 {{ ref('company').content }}
 
-# What Makes Us Different
+# What Customers Are Saying
 
-{{ ref('company') | extract('top 3 differentiators') }}
+{{ mcp.intercom.resource('feedback/recent').content | extract('top 3 themes') }}
 ```
 
-```markdown Compiled
+```markdown Output
 ---
 name: Product Brief
 ---
@@ -33,32 +33,30 @@ Acme Corp builds developer tools that streamline CI/CD
 pipelines. Founded in 2020, we serve over 500 enterprise
 customers including Fortune 100 companies.
 
-# What Makes Us Different
+# What Customers Are Saying
 
-1. **Intelligent Caching**: 80% faster deployments
-2. **Enterprise Scale**: Fortune 100 proven
-3. **Developer Experience**: Zero-config setup
+1. **Speed**: Customers consistently praise deployment times
+2. **Reliability**: Zero-downtime deployments mentioned frequently
+3. **Support**: Fast response times noted in multiple conversations
 ```
 
 </CodeGroup>
 
-The `ref()` function fetches content from another document while registering a dependency edge—so Colin recompiles this document when `company` changes. The `| extract()` filter passes content through an LLM with your prompt. Colin caches LLM calls by input hash, so unchanged inputs return cached results instantly.
+The `ref()` function fetches content from another document and registers a dependency—so Colin recompiles this document when `company` changes. The `| extract()` filter passes content through an LLM with your prompt. MCP resources pull live data from external systems.
 
 ## Why Colin?
 
-Context is scattered everywhere—project trackers, customer conversations, documentation, databases. Agents need this context synthesized into useful formats: skills they can load on-demand, system prompts that shape their behavior, documentation for humans and machines.
+Context goes stale. Someone writes a skill describing your deployment process. A month later, CI changed, environments got renamed, the approval flow is different. The skill is wrong. The agent is wrong. Nobody noticed.
 
-Today, this synthesis is manual. Someone writes a skill by hand, copy-pasting from various sources, hoping they didn't miss anything. When sources change, the skill goes stale. There's no lineage, no caching, no way to know what depends on what.
+Colin solves this:
 
-Colin solves this with:
+**Live sources**: Templates reference data from MCP servers, other documents, and APIs. When sources change, dependents recompile.
 
-**Interconnected context**: Real-world context isn't isolated. Your product docs reference your company overview. Your API specs reference your data models. Colin makes these relationships explicit and manageable.
+**Dependency tracking**: `ref()` builds a graph. Colin compiles in topological order and knows exactly what depends on what.
 
-**Incremental builds**: Change one source document and only rebuild what depends on it. No more reprocessing everything.
+**LLM synthesis**: Extract specific information, summarize across sources, synthesize with `{% llm %}` blocks. All cached by input hash.
 
-**LLM caching**: LLM calls are cached by input hash. Same input, same output, no API call.
-
-**Full lineage**: The manifest tracks everything. You can see exactly what changed, when, and why—complete traceability across your context graph.
+**Full lineage**: The manifest tracks every compilation—what sources, what LLM calls, what outputs. Trace any context back to its origins.
 
 ## About the Name
 
