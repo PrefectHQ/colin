@@ -3,7 +3,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import cyclopts
 from cyclopts import Parameter
@@ -27,7 +27,7 @@ def add(
     args: Annotated[list[str] | None, Parameter(negative=())] = None,
     *,
     transport: Annotated[
-        str | None,
+        Literal["stdio", "sse", "http"] | None,
         Parameter(name=["-t", "--transport"]),
     ] = None,
     env: Annotated[
