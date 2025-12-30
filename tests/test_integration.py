@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 
+from colin.api.project import ProjectConfig
 from colin.compiler import CompileEngine
-from colin.models import Manifest
-from colin.plugins.inputs.file import ProjectInput
-
-if TYPE_CHECKING:
-    pass
+from colin.providers.storage.file import FileStorage
 
 
 class TestCompileIntegration:
@@ -27,9 +23,10 @@ class TestCompileIntegration:
     async def test_hello_world_example(self, tmp_path: Path) -> None:
         """Test compiling the hello_world example end-to-end."""
         # Set up directories
-        source_dir = tmp_path / "context"
+        source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
+        output_dir = tmp_path / "target" / "compiled"
+        output_dir.mkdir(parents=True)
 
         # Create fixture files (same as examples/hello_world)
         (source_dir / "greeting.md").write_text("""\
@@ -85,9 +82,19 @@ Write a haiku about being welcomed.
 """)
 
         # Compile
-        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
-        manifest = Manifest()
-        engine = CompileEngine(manifest, input_plugin, default_model="test-model")
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=source_dir,
+            target_path=tmp_path / "target",
+            manifest_path=tmp_path / "target" / "manifest.json",
+        )
+        artifact_storage = FileStorage(base_path=output_dir)
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+            default_model="test-model",
+        )
 
         compiled = await engine.compile_all()
 
@@ -118,9 +125,10 @@ Write a haiku about being welcomed.
 
     async def test_diamond_dependency(self, tmp_path: Path) -> None:
         """Test diamond dependency pattern (A depends on B and C, both depend on D)."""
-        source_dir = tmp_path / "context"
+        source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
+        output_dir = tmp_path / "target" / "compiled"
+        output_dir.mkdir(parents=True)
 
         # D is the base (no deps)
         (source_dir / "d.md").write_text("""\
@@ -155,9 +163,19 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
 """)
 
         # Compile
-        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
-        manifest = Manifest()
-        engine = CompileEngine(manifest, input_plugin, default_model="test-model")
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=source_dir,
+            target_path=tmp_path / "target",
+            manifest_path=tmp_path / "target" / "manifest.json",
+        )
+        artifact_storage = FileStorage(base_path=output_dir)
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+            default_model="test-model",
+        )
 
         compiled = await engine.compile_all()
 
@@ -174,10 +192,11 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
 
     async def test_nested_directories(self, tmp_path: Path) -> None:
         """Test documents in nested directories."""
-        source_dir = tmp_path / "context"
+        source_dir = tmp_path / "models"
         source_dir.mkdir()
         (source_dir / "reports").mkdir()
-        output_dir = tmp_path / "target"
+        output_dir = tmp_path / "target" / "compiled"
+        output_dir.mkdir(parents=True)
 
         (source_dir / "base.md").write_text("""\
 ---
@@ -194,9 +213,19 @@ Report includes {{ ref('base').content }}
 """)
 
         # Compile
-        input_plugin = ProjectInput([source_dir], target_dir=output_dir)
-        manifest = Manifest()
-        engine = CompileEngine(manifest, input_plugin, default_model="test-model")
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=source_dir,
+            target_path=tmp_path / "target",
+            manifest_path=tmp_path / "target" / "manifest.json",
+        )
+        artifact_storage = FileStorage(base_path=output_dir)
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+            default_model="test-model",
+        )
 
         await engine.compile_all()
 

@@ -18,17 +18,7 @@ from colin.models import CompiledDocument, LLMCall, RefResult
 if TYPE_CHECKING:
     from colin.mcp import MCPManager
     from colin.models import Manifest
-    from colin.plugins.inputs.file import ProjectInput
-
-
-def _has_scheme(uri: str) -> bool:
-    """Check if a URI has an explicit scheme (e.g., project://, file://)."""
-    return "://" in uri
-
-
-def _is_project_uri(uri: str) -> bool:
-    """Check if a URI is a project:// URI."""
-    return uri.startswith("project://")
+    from colin.providers.project import ProjectProvider
 
 
 def _truncate(text: str, max_len: int = 40) -> str:
@@ -58,7 +48,7 @@ class CompileContext:
         manifest: Manifest,
         document_uri: str,
         default_model: str,
-        input_plugin: ProjectInput,
+        project_provider: ProjectProvider,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
         mcp_manager: MCPManager | None = None,
         doc_state: OperationState | None = None,
@@ -69,7 +59,7 @@ class CompileContext:
             manifest: The manifest for caching and metadata.
             document_uri: URI of the document being compiled.
             default_model: Default LLM model to use.
-            input_plugin: Input plugin for fetching refs.
+            project_provider: Provider for reading compiled outputs (refs).
             compiled_outputs: Already-compiled documents from current run.
             mcp_manager: MCP manager for server connections.
             doc_state: Optional state for progress tracking.
@@ -77,7 +67,7 @@ class CompileContext:
         self.manifest = manifest
         self.document_uri = document_uri
         self.default_model = default_model
-        self.input_plugin = input_plugin
+        self.project_provider = project_provider
         self.compiled_outputs = compiled_outputs or {}
         self.mcp_manager = mcp_manager
         self.doc_state = doc_state
@@ -92,12 +82,10 @@ class CompileContext:
 
         This:
         1. Normalizes shorthand refs to project:// URIs
-        2. Validates project:// refs exist within project (compile-time check)
-        3. Records the dependency edge
-        4. Returns the compiled content of the referenced document
+        2. Records the dependency edge
+        3. Returns the compiled content of the referenced document
 
         Shorthand URIs (e.g., 'data') are normalized to project://data.md.
-        Project URIs must resolve within the project boundary.
 
         Args:
             uri: URI of the document to reference (shorthand or full).
@@ -109,13 +97,7 @@ class CompileContext:
             RefNotFoundError: If the referenced document doesn't exist.
         """
         # Normalize shorthand refs to project:// URIs
-        uri = self.input_plugin.normalize_uri(uri)
-
-        # Validate project:// refs exist within project (compile-time guard)
-        if _is_project_uri(uri):
-            model_path = self.input_plugin.uri_to_model_path(uri)
-            if model_path is None:
-                raise RefNotFoundError(f"Referenced document '{uri}' not found in project.")
+        uri = self._normalize_uri(uri)
 
         # Record the dependency (only track first ref to each URI)
         is_first_ref = uri not in self.refs_evaluated
@@ -140,16 +122,41 @@ class CompileContext:
                 uri=uri,
             )
 
-        # Fall back to fetching from disk
-        if is_first_ref and self.doc_state is not None:
-            with self.doc_state.child("ref", detail=_strip_scheme(uri)):
-                result = await self.input_plugin.fetch(uri)
-                return result
-        else:
+        # Fetch from storage via project provider
+        async def fetch_from_provider() -> RefResult:
+            # Strip scheme for provider (routing already happened)
+            path = uri.replace("project://", "")
             try:
-                return await self.input_plugin.fetch(uri)
+                content = await self.project_provider.read(path)
             except FileNotFoundError as e:
                 raise RefNotFoundError(f"Referenced document not found: {uri}") from e
+
+            # Create RefResult from raw content
+            return RefResult(
+                name=path.split("/")[-1],  # Filename from path
+                description=None,
+                content=content,
+                template="",
+                updated=datetime.now(timezone.utc),
+                uri=uri,
+            )
+
+        if is_first_ref and self.doc_state is not None:
+            with self.doc_state.child("ref", detail=_strip_scheme(uri)):
+                return await fetch_from_provider()
+        else:
+            return await fetch_from_provider()
+
+    def _normalize_uri(self, uri: str) -> str:
+        """Normalize a URI to project:// format.
+
+        Converts shorthand refs like 'data' to 'project://data.md'.
+        """
+        if "://" in uri:
+            return uri
+        if not uri.endswith(".md"):
+            uri = f"{uri}.md"
+        return f"project://{uri}"
 
     async def extract(
         self,

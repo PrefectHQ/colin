@@ -53,7 +53,7 @@ uv run pytest              # Run tests
 - Python ≥ 3.10 with full type annotations
 - Use `from __future__ import annotations` only where needed (files with forward references, TYPE_CHECKING blocks, or complex type annotations)
 - **ALWAYS** put imports at module level (no local imports inside functions)
-- **NEVER** export everything in `__init__.py` - no long `__all__` lists; only import/export what is absolutely necessary; modules can import what they need directly from other modules
+- **NEVER** export everything in `__init__.py` - `__all__` is a DX surface for framework USERS, not internal convenience. Ruthlessly curate to maximize user capability with minimal surface area. The framework itself imports directly from modules.
 - Minimize `# type: ignore` - fix types properly instead
 - Follow existing patterns and maintain consistency
 - Prioritize readable, understandable code - clarity over cleverness

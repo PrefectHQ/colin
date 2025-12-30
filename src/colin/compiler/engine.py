@@ -7,10 +7,10 @@ import hashlib
 from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from fastmcp.mcp_config import MCPConfig
-from jinja2 import nodes
+import frontmatter as fm_parser
+from jinja2 import TemplateSyntaxError, nodes
 
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
@@ -19,14 +19,19 @@ from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.mcp import MCPManager
 from colin.models import (
+    ColinConfig,
     ColinDocument,
     CompiledDocument,
     DocumentMeta,
+    Frontmatter,
     Manifest,
 )
+from colin.providers.project import ProjectProvider
+from colin.providers.storage.base import Storage
+from colin.renders import get_renderer
 
 if TYPE_CHECKING:
-    from colin.plugins.inputs.file import ProjectInput
+    from colin.api.project import ProjectConfig
 
 
 class CompileEngine:
@@ -35,31 +40,48 @@ class CompileEngine:
     The engine performs two-pass compilation:
     1. Discovery + AST parsing to extract refs and build dependency graph
     2. Topological sort and compilation in order
+
+    The engine handles all I/O directly:
+    - Discovers models by scanning config.model_path
+    - Reads source files with frontmatter parsing
+    - Writes compiled outputs via artifact_storage
+
+    ProjectProvider wraps artifact_storage for template refs.
     """
 
     def __init__(
         self,
-        manifest: Manifest,
-        input_plugin: ProjectInput,
+        config: ProjectConfig,
+        artifact_storage: Storage,
         default_model: str,
-        mcp_config: MCPConfig | None = None,
         state: CompilationState | None = None,
+        force: bool = False,
     ) -> None:
         """Initialize the compile engine.
 
         Args:
-            manifest: The manifest for caching and metadata.
-            input_plugin: Input plugin for document access.
+            config: Project configuration with resolved paths.
+            artifact_storage: Storage for compiled outputs.
             default_model: Default LLM model to use.
-            mcp_config: MCP server configuration.
             state: Optional compilation state for progress tracking.
+            force: Force recompile (ignore existing manifest).
         """
-        self.manifest = manifest
-        self.input_plugin = input_plugin
+        self.config = config
+        self.artifact_storage = artifact_storage
         self.default_model = default_model
-        self.mcp_config = mcp_config or MCPConfig()
         self.state = state
         self.graph = DependencyGraph()
+        self._project_provider = ProjectProvider(artifact_storage)
+
+        # Load manifest from config path (or empty if force/not exists)
+        self.manifest = Manifest() if force else self._load_manifest()
+
+    def _load_manifest(self) -> Manifest:
+        """Load manifest from config path if it exists."""
+        if self.config.manifest_path.exists():
+            content = self.config.manifest_path.read_text(encoding="utf-8")
+            return Manifest.model_validate_json(content)
+        return Manifest()
 
     async def compile_all(self) -> list[CompiledDocument]:
         """Discover and compile all documents.
@@ -68,7 +90,7 @@ class CompileEngine:
             List of compiled documents in compilation order.
         """
         # Phase 1: Discover and load documents
-        documents = self._discover_documents()
+        documents = await self._discover_documents()
 
         # Phase 2: Build dependency graph from refs
         self._build_dependency_graph(documents)
@@ -127,7 +149,7 @@ class CompileEngine:
                 return (uri, e)
 
         # Create MCP manager for resource access
-        mcp_manager = MCPManager(self.mcp_config)
+        mcp_manager = MCPManager(self.config.mcp)
         try:
             for level in compile_order:
                 # Compile all documents in this level in parallel
@@ -143,7 +165,7 @@ class CompileEngine:
                     else:
                         compiled.append(result)
                         compiled_outputs[uri] = result
-                        self._write_output(result)
+                        await self._write_output(result)
                         self._update_manifest(result)
         finally:
             await mcp_manager.close()
@@ -161,7 +183,7 @@ class CompileEngine:
         """Compile a single document by URI.
 
         Args:
-            uri: Document URI to compile.
+            uri: Document URI (project:// format).
 
         Returns:
             The compiled document.
@@ -169,55 +191,96 @@ class CompileEngine:
         Raises:
             FileNotFoundError: If the document doesn't exist.
         """
-        # Load the document
-        model_path = self.input_plugin.uri_to_model_path(uri)
-        if model_path is None:
-            raise FileNotFoundError(f"Document not found: {uri}")
+        # Convert URI to source path
+        path_part = uri.replace("project://", "")
+        source_file = self.config.model_path / path_part
 
-        doc = self._load_document(uri, model_path)
+        if not source_file.exists():
+            raise FileNotFoundError(f"Model not found: {uri}")
+
+        # Load the document
+        doc = self._load_document(source_file)
 
         # Compile
         result = await self._compile_document(doc, {})
 
         # Write output
-        self._write_output(result)
+        await self._write_output(result)
 
         # Update manifest
         self._update_manifest(result)
 
         return result
 
-    def _discover_documents(self) -> list[ColinDocument]:
-        """Discover and load all documents.
+    async def _discover_documents(self) -> list[ColinDocument]:
+        """Discover and load all source models.
+
+        Scans config.model_path for .md files, excluding nested projects.
 
         Returns:
             List of loaded documents.
         """
         documents: list[ColinDocument] = []
-        for uri, path in self.input_plugin.discover_documents():
-            doc = self._load_document(uri, path)
-            documents.append(doc)
-        return documents
 
-    def _load_document(self, uri: str, path: Path) -> ColinDocument:
-        """Load a single document from disk.
+        if not self.config.model_path.exists():
+            return documents
+
+        for path in self.config.model_path.rglob("*.md"):
+            # Skip files in nested projects (directories with colin.toml)
+            if self._is_in_nested_project(path):
+                continue
+
+            doc = self._load_document(path)
+            documents.append(doc)
+
+        return sorted(documents, key=lambda d: d.uri)
+
+    def _is_in_nested_project(self, path: Path) -> bool:
+        """Check if path is inside a nested Colin project."""
+        current = path.parent
+        model_path_resolved = self.config.model_path.resolve()
+
+        while current.resolve() != model_path_resolved:
+            if (current / "colin.toml").exists():
+                return True
+            if current.parent == current:
+                break
+            current = current.parent
+
+        return False
+
+    def _load_document(self, path: Path) -> ColinDocument:
+        """Load a source model with frontmatter.
 
         Args:
-            uri: Document URI.
             path: Path to the source file.
 
         Returns:
             Loaded ColinDocument.
         """
-        frontmatter, template_content = self.input_plugin.parse_frontmatter(path)
         content = path.read_text(encoding="utf-8")
-        source_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+        post = fm_parser.loads(content)
+
+        # Extract colin config
+        raw_colin = post.metadata.pop("colin", {})
+        colin_data = cast(dict[str, Any], raw_colin) if isinstance(raw_colin, dict) else {}
+        colin_config = ColinConfig.model_validate(colin_data)
+
+        # Rest is document metadata
+        metadata = cast(dict[str, Any], post.metadata)
+        frontmatter = Frontmatter(colin=colin_config, metadata=metadata)
+
+        # Build URI from path
+        relative = path.relative_to(self.config.model_path)
+        uri = f"project://{relative}"
+
+        # Hash the template content for change detection
+        source_hash = hashlib.sha256(post.content.encode()).hexdigest()[:16]
 
         return ColinDocument(
             uri=uri,
-            source_path=path,
             frontmatter=frontmatter,
-            template_content=template_content,
+            template_content=post.content,
             source_hash=source_hash,
         )
 
@@ -238,11 +301,32 @@ class CompileEngine:
                 refs = self._extract_refs_from_ast(ast)
                 for ref_uri in refs:
                     # Normalize ref URIs to match document URIs (project://...)
-                    normalized_ref = self.input_plugin.normalize_uri(ref_uri)
+                    normalized_ref = self._normalize_uri(ref_uri)
                     self.graph.add_edge(doc.uri, normalized_ref)
-            except Exception:
+            except TemplateSyntaxError:
                 # If parsing fails, we'll catch actual errors during compilation
                 pass
+
+    def _normalize_uri(self, uri: str) -> str:
+        """Normalize a URI to project:// format.
+
+        Converts shorthand refs like 'data' to 'project://data.md'.
+
+        Args:
+            uri: URI in any format (shorthand or full).
+
+        Returns:
+            Normalized URI.
+        """
+        # Already has a scheme - leave as-is
+        if "://" in uri:
+            return uri
+
+        # Schemaless shorthand - normalize to project://
+        # Add .md extension if missing
+        if not uri.endswith(".md"):
+            uri = f"{uri}.md"
+        return f"project://{uri}"
 
     def _extract_refs_from_ast(self, ast: nodes.Template) -> list[str]:
         """Extract ref() URIs from Jinja AST.
@@ -297,7 +381,7 @@ class CompileEngine:
             manifest=self.manifest,
             document_uri=doc.uri,
             default_model=self.default_model,
-            input_plugin=self.input_plugin,
+            project_provider=self._project_provider,
             compiled_outputs=compiled_outputs,
             mcp_manager=mcp_manager,
             doc_state=doc_state,
@@ -315,7 +399,6 @@ class CompileEngine:
 
         return CompiledDocument(
             uri=doc.uri,
-            source_path=doc.source_path,
             frontmatter=doc.frontmatter,
             output=output,
             source_hash=doc.source_hash,
@@ -325,15 +408,23 @@ class CompileEngine:
             total_cost_usd=context.total_cost,
         )
 
-    def _write_output(self, doc: CompiledDocument) -> None:
-        """Write compiled output to disk.
+    async def _write_output(self, doc: CompiledDocument) -> None:
+        """Write compiled output to storage.
+
+        Uses the renderer specified in frontmatter.colin.output (default: markdown).
 
         Args:
             doc: The compiled document.
         """
-        target_path = self.input_plugin.uri_to_target_path(doc.uri)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(doc.output, encoding="utf-8")
+        # Get renderer from frontmatter
+        output_format = doc.frontmatter.colin.output
+        renderer = get_renderer(output_format)
+
+        # Render the document
+        render_result = renderer.render(doc)
+
+        # Write to artifact storage (relative path)
+        await self.artifact_storage.write(render_result.filename, render_result.content)
 
     def _update_manifest(self, doc: CompiledDocument) -> None:
         """Update manifest with compilation result.
@@ -343,7 +434,6 @@ class CompileEngine:
         """
         meta = DocumentMeta(
             uri=doc.uri,
-            source_path=str(doc.source_path),
             source_hash=doc.source_hash,
             output_hash=doc.output_hash,
             compiled_at=datetime.now(timezone.utc),

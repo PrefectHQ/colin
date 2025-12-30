@@ -78,11 +78,9 @@ class TestDocumentMeta:
     def test_creation(self) -> None:
         meta = DocumentMeta(
             uri="context/test",
-            source_path="/path/to/test.colin",
             source_hash="abc123",
         )
         assert meta.uri == "context/test"
-        assert meta.source_path == "/path/to/test.colin"
         assert meta.source_hash == "abc123"
         assert meta.output_hash is None
         assert meta.compiled_at is None
@@ -105,7 +103,6 @@ class TestManifest:
         manifest = Manifest()
         meta = DocumentMeta(
             uri="context/test",
-            source_path="/path/to/test.colin",
             source_hash="abc123",
         )
         manifest.set_document("context/test", meta)
@@ -117,7 +114,6 @@ class TestManifest:
             "context/a",
             DocumentMeta(
                 uri="context/a",
-                source_path="/a.colin",
                 source_hash="a",
                 refs_evaluated=["context/b", "context/c"],
             ),
@@ -126,7 +122,6 @@ class TestManifest:
             "context/d",
             DocumentMeta(
                 uri="context/d",
-                source_path="/d.colin",
                 source_hash="d",
                 refs_evaluated=["context/b"],
             ),
@@ -148,7 +143,6 @@ class TestManifest:
             "context/test",
             DocumentMeta(
                 uri="context/test",
-                source_path="/test.colin",
                 source_hash="abc",
                 llm_calls={"call-1": call},
             ),
@@ -189,28 +183,21 @@ class TestRefResult:
 
 
 class TestColinDocument:
-    def test_creation(self, tmp_path) -> None:
-        path = tmp_path / "test.colin"
-        path.touch()
+    def test_creation(self) -> None:
         doc = ColinDocument(
             uri="context/test",
-            source_path=path,
             frontmatter=Frontmatter(),
             template_content="# Hello",
             source_hash="abc123",
         )
         assert doc.uri == "context/test"
-        assert doc.source_path == path
         assert doc.template_content == "# Hello"
 
 
 class TestCompiledDocument:
-    def test_creation(self, tmp_path) -> None:
-        path = tmp_path / "test.colin"
-        path.touch()
+    def test_creation(self) -> None:
         doc = CompiledDocument(
             uri="context/test",
-            source_path=path,
             frontmatter=Frontmatter(),
             output="# Hello",
             source_hash="abc123",
