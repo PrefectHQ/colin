@@ -286,10 +286,10 @@ def init_project(
         target_path=target_path,
         manifest_path=manifest_path,
     )
-    save_project(project_file, config)
-
-    # Create models directory
+    # Create project directory and models subdirectory
     model_path.mkdir(parents=True, exist_ok=True)
+
+    save_project(project_file, config)
 
     return project_file, model_path
 
