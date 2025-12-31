@@ -63,3 +63,44 @@ def create_extract_filter(context: CompileContext):
         return await context.extract(serialized, prompt, call_id=id, model=model)
 
     return extract_filter
+
+
+def create_classify_filter(context: CompileContext):
+    """Create the classify filter bound to a compile context.
+
+    Args:
+        context: The compile context to use for LLM calls.
+
+    Returns:
+        An async filter function.
+    """
+
+    async def classify_filter(
+        content: str | RefResult | object,
+        labels: list[str | bool],
+        id: str | None = None,  # noqa: A002 - using 'id' to match template syntax
+        model: str | None = None,
+        multi: bool = False,
+    ) -> str | bool | list[str | bool]:
+        """Classify content into predefined labels using LLM.
+
+        Usage in templates:
+            {{ content | classify(labels=['movie', 'book', 'podcast']) }}
+            {{ content | classify(labels=['positive', 'negative'], id='sentiment') }}
+            {{ ref('doc') | classify(labels=[True, False]) }}
+            {{ ref('doc') | classify(labels=['tag1', 'tag2'], multi=True) }}
+
+        Args:
+            content: The content to classify (string or RefResult).
+            labels: List of valid labels to choose from (strings or booleans).
+            id: Optional manual ID for caching.
+            model: Optional model override.
+            multi: Whether to allow multiple labels (multi-label classification).
+
+        Returns:
+            Single label (str or bool) if multi=False, list of labels if multi=True.
+        """
+        serialized = _serialize_for_llm(content)
+        return await context.classify(serialized, labels, call_id=id, model=model, multi=multi)
+
+    return classify_filter

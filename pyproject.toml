@@ -36,7 +36,10 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-env = ["FASTMCP_SHOW_BANNER=false"]
+env = [
+    "FASTMCP_SHOW_BANNER=false",
+    "COLIN_DEFAULT_LLM_MODEL=anthropic:claude-haiku-4-5",
+]
 
 [tool.ruff]
 line-length = 100

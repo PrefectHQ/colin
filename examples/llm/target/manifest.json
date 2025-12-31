@@ -1,0 +1,282 @@
+{
+  "version": "1",
+  "compiled_at": "2025-12-31T13:36:34.292704Z",
+  "documents": {
+    "project://base.md": {
+      "uri": "project://base.md",
+      "source_path": null,
+      "source_hash": "1428d25a26170e94",
+      "output_hash": "1428d25a26170e94",
+      "compiled_at": "2025-12-31T13:32:49.568661Z",
+      "refs_evaluated": [],
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://classify_example.md": {
+      "uri": "project://classify_example.md",
+      "source_path": null,
+      "source_hash": "d2519db81d88678a",
+      "output_hash": "cade73471c880485",
+      "compiled_at": "2025-12-31T13:33:13.794182Z",
+      "refs_evaluated": [
+        "project://base.md"
+      ],
+      "llm_calls": {
+        "auto:6f75331b75c98fcc": {
+          "call_id": "auto:6f75331b75c98fcc",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "f213f160b0f1382c",
+          "output": "# Extracted Information: Review #1\n\n**Customer Review #1:**\n\"I love the new interface! It's so much more intuitive than before. The dark mode is perfect for late-night coding sessions.\"\n\n**Sentiment:** Positive\n\n**Key Points:**\n- Praises the new interface for improved intuitiveness\n- Appreciates the dark mode feature\n- Mentions use case: late-night coding sessions",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:11.330665Z"
+        },
+        "review-1-sentiment": {
+          "call_id": "review-1-sentiment",
+          "input_hash": "4f3b7dd96bde3a02",
+          "output_hash": "afa6e9ab3ac6574d",
+          "output": "positive",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:51.964189Z"
+        },
+        "auto:8ab1cbae244ae4c6": {
+          "call_id": "auto:8ab1cbae244ae4c6",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "0dee732b06116fa4",
+          "output": "# Extracted Information\n\n**Customer Review #2:**\n\n\"The app crashes frequently when I try to export large files. This is really frustrating and I'm considering switching to a competitor.\"\n\n**Key Details:**\n- **Sentiment:** Negative\n- **Primary Issue:** App crashes when exporting large files\n- **Customer Impact:** High frustration, considering competitor alternatives\n- **Category:** Technical/Stability Issue",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:13.084934Z"
+        },
+        "review-2-sentiment": {
+          "call_id": "review-2-sentiment",
+          "input_hash": "1b3a8351c12417b3",
+          "output_hash": "09f04951af4cd503",
+          "output": "negative",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:53.959613Z"
+        },
+        "auto:2e1ba9bda43ea13f": {
+          "call_id": "auto:2e1ba9bda43ea13f",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "89d40eb4913d0ff8",
+          "output": "# Extracted Information\n\n## Customer Review #3\n\n**Content:** \"Great features, but the pricing is too high for what you get. I'd be willing to pay if there was a student discount.\"\n\n**Key Points:**\n- Positive: Features are great\n- Negative: Pricing is perceived as too high for the value provided\n- Suggestion: Customer would consider purchasing with a student discount option",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:06.342742Z"
+        },
+        "review-3-sentiment": {
+          "call_id": "review-3-sentiment",
+          "input_hash": "b25f004d6ea14f02",
+          "output_hash": "09f04951af4cd503",
+          "output": "negative",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:56.016617Z"
+        },
+        "auto:6fbdfdcdc64f751d": {
+          "call_id": "auto:6fbdfdcdc64f751d",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "ab6e91802122b83c",
+          "output": "# Extracted Information\n\n## Customer Review #4\n\n\"Excellent customer support! They responded to my question within minutes and solved my issue completely.\"\n\n**Key Points:**\n- Positive feedback about customer support\n- Quick response time (within minutes)\n- Issue was resolved completely\n- High satisfaction with support experience",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:07.988113Z"
+        },
+        "review-4-sentiment": {
+          "call_id": "review-4-sentiment",
+          "input_hash": "c540ae345e28caef",
+          "output_hash": "afa6e9ab3ac6574d",
+          "output": "positive",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:57.965269Z"
+        },
+        "auto:ce589f8b682d016c": {
+          "call_id": "auto:ce589f8b682d016c",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "db4820ca94d3c976",
+          "output": "# Extracted Information\n\n## Customer Review #5\n\n\"The mobile app needs work. It's slow and missing key features that are available on desktop.\"\n\n**Key Points:**\n- **Product Area:** Mobile app\n- **Issues:** Slow performance, missing features\n- **Comparison:** Features available on desktop are not on mobile\n- **Sentiment:** Negative/Critical",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:09.697293Z"
+        },
+        "review-5-sentiment": {
+          "call_id": "review-5-sentiment",
+          "input_hash": "db79ac60bd21f1f5",
+          "output_hash": "09f04951af4cd503",
+          "output": "negative",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:59.912515Z"
+        },
+        "review-1-topic": {
+          "call_id": "review-1-topic",
+          "input_hash": "833f4ddc91dc361f",
+          "output_hash": "c796d37c6d491e8f",
+          "output": "interface",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:02.987601Z"
+        },
+        "review-2-topic": {
+          "call_id": "review-2-topic",
+          "input_hash": "d487f647612eb197",
+          "output_hash": "4a1898716ef67796",
+          "output": "performance",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:04.936072Z"
+        },
+        "review-3-topic": {
+          "call_id": "review-3-topic",
+          "input_hash": "89d40eb4913d0ff8",
+          "output_hash": "1e2ea6d9b72e685b",
+          "output": "pricing",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:06.932819Z"
+        },
+        "review-4-topic": {
+          "call_id": "review-4-topic",
+          "input_hash": "ab6e91802122b83c",
+          "output_hash": "a18603086e5bdf9d",
+          "output": "support",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:08.554741Z"
+        },
+        "review-5-topic": {
+          "call_id": "review-5-topic",
+          "input_hash": "db4820ca94d3c976",
+          "output_hash": "4a1898716ef67796",
+          "output": "performance",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:10.245912Z"
+        },
+        "review-1-multi": {
+          "call_id": "review-1-multi",
+          "input_hash": "f213f160b0f1382c",
+          "output_hash": "aa4a9bcc17159d6d",
+          "output": "[\"design\", \"interface\", \"features\"]",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:11.918674Z"
+        },
+        "review-2-multi": {
+          "call_id": "review-2-multi",
+          "input_hash": "0dee732b06116fa4",
+          "output_hash": "2891241d1372b13d",
+          "output": "[\"performance\"]",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:33:13.793023Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://extract_example.md": {
+      "uri": "project://extract_example.md",
+      "source_path": null,
+      "source_hash": "e7cb082485605cf7",
+      "output_hash": "ae6e21ed3262fa1c",
+      "compiled_at": "2025-12-31T13:33:13.794564Z",
+      "refs_evaluated": [
+        "project://base.md"
+      ],
+      "llm_calls": {
+        "auto:e42a30617e75e1c9": {
+          "call_id": "auto:e42a30617e75e1c9",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "3f408b5f642aaf06",
+          "output": "# Extracted Main Complaints/Negative Feedback\n\n- App crashes frequently when exporting large files\n- Pricing is too high for the value provided\n- Mobile app is slow and lacks key features available on desktop",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:51.009033Z"
+        },
+        "auto:655b348c03ceeb2e": {
+          "call_id": "auto:655b348c03ceeb2e",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "db26b3e5c96bfd61",
+          "output": "# Extracted Information: Positive Feedback Summary\n\nCustomers appreciated the improved user interface and intuitive design, with particular praise for the dark mode feature that enhances the coding experience. The customer support team received excellent reviews for their quick response times and effective problem resolution. Overall, users found the product's features to be great and valuable, though some concerns exist around pricing and mobile functionality.",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:52.541111Z"
+        },
+        "auto:1a1ff5a7564147ba": {
+          "call_id": "auto:1a1ff5a7564147ba",
+          "input_hash": "8ce1c2c344118870",
+          "output_hash": "54ff2b61658fc7ff",
+          "output": "# Extracted Feature Requests and Suggestions\n\n1. **Dark Mode** (Review #1)\n   - Already implemented and praised by customer\n\n2. **Student Discount** (Review #3)\n   - Pricing tier suggestion: customer requests student discount option\n\n3. **File Export Stability** (Review #2)\n   - Bug fix needed: improve app stability when exporting large files\n\n4. **Mobile App Enhancement** (Review #5)\n   - Performance improvement: increase mobile app speed\n   - Feature parity: add missing key features to mobile app that exist on desktop version",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:32:54.277483Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://source.md": {
+      "uri": "project://source.md",
+      "source_path": null,
+      "source_hash": "c416ce9356a64a91",
+      "output_hash": "c416ce9356a64a91",
+      "compiled_at": "2025-12-31T13:34:22.770767Z",
+      "refs_evaluated": [],
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://classify.md": {
+      "uri": "project://classify.md",
+      "source_path": null,
+      "source_hash": "599fd825225e8fa4",
+      "output_hash": "858e3f26f900ca11",
+      "compiled_at": "2025-12-31T13:34:23.906003Z",
+      "refs_evaluated": [
+        "project://source.md"
+      ],
+      "llm_calls": {
+        "auto:3e75b31783644e02": {
+          "call_id": "auto:3e75b31783644e02",
+          "input_hash": "d8e89c3dee420966",
+          "output_hash": "7e2372f4115c43ba",
+          "output": "neutral",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:34:23.905413Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://classify_multi_label.md": {
+      "uri": "project://classify_multi_label.md",
+      "source_path": null,
+      "source_hash": "19409056b712f23f",
+      "output_hash": "13de533ec4b6cc94",
+      "compiled_at": "2025-12-31T13:36:27.325991Z",
+      "refs_evaluated": [
+        "project://source.md"
+      ],
+      "llm_calls": {
+        "auto:af09edae5de147ac": {
+          "call_id": "auto:af09edae5de147ac",
+          "input_hash": "e9f8a00892c3e5ba",
+          "output_hash": "ebf45f7471ed93cf",
+          "output": "[\"bugs\", \"features\", \"interface\", \"performance\", \"pricing\"]",
+          "model": "anthropic:claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "created_at": "2025-12-31T13:36:27.325371Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    }
+  }
+}

@@ -521,6 +521,7 @@ class CompileEngine:
                 ref=context.ref,
                 track_ref=context.track_ref,
                 extract=context.extract,
+                classify=context.classify,
             ),
         )
 

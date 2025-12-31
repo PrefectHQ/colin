@@ -20,4 +20,5 @@ class ProviderContext:
     doc_state: OperationState | None
     ref: Callable[["str | Referenceable"], Awaitable[RefResult]]
     track_ref: Callable[[str], None]
-    extract: Callable[[str, str, str | None, str | None], Awaitable[str]]
+    extract: Callable[..., Awaitable[str]]
+    classify: Callable[..., Awaitable[str | bool | list[str | bool]]]
