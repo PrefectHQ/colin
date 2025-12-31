@@ -67,17 +67,21 @@ class LLMBlockExtension(Extension):
         self,
         model: str | None = None,
         id: str | None = None,  # noqa: A002 - using 'id' to match template syntax
+        _cache_id: str | None = None,
+        _cache: bool = True,
         caller: object = None,
     ) -> str:
         """Called during template rendering.
 
         Args:
-            model: LLM model name (ignored for stub).
-            id: Optional manual ID for caching.
+            model: LLM model name override.
+            id: Alias for _cache_id (deprecated, use _cache_id).
+            _cache_id: Optional custom cache ID.
+            _cache: Set to False to bypass cache.
             caller: Async callable that renders the block body.
 
         Returns:
-            The LLM response (or stub response).
+            The LLM response.
         """
         # Get the rendered body content (with refs resolved)
         # In async mode, caller() returns a coroutine
@@ -87,17 +91,21 @@ class LLMBlockExtension(Extension):
         # caller is actually an async callable
         body_content = await caller()  # type: ignore[misc]
 
-        # Access the compile context from the environment
+        # Access the LLM namespace from the environment
         # This is attached by the compiler before rendering
-        compile_context = getattr(self.environment, "compile_context", None)
+        llm_namespace = getattr(self.environment, "llm_namespace", None)
 
-        if compile_context is None:
+        if llm_namespace is None:
             # No context available, return a placeholder
             return f"[LLM BLOCK - no context]\n{body_content}"
 
-        # Delegate to context's LLM handling
-        return await compile_context.call_llm_block(
-            body=body_content,
+        # Support 'id' as alias for '_cache_id' for backwards compatibility
+        effective_cache_id = _cache_id or id
+
+        # Delegate to LLM provider's complete method
+        return await llm_namespace.complete(
+            body_content,
             model=model,
-            call_id=id,
+            _cache_id=effective_cache_id,
+            _cache=_cache,
         )

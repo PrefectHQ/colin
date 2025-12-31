@@ -1,12 +1,12 @@
 # LLM Examples
 
-This example demonstrates Colin's `classify()` filter for categorizing content into predefined labels.
+This example demonstrates Colin's `llm_classify()` filter for categorizing content into predefined labels.
 
 ## Files
 
 - `models/source.md` - Base document with sample product feedback
-- `models/extract.md` - Demonstrates the `extract()` filter with a single extraction
-- `models/classify.md` - Demonstrates the `classify()` filter with a single classification
+- `models/extract.md` - Demonstrates the `llm_extract()` filter with a single extraction
+- `models/classify.md` - Demonstrates the `llm_classify()` filter with a single classification
 - `models/classify_multi_label.md` - Demonstrates multi-label classification with `multi=True`
 
 ## Run It
@@ -42,15 +42,15 @@ export ANTHROPIC_API_KEY=your-key-here
 
 ### Extract
 ```jinja
-{{ ref('source') | extract('the main complaints or negative feedback mentioned') }}
+{{ ref('source') | llm_extract('the main complaints or negative feedback mentioned') }}
 ```
 
 ### Single Label Classification
 ```jinja
-{{ ref('source') | classify(labels=['positive', 'negative', 'neutral']) }}
+{{ ref('source') | llm_classify(labels=['positive', 'negative', 'neutral']) }}
 ```
 
 ### Multi-Label Classification
 ```jinja
-{{ ref('source') | classify(labels=['interface', 'performance', 'pricing'], multi=True) }}
+{{ ref('source') | llm_classify(labels=['interface', 'performance', 'pricing'], multi=True) }}
 ```

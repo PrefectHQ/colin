@@ -18,7 +18,7 @@ def mock_agent() -> Generator[MagicMock, None, None]:
 
     Returns a mock that simulates Agent behavior with predictable outputs.
     """
-    with patch("colin.compiler.context.Agent") as mock_agent_class:
+    with patch("colin.providers.llm.Agent") as mock_agent_class:
         # Create a mock agent instance
         mock_instance = MagicMock()
 

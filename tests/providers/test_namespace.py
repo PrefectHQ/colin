@@ -51,16 +51,6 @@ async def _fake_ref(target: str | Referenceable) -> RefResult:
     )
 
 
-async def _fake_extract(content: str, prompt: str, call_id: str | None, model: str | None) -> str:
-    return f"{prompt}:{content}:{call_id}:{model}"
-
-
-async def _fake_classify(
-    content: str, labels: list[str], call_id: str | None, model: str | None, multi: bool
-) -> str | bool | list[str | bool]:
-    return labels[0] if labels else ""
-
-
 def _make_context() -> ProviderContext:
     return ProviderContext(
         manifest=Manifest(),
@@ -68,8 +58,6 @@ def _make_context() -> ProviderContext:
         doc_state=None,
         ref=_fake_ref,
         track_ref=lambda _uri: None,
-        extract=_fake_extract,
-        classify=_fake_classify,
     )
 
 

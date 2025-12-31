@@ -15,4 +15,4 @@ This document demonstrates how to use the `extract()` filter to pull specific in
 
 ## Extracted Information
 
-**Main Complaints**: {{ ref('source') | extract('the main complaints or negative feedback mentioned') }}
+**Main Complaints**: {{ ref('source') | llm_extract('the main complaints or negative feedback mentioned') }}

@@ -8,7 +8,7 @@ description: Prioritized action items based on analysis
 {{ ref('analysis').content }}
 
 ## Goal Status
-{{ ref('goal_status') | extract('Which goals are at risk or behind?') }}
+{{ ref('goal_status') | llm_extract('Which goals are at risk or behind?') }}
 
 ## Recommended Actions
 

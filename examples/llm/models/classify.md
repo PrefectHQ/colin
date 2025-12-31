@@ -15,4 +15,4 @@ This document demonstrates how to use the `classify()` filter to categorize cont
 
 ## Classification Result
 
-**Sentiment**: {{ ref('source') | classify(labels=['positive', 'negative', 'neutral']) }}
+**Sentiment**: {{ ref('source') | llm_classify(labels=['positive', 'negative', 'neutral']) }}
