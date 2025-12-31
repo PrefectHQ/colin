@@ -60,7 +60,9 @@ def add_server(
         name=name,
         config=server.model_dump(exclude_none=True, exclude_defaults=True),
     )
-    config.providers[instance.scheme] = instance
+    # Register under the first scheme (default is mcp.{name})
+    for scheme in instance.get_schemes():
+        config.providers[scheme] = instance
     save_project(project_file, config)
 
 

@@ -53,21 +53,17 @@ class HTTPProvider(Provider):
     Provides web content fetching with proper HTTP semantics.
     """
 
-    schemes = ["http", "https"]
+    schemes: list[str] = ["http", "https"]
 
-    def __init__(self, timeout: float = 30.0) -> None:
-        """Initialize HTTP provider.
+    timeout: float = 30.0
+    """Request timeout in seconds."""
 
-        Args:
-            timeout: Request timeout in seconds.
-        """
-        self._timeout = timeout
-        self._client: httpx.AsyncClient | None = None
+    _client: httpx.AsyncClient | None = None
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         """Manage HTTP client lifecycle."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
             self._client = client
             yield
         self._client = None

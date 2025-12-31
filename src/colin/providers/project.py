@@ -19,7 +19,7 @@ class ProjectProvider(Provider):
     The ref() function handles creating RefResult and tracking dependencies.
     """
 
-    schemes = ["project"]
+    schemes: list[str] = ["project"]
 
     def __init__(self, storage: Storage, manifest: Manifest | None = None) -> None:
         """Initialize project provider.

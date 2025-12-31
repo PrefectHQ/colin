@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from colin.api.manifest import load_manifest
 from colin.settings import settings
+
+logger = logging.getLogger(__name__)
 
 PROJECT_FILE = "colin.toml"
 
@@ -41,10 +44,21 @@ class ProviderInstanceConfig(BaseModel):
     """Provider type name (e.g., 's3', 'mcp')."""
 
     name: str | None = None
-    """Instance name if specified (e.g., 'dev' for [[providers.s3]])."""
+    """Instance name from the 'name' field in colin.toml.
 
-    scheme_suffix: str | None = None
-    """Optional scheme suffix override (defaults to name)."""
+    Example:
+        [[providers.s3]]
+        name = "dev"
+
+        [[providers.s3]]
+        name = "prod"
+
+    Creates two S3 provider instances with schemes 's3.dev' and 's3.prod'.
+    """
+
+    schemes: list[str] | None = None
+    """Explicit list of URI schemes this instance handles. If not set, defaults
+    to ['{provider_type}.{name}'] for named instances or ['{provider_type}'] for unnamed."""
 
     config: dict[str, Any] = Field(default_factory=dict)
     """Provider-specific configuration."""
@@ -53,20 +67,26 @@ class ProviderInstanceConfig(BaseModel):
     def _validate_names(self) -> ProviderInstanceConfig:
         if self.name is not None and not str(self.name).strip():
             raise ValueError("Provider name cannot be empty")
-        if self.scheme_suffix is not None:
-            if self.name is None:
-                raise ValueError("scheme_suffix requires name")
-            if not str(self.scheme_suffix).strip():
-                raise ValueError("scheme_suffix cannot be empty")
+        if self.schemes is not None:
+            cleaned = []
+            for scheme in self.schemes:
+                if not str(scheme).strip():
+                    raise ValueError("schemes cannot contain empty strings")
+                cleaned.append(scheme.rstrip(":/"))
+            self.schemes = cleaned
         return self
 
-    @property
-    def scheme(self) -> str:
-        """Derived URI scheme (e.g., 's3' or 's3.dev')."""
+    def get_schemes(self) -> list[str]:
+        """Get URI schemes this instance handles.
+
+        If schemes is explicitly set, returns that list.
+        Otherwise returns default based on provider_type and name.
+        """
+        if self.schemes is not None:
+            return self.schemes
         if self.name:
-            suffix = self.scheme_suffix or self.name
-            return f"{self.provider_type}.{suffix}"
-        return self.provider_type
+            return [f"{self.provider_type}.{self.name}"]
+        return [self.provider_type]
 
 
 class ProjectConfig(BaseModel):
@@ -118,14 +138,16 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
     """Parse [[providers.*]] configuration into ProviderInstanceConfig instances.
 
     Each provider type uses array-of-table entries:
-    - [[providers.s3]] name omitted → scheme 's3'
-    - [[providers.s3]] name = 'dev' → scheme 's3.dev'
+    - [[providers.s3]] name omitted → schemes ['s3']
+    - [[providers.s3]] name = 'dev' → schemes ['s3.dev']
+    - [[providers.s3]] schemes = ['s3', 's3.prod'] → explicit schemes
 
     Args:
         providers_data: Raw providers section from TOML.
 
     Returns:
         Dictionary mapping scheme to ProviderInstanceConfig.
+        If multiple instances claim the same scheme, last one wins with a warning.
     """
     result: dict[str, ProviderInstanceConfig] = {}
     defaults_seen: set[str] = set()
@@ -145,10 +167,7 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
                 )
 
             name = entry.get("name")
-            scheme_suffix = entry.get("scheme-suffix", entry.get("scheme_suffix"))
-
-            if name is None and scheme_suffix is not None:
-                raise ValueError(f"[providers.{provider_type}] scheme-suffix requires a name")
+            schemes = entry.get("schemes")
 
             if name is None:
                 if provider_type in defaults_seen:
@@ -162,24 +181,24 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
                     raise ValueError(f"[providers.{provider_type}] duplicate name '{name}'")
                 seen.add(name)
 
-            config = {
-                key: value
-                for key, value in entry.items()
-                if key not in {"name", "scheme-suffix", "scheme_suffix"}
-            }
+            config = {key: val for key, val in entry.items() if key not in {"name", "schemes"}}
 
             instance = ProviderInstanceConfig(
                 provider_type=provider_type,
                 name=name,
-                scheme_suffix=scheme_suffix,
+                schemes=schemes,
                 config=config,
             )
 
-            if instance.scheme in result:
-                raise ValueError(
-                    f"Duplicate provider scheme '{instance.scheme}' in providers.{provider_type}"
-                )
-            result[instance.scheme] = instance
+            # Register all schemes for this instance
+            for scheme in instance.get_schemes():
+                if scheme in result:
+                    logger.warning(
+                        "Scheme '%s' already registered, overwriting with providers.%s",
+                        scheme,
+                        provider_type,
+                    )
+                result[scheme] = instance
 
     return result
 
@@ -344,8 +363,8 @@ def save_project(path: Path, config: ProjectConfig) -> None:
         entry = dict(instance.config)
         if instance.name is not None:
             entry["name"] = instance.name
-        if instance.scheme_suffix is not None:
-            entry["scheme-suffix"] = instance.scheme_suffix
+        if instance.schemes is not None:
+            entry["schemes"] = instance.schemes
         providers_data.setdefault(instance.provider_type, []).append(entry)
 
     if providers_data:

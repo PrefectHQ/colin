@@ -14,7 +14,7 @@ from colin.providers.context import ProviderContext
 class LLMProvider(Provider):
     """Provider wrapper for LLM template functions."""
 
-    schemes = ["llm"]
+    schemes: list[str] = ["llm"]
 
     @classmethod
     def from_config(cls, name: str | None, config: dict[str, Any]) -> Self:

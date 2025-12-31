@@ -148,3 +148,49 @@ class TestMCPList:
         captured = capsys.readouterr()
         assert "remote" in captured.out
         assert "http" in captured.out
+
+
+class TestMCPInvalidSchema:
+    """Tests for invalid MCP provider configurations."""
+
+    def test_missing_command_and_url(self):
+        """MCP config with neither command nor url fails."""
+        from colin.providers.mcp import MCPProvider
+
+        with pytest.raises(ValueError, match="requires 'command' or 'url'"):
+            MCPProvider.from_config(None, {})
+
+    def test_missing_command_and_url_with_other_fields(self):
+        """MCP config with args but no command/url fails."""
+        from colin.providers.mcp import MCPProvider
+
+        with pytest.raises(ValueError, match="requires 'command' or 'url'"):
+            MCPProvider.from_config(None, {"args": ["foo"]})
+
+    def test_empty_command_string(self):
+        """MCP config with empty command string fails."""
+        from colin.providers.mcp import MCPProvider
+
+        with pytest.raises(ValueError, match="requires 'command' or 'url'"):
+            MCPProvider.from_config(None, {"command": ""})
+
+    def test_invalid_args_type(self):
+        """MCP config with non-list args fails validation."""
+        from colin.providers.mcp import MCPProvider
+
+        with pytest.raises(Exception):  # Pydantic validation error
+            MCPProvider.from_config(None, {"command": "python", "args": "not-a-list"})
+
+    def test_invalid_env_type(self):
+        """MCP config with non-dict env fails validation."""
+        from colin.providers.mcp import MCPProvider
+
+        with pytest.raises(Exception):  # Pydantic validation error
+            MCPProvider.from_config(None, {"command": "python", "env": "not-a-dict"})
+
+    def test_invalid_headers_type(self):
+        """MCP config with non-dict headers fails validation."""
+        from colin.providers.mcp import MCPProvider
+
+        with pytest.raises(Exception):  # Pydantic validation error
+            MCPProvider.from_config(None, {"url": "http://example.com", "headers": ["not", "dict"]})

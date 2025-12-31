@@ -9,13 +9,13 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
+from typing_extensions import Self
 
-from colin.api.project import ProviderInstanceConfig
 from colin.providers.base import Provider
 from colin.providers.context import ProviderContext
 
@@ -114,25 +114,6 @@ def _strip_scheme(uri: str) -> str:
     return uri
 
 
-def create_mcp_provider(config: ProviderInstanceConfig) -> MCPProvider:
-    """Create an MCP provider from a provider config."""
-    data = config.config
-    if "url" in data:
-        server: StdioMCPServer | RemoteMCPServer = RemoteMCPServer(
-            url=str(data["url"]),
-            headers=data.get("headers", {}),
-        )
-    elif "command" in data:
-        server = StdioMCPServer(
-            command=str(data["command"]),
-            args=data.get("args", []),
-            env=data.get("env", {}),
-        )
-    else:
-        raise ValueError("MCP provider requires 'command' or 'url' config")
-    return MCPProvider(config.name, server, scheme=config.scheme)
-
-
 class MCPProvider(Provider):
     """Read-only provider for MCP server integration.
 
@@ -143,32 +124,57 @@ class MCPProvider(Provider):
     or: mcp.{instance}://?prompt=<name>&arg1=val1&arg2=val2
     """
 
-    def __init__(
-        self,
-        instance: str | None,
-        server: StdioMCPServer | RemoteMCPServer,
-        scheme: str | None = None,
-    ) -> None:
-        """Initialize MCP provider for a specific server.
+    namespace: ClassVar[str] = "mcp"
 
-        Args:
-            instance: Server name (e.g., 'linear' for [[providers.mcp.linear]]).
-            server: MCP server configuration.
-            scheme: Override scheme for URI routing.
-        """
-        if instance is not None and not instance.strip():
+    command: str | None = None
+    """Command to run for stdio MCP server."""
+
+    args: list[str] = []
+    """Arguments for the command."""
+
+    env: dict[str, str] = {}
+    """Environment variables for the command."""
+
+    url: str | None = None
+    """URL for remote MCP server."""
+
+    headers: dict[str, str] = {}
+    """HTTP headers for remote server."""
+
+    _instance: str = "default"
+    _server: StdioMCPServer | RemoteMCPServer | None = None
+    _client: Client | None = None
+
+    @classmethod
+    def from_config(cls, name: str | None, config: dict[str, Any]) -> Self:
+        """Create MCP provider from configuration."""
+        if name == "":
             raise ValueError("MCP provider requires an instance name")
 
-        self._instance = instance or "default"
-        self._server = server
-        provider_scheme = scheme or (f"mcp.{instance}" if instance else "mcp")
-        self.schemes = [provider_scheme]
-        self.namespace = "mcp"
-        self._client: Client | None = None
+        instance = cls(**config)
+        instance._instance = name or "default"
+        instance.schemes = [f"mcp.{name}" if name else "mcp"]
+
+        if instance.url:
+            instance._server = RemoteMCPServer(
+                url=instance.url,
+                headers=instance.headers,
+            )
+        elif instance.command:
+            instance._server = StdioMCPServer(
+                command=instance.command,
+                args=instance.args,
+                env=instance.env,
+            )
+        else:
+            raise ValueError("MCP provider requires 'command' or 'url' config")
+        return instance
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         """Manage MCP client lifecycle."""
+        if self._server is None:
+            raise RuntimeError("MCPProvider not configured - use from_config()")
         mcp_config = MCPConfig(mcpServers={self._instance: self._server})
         async with Client(mcp_config) as client:
             self._client = client

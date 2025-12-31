@@ -12,7 +12,8 @@ class FileStorage(Storage):
     Reads and writes files relative to base_path.
     """
 
-    schemes = ["file"]
+    schemes: list[str] = ["file"]
+    base_path: Path
 
     def __init__(self, base_path: Path) -> None:
         """Initialize file storage.
@@ -20,7 +21,8 @@ class FileStorage(Storage):
         Args:
             base_path: Base directory for all reads/writes.
         """
-        self.base_path = base_path.resolve()
+        resolved = base_path.resolve()
+        super().__init__(base_path=resolved)  # type: ignore[call-arg]
 
     def _extract_path(self, uri: str) -> str:
         """Extract path from URI, stripping scheme if present."""
