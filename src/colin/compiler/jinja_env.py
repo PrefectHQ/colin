@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from jinja2 import Environment
 
-from colin.compiler.extensions.filters import create_extract_filter
+from colin.compiler.extensions.filters import create_classify_filter, create_extract_filter
 from colin.compiler.extensions.llm_block import LLMBlockExtension
 
 if TYPE_CHECKING:
@@ -67,5 +67,6 @@ def bind_context_to_environment(
 
     # LLM filters
     env.filters["extract"] = create_extract_filter(context)
+    env.filters["classify"] = create_classify_filter(context)
 
     return env

@@ -1,0 +1,5 @@
+[project]
+name = "llm"
+model-path = "models"
+target-path = "target"
+default-llm-model = "anthropic:claude-haiku-4-5"

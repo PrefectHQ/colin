@@ -33,6 +33,32 @@ def render_extract_prompt(
     )
 
 
+def render_classify_prompt(
+    content: str,
+    labels: list[str],
+    previous_output: str | None = None,
+    multi: bool = False,
+) -> str:
+    """Render the classification prompt template.
+
+    Args:
+        content: The content to classify.
+        labels: List of valid labels to choose from.
+        previous_output: Previous classification output for stability.
+        multi: Whether to allow multiple labels (multi-label classification).
+
+    Returns:
+        Rendered prompt string.
+    """
+    template = _prompt_env.get_template("classify.md")
+    return template.render(
+        content=content,
+        labels=labels,
+        previous_output=previous_output,
+        multi=multi,
+    )
+
+
 def render_complete_prompt(
     body: str,
     previous_output: str | None = None,

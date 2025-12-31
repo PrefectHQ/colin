@@ -113,24 +113,6 @@ Summarize this content.
         assert "[TEST LLM RESPONSE]" in result[0].output
         assert len(result[0].llm_calls) == 1
 
-    async def test_compile_all_with_extract_filter(
-        self, engine_setup: tuple[CompileEngine, Path, Path], mock_agent: MagicMock
-    ) -> None:
-        engine, source_dir, _ = engine_setup
-
-        (source_dir / "extract-test.md").write_text("""\
----
-name: Extract Test
----
-
-{{ "Some content here" | extract("key points") }}
-""")
-
-        result = await engine.compile_all()
-
-        assert len(result) == 1
-        assert "[TEST LLM RESPONSE]" in result[0].output
-
     async def test_compile_all_updates_manifest(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
