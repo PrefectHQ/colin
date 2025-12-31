@@ -6,27 +6,36 @@ from datetime import datetime
 
 
 class Provider(ABC):
-    """Base class for all providers. Low-level I/O for a URI scheme.
+    """Base class for all providers. Low-level I/O for URI schemes.
 
-    Providers handle reading content from a URI scheme. The scheme is used
-    for routing (e.g., 'project', 'mcp.linear'), and read() receives just
-    the path portion after scheme stripping.
+    Providers handle reading content from URIs. The `schemes` list defines
+    which URI schemes route to this provider. The `namespace` is used for
+    template namespaces and config (defaults to schemes[0]).
 
     Returns raw content (str), not RefResult. The ref() function handles
     wrapping content in RefResult and tracking dependencies.
 
-    Subclasses must set `scheme` and implement `read()`.
+    Subclasses must set `schemes` (at least one) and implement `read()`.
     """
 
-    scheme: str
-    """URI scheme this provider handles (e.g., 'project', 's3', 'mcp.linear')."""
+    schemes: list[str] = []
+    """URI schemes this provider handles for routing."""
+
+    namespace: str | None = None
+    """Template/config namespace. Auto-set to schemes[0] if not specified."""
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        # Auto-set namespace from schemes[0] if not explicitly set
+        if cls.namespace is None and cls.schemes:
+            cls.namespace = cls.schemes[0]
 
     @abstractmethod
-    async def read(self, path: str) -> str:
-        """Read content from path.
+    async def read(self, uri: str) -> str:
+        """Read content from URI.
 
         Args:
-            path: Path portion of URI (scheme already stripped).
+            uri: Full URI including scheme (e.g., 'https://example.com/data').
 
         Returns:
             Raw content as string.
@@ -40,15 +49,15 @@ class Provider(ABC):
         """Return template functions this provider contributes."""
         return {}
 
-    async def get_last_updated(self, path: str) -> datetime | None:
+    async def get_last_updated(self, uri: str) -> datetime | None:
         """Get last update time for a resource without reading content.
 
         This enables efficient staleness detection. Providers should override
         this to return timestamps without loading full content (e.g., file mtime,
-        S3 HEAD request, manifest lookup).
+        HTTP HEAD request, manifest lookup).
 
         Args:
-            path: Path portion of URI (scheme already stripped).
+            uri: Full URI including scheme.
 
         Returns:
             Last update time, or None if unknown. None means "treat as stale".

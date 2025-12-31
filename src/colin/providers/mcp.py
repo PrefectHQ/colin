@@ -151,15 +151,18 @@ class MCPProvider(Provider):
         """Initialize MCP provider for a specific server.
 
         Args:
-            instance: Server name (e.g., 'linear' for [[providers.mcp]]).
+            instance: Server name (e.g., 'linear' for [[providers.mcp.linear]]).
             server: MCP server configuration.
+            scheme: Override scheme for URI routing.
         """
         if instance is not None and not instance.strip():
             raise ValueError("MCP provider requires an instance name")
 
         self._instance = instance or "default"
         self._server = server
-        self.scheme = scheme or (f"mcp.{instance}" if instance else "mcp")
+        provider_scheme = scheme or (f"mcp.{instance}" if instance else "mcp")
+        self.schemes = [provider_scheme]
+        self.namespace = "mcp"
         self._client: Client | None = None
 
     async def _get_client(self) -> Client:
@@ -177,11 +180,11 @@ class MCPProvider(Provider):
             await self._client.__aexit__(None, None, None)
             self._client = None
 
-    async def read(self, path: str) -> str:
+    async def read(self, uri: str) -> str:
         """Read content from an MCP resource or prompt.
 
         Args:
-            path: Query string in format ?resource=<uri> or ?prompt=<name>
+            uri: Full URI in format mcp.x://?resource=<uri> or mcp.x://?prompt=<name>
 
         Returns:
             Content as string.
@@ -189,7 +192,7 @@ class MCPProvider(Provider):
         Raises:
             ValueError: If URI format is invalid.
         """
-        parsed = urlparse(path)
+        parsed = urlparse(uri)
         query = parse_qs(parsed.query)
 
         if "resource" in query:
@@ -201,7 +204,7 @@ class MCPProvider(Provider):
             args = {k: v[0] for k, v in query.items() if k != "prompt"}
             return await self._get_prompt(prompt_name, args)
 
-        raise ValueError(f"Invalid MCP URI: {path}. Expected ?resource=<uri> or ?prompt=<name>")
+        raise ValueError(f"Invalid MCP URI: {uri}. Expected ?resource=<uri> or ?prompt=<name>")
 
     async def _read_resource(self, resource_uri: str) -> str:
         """Read a resource from the MCP server."""
@@ -237,7 +240,7 @@ class MCPProvider(Provider):
         else:
             content = await self._read_resource(uri)
         return MCPResource(
-            uri=build_mcp_uri(self.scheme, resource=uri),
+            uri=build_mcp_uri(self.schemes[0], resource=uri),
             content=content,
             name=uri.split("/")[-1],
             updated=datetime.now(timezone.utc),
@@ -253,7 +256,7 @@ class MCPProvider(Provider):
         else:
             content = await self._get_prompt(name, arguments)
         return MCPPrompt(
-            uri=build_mcp_uri(self.scheme, prompt=name, **arguments),
+            uri=build_mcp_uri(self.schemes[0], prompt=name, **arguments),
             content=content,
             name=name,
             updated=datetime.now(timezone.utc),

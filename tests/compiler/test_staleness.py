@@ -363,7 +363,7 @@ class TestProjectProviderGetLastUpdated:
 
         provider = ProjectProvider(storage, manifest)
 
-        result = await provider.get_last_updated("test.md")
+        result = await provider.get_last_updated("project://test.md")
 
         assert result == compiled_time
 
@@ -376,7 +376,7 @@ class TestProjectProviderGetLastUpdated:
 
         provider = ProjectProvider(storage, manifest)
 
-        result = await provider.get_last_updated("unknown.md")
+        result = await provider.get_last_updated("project://unknown.md")
 
         assert result is None
 
@@ -387,7 +387,7 @@ class TestProjectProviderGetLastUpdated:
         storage = FileStorage(base_path=tmp_path)
         provider = ProjectProvider(storage)  # No manifest
 
-        result = await provider.get_last_updated("test.md")
+        result = await provider.get_last_updated("project://test.md")
 
         assert result is None
 

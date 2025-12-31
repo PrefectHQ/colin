@@ -32,7 +32,8 @@ def create_provider(config: ProviderInstanceConfig) -> Provider:
         available = ", ".join(sorted(_PROVIDER_FACTORIES)) or "(none)"
         raise ValueError(f"Unknown provider type '{config.provider_type}'. Available: {available}")
     provider = _PROVIDER_FACTORIES[config.provider_type](config)
-    provider.scheme = config.scheme
+    if config.scheme:
+        provider.schemes = [config.scheme]
     return provider
 
 
@@ -91,9 +92,12 @@ class ProviderManager:
     def namespace(self, ctx: ProviderContext) -> Namespace:
         return build_namespace(ctx, self._registry)
 
-    def register(self, provider_type: str, instance: str | None, provider: Provider) -> None:
-        self._providers[provider.scheme] = provider
-        self._registry.register(provider_type, instance, provider)
+    def register(self, provider: Provider, instance: str | None = None) -> None:
+        """Register a provider for all its schemes."""
+        for scheme in provider.schemes:
+            self._providers[scheme] = provider
+        namespace = provider.namespace or provider.schemes[0]
+        self._registry.register(namespace, instance, provider)
 
     def get_provider(self, scheme: str) -> Provider:
         return self._providers[scheme]
@@ -112,10 +116,9 @@ class ProviderManager:
         """
         if "://" not in uri:
             # Schemaless - assume project://
-            scheme = "project"
-            path = uri
-        else:
-            scheme, path = uri.split("://", 1)
+            uri = f"project://{uri}"
+
+        scheme = uri.split("://", 1)[0]
 
         try:
             provider = self.get_provider(scheme)
@@ -123,7 +126,7 @@ class ProviderManager:
             # Unknown scheme - treat as stale
             return None
 
-        return await provider.get_last_updated(path)
+        return await provider.get_last_updated(uri)
 
     async def close(self) -> None:
         for provider in self._providers.values():
@@ -140,12 +143,17 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
         _register_builtin_factories()
         for instance in config.providers.values():
             provider = create_provider(instance)
-            manager.register(instance.provider_type, instance.name, provider)
+            manager.register(provider, instance=instance.name)
 
+        # Register builtin providers
+        from colin.providers.http import HTTPProvider
         from colin.providers.llm import LLMProvider
 
+        if "http" not in manager._registry.types:
+            manager.register(HTTPProvider())
+
         if "llm" not in manager._registry.types:
-            manager.register("llm", None, LLMProvider())
+            manager.register(LLMProvider())
 
         yield manager
     finally:

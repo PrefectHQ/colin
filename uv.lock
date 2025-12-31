@@ -540,6 +540,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cyclopts" },
     { name = "fastmcp" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
@@ -567,6 +568,7 @@ dev = [
 requires-dist = [
     { name = "cyclopts", specifier = ">=4.0.0" },
     { name = "fastmcp", specifier = ">=2.14.1" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pydantic-ai", specifier = ">=1.39.0" },

@@ -177,17 +177,15 @@ class CompileEngine:
         Returns:
             Last update time, or None if unknown.
         """
-        # Parse scheme
+        # Normalize to full URI
         if "://" not in uri:
-            # Schemaless - assume project://
-            scheme = "project"
-            path = uri
-        else:
-            scheme, path = uri.split("://", 1)
+            uri = f"project://{uri}"
+
+        scheme = uri.split("://", 1)[0]
 
         # Project URIs use our project provider (which has manifest)
         if scheme == "project":
-            return await self._project_provider.get_last_updated(path)
+            return await self._project_provider.get_last_updated(uri)
 
         # Other schemes go through provider manager
         return await provider_manager.get_ref_last_updated(uri)
