@@ -18,15 +18,18 @@ from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_e
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
+    CalendarDuration,
     ColinConfig,
     ColinDocument,
     CompiledDocument,
     DocumentMeta,
     Frontmatter,
     Manifest,
+    RefreshPolicy,
+    parse_duration,
 )
 from colin.providers.context import ProviderContext
-from colin.providers.manager import create_provider_manager
+from colin.providers.manager import ProviderManager, create_provider_manager
 from colin.providers.project import ProjectProvider
 from colin.providers.storage.base import Storage
 from colin.renders import get_renderer
@@ -72,10 +75,11 @@ class CompileEngine:
         self.default_model = default_model
         self.state = state
         self.graph = DependencyGraph()
-        self._project_provider = ProjectProvider(artifact_storage)
-
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
+
+        # Project provider wraps artifact storage and uses manifest for timestamps
+        self._project_provider = ProjectProvider(artifact_storage, self.manifest)
 
     def _load_manifest(self) -> Manifest:
         """Load manifest from config path if it exists."""
@@ -83,6 +87,110 @@ class CompileEngine:
             content = self.config.manifest_path.read_text(encoding="utf-8")
             return Manifest.model_validate_json(content)
         return Manifest()
+
+    async def _is_document_stale(
+        self,
+        doc: ColinDocument,
+        provider_manager: ProviderManager,
+        recompiled_uris: set[str],
+    ) -> tuple[bool, str]:
+        """Check if a document needs recompilation.
+
+        Respects the document's refresh policy:
+        - ALWAYS: Always rebuild
+        - ONCE: Only build if no cached output exists
+        - AUTO: Rebuild if stale (source changed, refs updated, time expired)
+
+        Args:
+            doc: The document to check.
+            provider_manager: For looking up ref timestamps.
+            recompiled_uris: URIs recompiled in this compilation run.
+
+        Returns:
+            Tuple of (is_stale, reason_string).
+        """
+        policy = doc.frontmatter.colin.refresh.policy
+        doc_meta = self.manifest.get_document(doc.uri)
+
+        # Policy: always rebuild
+        if policy == RefreshPolicy.ALWAYS:
+            return (True, "refresh=always")
+
+        # Policy: once (only build if no cache)
+        if policy == RefreshPolicy.ONCE:
+            if doc_meta is None or doc_meta.compiled_at is None:
+                return (True, "no cached output")
+            # Check if output file exists
+            return (False, "refresh=once (cached)")
+
+        # Policy: auto - check staleness conditions
+        # Never compiled
+        if doc_meta is None or doc_meta.compiled_at is None:
+            return (True, "never compiled")
+
+        # Source changed
+        if doc_meta.source_hash != doc.source_hash:
+            return (True, "source changed")
+
+        # Time-based expiration
+        stale_duration = doc.frontmatter.colin.refresh.stale
+        if stale_duration is not None:
+            threshold = parse_duration(stale_duration)
+            now = datetime.now(timezone.utc)
+
+            if isinstance(threshold, CalendarDuration):
+                # Calendar-aligned: check if enough calendar periods have passed
+                if threshold.is_stale(doc_meta.compiled_at, now):
+                    return (True, f"stale after {stale_duration}")
+            else:
+                # Elapsed duration (timedelta or relativedelta)
+                # For relativedelta, we add it to compiled_at and compare
+                if doc_meta.compiled_at + threshold < now:
+                    return (True, f"stale after {stale_duration}")
+
+        # Upstream dependency recompiled this run
+        for ref_uri in doc_meta.refs_evaluated:
+            if ref_uri in recompiled_uris:
+                return (True, f"upstream recompiled: {ref_uri}")
+
+        # Check ref timestamps
+        for ref_uri in doc_meta.refs_evaluated:
+            ref_updated = await self._get_ref_last_updated(ref_uri, provider_manager)
+            if ref_updated is None:
+                return (True, f"ref timestamp unknown: {ref_uri}")
+            if ref_updated > doc_meta.compiled_at:
+                return (True, f"ref updated: {ref_uri}")
+
+        return (False, "up to date")
+
+    async def _get_ref_last_updated(
+        self, uri: str, provider_manager: ProviderManager
+    ) -> datetime | None:
+        """Get last update time for a referenced URI.
+
+        Routes to appropriate provider based on URI scheme.
+
+        Args:
+            uri: Full or schemaless URI.
+            provider_manager: For external provider lookups.
+
+        Returns:
+            Last update time, or None if unknown.
+        """
+        # Parse scheme
+        if "://" not in uri:
+            # Schemaless - assume project://
+            scheme = "project"
+            path = uri
+        else:
+            scheme, path = uri.split("://", 1)
+
+        # Project URIs use our project provider (which has manifest)
+        if scheme == "project":
+            return await self._project_provider.get_last_updated(path)
+
+        # Other schemes go through provider manager
+        return await provider_manager.get_ref_last_updated(uri)
 
     async def compile_all(self) -> list[CompiledDocument]:
         """Discover and compile all documents.
@@ -114,6 +222,7 @@ class CompileEngine:
         errors: dict[str, list[Exception]] = {}
         failed_uris: set[str] = set()  # Track failed URIs for skipping dependents
         skipped_uris: set[str] = set()  # Track skipped URIs
+        recompiled_uris: set[str] = set()  # Track URIs recompiled this run
 
         def get_failed_dependency(uri: str) -> str | None:
             """Check if any dependency of uri has failed."""
@@ -123,11 +232,13 @@ class CompileEngine:
             return None
 
         async def compile_one(
-            uri: str, provider_manager
-        ) -> tuple[str, CompiledDocument | Exception | None]:
+            uri: str, provider_manager: ProviderManager
+        ) -> tuple[str, CompiledDocument | Exception | None, bool]:
             """Compile a single document, catching exceptions.
 
-            Returns None if the document was skipped.
+            Returns:
+                Tuple of (uri, result, was_recompiled).
+                result is None if skipped, Exception if failed.
             """
             doc_state = doc_states.get(uri)
 
@@ -138,18 +249,27 @@ class CompileEngine:
                     doc_state.mark_skipped(f"upstream '{failed_dep}' failed")
                 skipped_uris.add(uri)
                 failed_uris.add(uri)  # Propagate failure to dependents
-                return (uri, None)
+                return (uri, None, False)
 
             doc = doc_map[uri]
+
+            # Check staleness
+            is_stale, reason = await self._is_document_stale(doc, provider_manager, recompiled_uris)
+            if not is_stale:
+                if doc_state:
+                    doc_state.mark_skipped(reason)
+                skipped_uris.add(uri)
+                return (uri, None, False)
+
             try:
                 with doc_state if doc_state else _nullcontext():
                     result = await self._compile_document(
                         doc, compiled_outputs, provider_manager, doc_state
                     )
-                    return (uri, result)
+                    return (uri, result, True)
             except Exception as e:
                 failed_uris.add(uri)
-                return (uri, e)
+                return (uri, e, False)
 
         async with create_provider_manager(self.config) as provider_manager:
             for level in compile_order:
@@ -159,7 +279,7 @@ class CompileEngine:
                 )
 
                 # Process results
-                for uri, result in results:
+                for uri, result, was_recompiled in results:
                     if result is None:
                         # Skipped - already handled above
                         pass
@@ -168,6 +288,8 @@ class CompileEngine:
                     else:
                         compiled.append(result)
                         compiled_outputs[uri] = result
+                        if was_recompiled:
+                            recompiled_uris.add(uri)
                         await self._write_output(result)
                         self._update_manifest(result)
 

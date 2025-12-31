@@ -139,13 +139,17 @@ class CompileContext:
                 except FileNotFoundError as e:
                     raise RefNotFoundError(f"Referenced document not found: {uri}") from e
 
+                # Get actual compiled_at timestamp from manifest (or now if unavailable)
+                last_updated = await self.project_provider.get_last_updated(path)
+                updated = last_updated or datetime.now(timezone.utc)
+
                 # Create RefResult from raw content
                 return RefResult(
                     name=path.split("/")[-1],  # Filename from path
                     description=None,
                     content=content,
                     template="",
-                    updated=datetime.now(timezone.utc),
+                    updated=updated,
                     uri=uri,
                 )
 
@@ -164,13 +168,17 @@ class CompileContext:
             except FileNotFoundError as e:
                 raise RefNotFoundError(f"Referenced document not found: {uri}") from e
 
+            # Get actual timestamp from provider (or now if unavailable)
+            last_updated = await provider.get_last_updated(path)
+            updated = last_updated or datetime.now(timezone.utc)
+
             name = path.split("/")[-1] or uri
             return RefResult(
                 name=name,
                 description=None,
                 content=content,
                 template="",
-                updated=datetime.now(timezone.utc),
+                updated=updated,
                 uri=uri,
             )
 

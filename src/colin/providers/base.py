@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 
 
 class Provider(ABC):
@@ -38,3 +39,18 @@ class Provider(ABC):
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         """Return template functions this provider contributes."""
         return {}
+
+    async def get_last_updated(self, path: str) -> datetime | None:
+        """Get last update time for a resource without reading content.
+
+        This enables efficient staleness detection. Providers should override
+        this to return timestamps without loading full content (e.g., file mtime,
+        S3 HEAD request, manifest lookup).
+
+        Args:
+            path: Path portion of URI (scheme already stripped).
+
+        Returns:
+            Last update time, or None if unknown. None means "treat as stale".
+        """
+        return None

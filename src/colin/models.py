@@ -3,9 +3,45 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from enum import Enum
+from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+# Re-export duration utilities for backwards compatibility
+from colin.utilities.temporal import (  # noqa: F401
+    CalendarDuration,
+    Duration,
+    parse_duration,
+)
+
+
+class RefreshPolicy(str, Enum):
+    """Refresh policy for document rebuilding."""
+
+    ALWAYS = "always"
+    """Always rebuild the document."""
+
+    AUTO = "auto"
+    """Rebuild only if stale (source changed, refs updated, or time expired)."""
+
+    ONCE = "once"
+    """Only build if no cached output exists."""
+
+
+# Duration pattern: number + optional 'c' prefix + unit (m, h, d, w, M, Q)
+# Examples: 30m, 1h, 7d, 2w, 1M, 1Q, 15cm, 1cd, 1cw, 3cM, 1cQ
+StaleDuration = Annotated[str, StringConstraints(pattern=r"^\d+c?[mhdwMQ]$")]
+
+
+class RefreshConfig(BaseModel):
+    """Configuration for document refresh behavior."""
+
+    policy: RefreshPolicy = RefreshPolicy.AUTO
+    """Refresh policy (always, auto, once)."""
+
+    stale: StaleDuration | None = None
+    """Time-based staleness threshold (e.g., '1h', '1d', '1w')."""
 
 
 class LLMCall(BaseModel):
@@ -39,8 +75,8 @@ class ColinConfig(BaseModel):
     output: str = "markdown"
     """Output format (e.g., 'markdown', 'skill')."""
 
-    refresh: str | None = None
-    """Refresh interval (future feature)."""
+    refresh: RefreshConfig = Field(default_factory=RefreshConfig)
+    """Refresh configuration (policy and time-based staleness)."""
 
     storage: str | None = None
     """Storage backend (future feature)."""

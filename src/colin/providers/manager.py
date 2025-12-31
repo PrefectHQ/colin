@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from colin.api.project import ProjectConfig, ProviderInstanceConfig
 from colin.providers.base import Provider
@@ -96,6 +97,33 @@ class ProviderManager:
 
     def get_provider(self, scheme: str) -> Provider:
         return self._providers[scheme]
+
+    async def get_ref_last_updated(self, uri: str) -> datetime | None:
+        """Get last update time for a URI without loading content.
+
+        Parses the URI scheme and delegates to the appropriate provider's
+        get_last_updated() method.
+
+        Args:
+            uri: Full URI (e.g., 'project://greeting.md', 'mcp.linear://?resource=...')
+
+        Returns:
+            Last update time, or None if unknown (treat as stale).
+        """
+        if "://" not in uri:
+            # Schemaless - assume project://
+            scheme = "project"
+            path = uri
+        else:
+            scheme, path = uri.split("://", 1)
+
+        try:
+            provider = self.get_provider(scheme)
+        except KeyError:
+            # Unknown scheme - treat as stale
+            return None
+
+        return await provider.get_last_updated(path)
 
     async def close(self) -> None:
         for provider in self._providers.values():

@@ -43,7 +43,94 @@ Two fields are particularly useful:
 
 Documents without frontmatter work fine—Colin infers the name from the filename and leaves other metadata empty. This is useful for simple content files or when you're referencing non-Markdown sources.
 
-Project-level configuration (output formats, paths, MCP servers) belongs in `colin.toml`, not frontmatter. See [Configuration](/running/configuration) for details.
+Project-level configuration (paths, MCP servers) belongs in `colin.toml`. See [Configuration](/running/configuration) for details.
+
+## Document Settings
+
+The `colin:` block in frontmatter controls document-specific compilation behavior:
+
+```yaml
+---
+name: Market Analysis
+colin:
+  refresh:
+    policy: auto
+    stale: 1M
+---
+```
+
+### Refresh Policy
+
+The `refresh.policy` setting controls when a document gets recompiled:
+
+| Policy | Behavior |
+| :----- | :------- |
+| `auto` | Rebuild if stale (default) |
+| `always` | Always rebuild on every compile |
+| `once` | Only build if no cached output exists |
+
+```yaml
+colin:
+  refresh:
+    policy: always  # Force rebuild every time
+```
+
+Use `always` for documents that incorporate live data or timestamps. Use `once` for expensive operations where the output doesn't change.
+
+### Staleness Threshold
+
+The `refresh.stale` setting defines when a document becomes stale based on time elapsed since last compilation:
+
+```yaml
+colin:
+  refresh:
+    stale: 1d  # Rebuild after 1 day
+```
+
+Supported duration formats:
+
+| Format | Meaning | Example |
+| :----- | :------ | :------ |
+| `Nm` | N minutes | `30m` |
+| `Nh` | N hours | `24h` |
+| `Nd` | N days | `7d` |
+| `Nw` | N weeks | `2w` |
+| `NM` | N calendar months | `1M`, `3M` |
+| `NQ` | N calendar quarters | `1Q` |
+
+Months and quarters use calendar-aware arithmetic. For example, `1M` after January 31st is February 28th (or 29th), not "30 days later."
+
+### Calendar-Aligned Staleness
+
+For staleness based on calendar boundaries rather than elapsed time, use the `c` prefix:
+
+```yaml
+colin:
+  refresh:
+    stale: 1cM  # Rebuild when calendar month changes
+```
+
+| Format | Meaning | Boundary | Valid N |
+| :----- | :------ | :------- | :------ |
+| `Ncm` | Every N minutes | :00, :15, :30, :45 etc. | Divides 60 |
+| `Nch` | Every N hours | 00:00, 06:00, 12:00 etc. | Divides 24 |
+| `1cd` | New calendar day | Midnight | 1 only |
+| `1cw` | New calendar week | Monday midnight (ISO) | 1 only |
+| `NcM` | Every N months | 1st of month | Divides 12 |
+| `NcQ` | Every N quarters | Start of quarter | Divides 4 |
+
+Calendar-aligned values must divide evenly into their containing period. For example, `30cm` creates boundaries at :00 and :30, while `15cm` creates boundaries at :00, :15, :30, and :45. Use `2cM` for bimonthly updates or `2cQ` for semiannual updates.
+
+A document compiled on January 31st with `stale: 1cM` becomes stale on February 1st at midnight—when the calendar month changes—regardless of how much time has passed. With `stale: 1cQ`, a document compiled any time in Q1 (Jan-Mar) becomes stale at the start of April 1st.
+
+### Staleness Logic
+
+A document is considered stale if **any** of these conditions are true:
+- The source file changed
+- Any referenced document was updated more recently
+- The staleness threshold (if set) has been exceeded
+
+When a document recompiles, all documents that reference it also recompile to pick up the changes.
 
 ## Jinja Templating
 

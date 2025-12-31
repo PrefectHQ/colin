@@ -1,5 +1,6 @@
 """Referenceable protocol for objects that can be passed to ref()."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -21,6 +22,15 @@ class Referenceable(Protocol):
     @property
     def uri(self) -> str:
         """URI that uniquely identifies this resource."""
+        ...
+
+    @property
+    def last_updated(self) -> datetime:
+        """When this resource was last modified.
+
+        Used for staleness detection. If unknown, return current time
+        (which will treat the resource as potentially changed).
+        """
         ...
 
     def to_ref_result(self) -> "RefResult":
