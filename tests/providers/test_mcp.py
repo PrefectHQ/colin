@@ -1,7 +1,6 @@
 """Tests for MCP provider."""
 
 import pytest
-from fastmcp.mcp_config import RemoteMCPServer, StdioMCPServer
 
 from colin.providers.mcp import MCPProvider, build_mcp_uri
 
@@ -78,81 +77,112 @@ class TestMCPProvider:
     def test_rejects_empty_instance_name(self) -> None:
         """MCP provider rejects empty instance name."""
         with pytest.raises(ValueError, match="requires an instance name"):
-            MCPProvider("", StdioMCPServer(command="test"))
+            MCPProvider.from_config("", {"command": "test"})
 
     def test_creates_with_stdio_server(self) -> None:
         """Create provider with stdio server config."""
-        server = StdioMCPServer(command="npx", args=["@linear/mcp"])
-        provider = MCPProvider("linear", server)
+        provider = MCPProvider.from_config("linear", {"command": "npx", "args": ["@linear/mcp"]})
 
         assert provider.namespace == "mcp"
         assert provider.schemes == ["mcp.linear"]
 
     def test_creates_with_remote_server(self) -> None:
         """Create provider with remote server config."""
-        server = RemoteMCPServer(url="http://localhost:8000/mcp")
-        provider = MCPProvider("remote", server)
+        provider = MCPProvider.from_config("remote", {"url": "http://localhost:8000/mcp"})
 
         assert provider.namespace == "mcp"
         assert provider.schemes == ["mcp.remote"]
 
     def test_creates_with_command_only(self) -> None:
         """Create with just command, no args."""
-        server = StdioMCPServer(command="mcp-server")
-        provider = MCPProvider("simple", server)
+        provider = MCPProvider.from_config("simple", {"command": "mcp-server"})
 
         assert provider.namespace == "mcp"
         assert provider.schemes == ["mcp.simple"]
 
     def test_creates_with_command_and_env(self) -> None:
         """Create with command, args, and environment variables."""
-        server = StdioMCPServer(
-            command="npx",
-            args=["@example/mcp"],
-            env={"API_KEY": "secret", "DEBUG": "true"},
+        provider = MCPProvider.from_config(
+            "configured",
+            {
+                "command": "npx",
+                "args": ["@example/mcp"],
+                "env": {"API_KEY": "secret", "DEBUG": "true"},
+            },
         )
-        provider = MCPProvider("configured", server)
 
         assert provider.namespace == "mcp"
         assert provider.schemes == ["mcp.configured"]
 
     def test_creates_with_url_and_headers(self) -> None:
         """Create with URL and custom headers."""
-        server = RemoteMCPServer(
-            url="https://api.example.com/mcp",
-            headers={"Authorization": "Bearer token123"},
+        provider = MCPProvider.from_config(
+            "authenticated",
+            {
+                "url": "https://api.example.com/mcp",
+                "headers": {"Authorization": "Bearer token123"},
+            },
         )
-        provider = MCPProvider("authenticated", server)
 
         assert provider.namespace == "mcp"
         assert provider.schemes == ["mcp.authenticated"]
 
     def test_name_includes_instance_name(self) -> None:
         """Scheme is always mcp.<instance>."""
-        provider1 = MCPProvider("github", StdioMCPServer(command="npx", args=["@github/mcp"]))
-        provider2 = MCPProvider("linear", StdioMCPServer(command="npx", args=["@linear/mcp"]))
-        provider3 = MCPProvider("my-custom-server", RemoteMCPServer(url="http://localhost:3000"))
+        provider1 = MCPProvider.from_config("github", {"command": "npx", "args": ["@github/mcp"]})
+        provider2 = MCPProvider.from_config("linear", {"command": "npx", "args": ["@linear/mcp"]})
+        provider3 = MCPProvider.from_config("my-custom-server", {"url": "http://localhost:3000"})
 
         assert provider1.schemes == ["mcp.github"]
         assert provider2.schemes == ["mcp.linear"]
         assert provider3.schemes == ["mcp.my-custom-server"]
 
-    def test_default_instance_name(self) -> None:
-        """Default instance uses bare mcp name."""
-        provider = MCPProvider(None, StdioMCPServer(command="npx", args=["@github/mcp"]))
-
-        assert provider.namespace == "mcp"
-
     async def test_read_rejects_invalid_uri(self) -> None:
         """read() rejects URI without resource or prompt."""
-        provider = MCPProvider("test", StdioMCPServer(command="test"))
+        provider = MCPProvider.from_config("test", {"command": "test"})
 
         with pytest.raises(ValueError, match="Invalid MCP URI"):
             await provider.read("mcp.test://?other=value")
 
     async def test_read_rejects_empty_query_string(self) -> None:
         """read() rejects URI with empty query string."""
-        provider = MCPProvider("test", StdioMCPServer(command="test"))
+        provider = MCPProvider.from_config("test", {"command": "test"})
 
         with pytest.raises(ValueError, match="Invalid MCP URI"):
             await provider.read("mcp.test://?")
+
+
+class TestMCPProviderValidation:
+    """Tests for MCP provider config validation."""
+
+    def test_rejects_none_name(self) -> None:
+        """MCP provider rejects None as name."""
+        with pytest.raises(ValueError, match="requires an instance name"):
+            MCPProvider.from_config(None, {"command": "test"})
+
+    def test_missing_command_and_url(self) -> None:
+        """MCP config with neither command nor url fails."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {})
+
+    def test_missing_command_and_url_with_other_fields(self) -> None:
+        """MCP config with args but no command/url fails."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {"args": ["foo"]})
+
+    def test_invalid_args_type(self) -> None:
+        """MCP config with non-list args fails validation."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {"command": "python", "args": "not-a-list"})
+
+    def test_invalid_env_type(self) -> None:
+        """MCP config with non-dict env fails validation."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {"command": "python", "env": "not-a-dict"})
+
+    def test_invalid_headers_type(self) -> None:
+        """MCP config with non-dict headers fails validation."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config(
+                "test", {"url": "http://example.com", "headers": ["not", "dict"]}
+            )

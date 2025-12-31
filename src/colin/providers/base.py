@@ -1,12 +1,16 @@
 """Provider base class for URI handlers."""
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, ConfigDict
+from typing_extensions import Self
 
 
-class Provider(ABC):
+class Provider(BaseModel):
     """Base class for all providers. Low-level I/O for URI schemes.
 
     Providers handle reading content from URIs. The `schemes` list defines
@@ -17,19 +21,25 @@ class Provider(ABC):
     wrapping content in RefResult and tracking dependencies.
 
     Subclasses must set `schemes` (at least one) and implement `read()`.
+    Provider config fields are defined as Pydantic fields on the subclass.
     """
 
-    schemes: list[str] = []
-    """URI schemes this provider handles for routing."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    namespace: str | None = None
+    schemes: list[str] = []
+    """URI schemes this provider handles for routing. Set by framework from config."""
+
+    namespace: ClassVar[str | None] = None
     """Template/config namespace. Auto-set to schemes[0] if not specified."""
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
         # Auto-set namespace from schemes[0] if not explicitly set
-        if cls.namespace is None and cls.schemes:
-            cls.namespace = cls.schemes[0]
+        schemes = getattr(cls, "schemes", None)
+        if schemes and cls.namespace is None:
+            # schemes might be a FieldInfo during class construction
+            if isinstance(schemes, list):
+                cls.namespace = schemes[0]
 
     @abstractmethod
     async def read(self, uri: str) -> str:
@@ -80,3 +90,20 @@ class Provider(ABC):
                     yield
         """
         yield
+
+    @classmethod
+    def from_config(cls, name: str | None, config: dict[str, Any]) -> Self:
+        """Create provider instance from configuration.
+
+        Override this to handle provider-specific configuration.
+        The framework calls this with the instance name and config dict
+        from colin.toml (with reserved fields like 'schemes' stripped).
+
+        Args:
+            name: Instance name from [[providers.x]] name field, or None for default.
+            config: Provider-specific configuration dict.
+
+        Returns:
+            Configured provider instance.
+        """
+        return cls(**config)

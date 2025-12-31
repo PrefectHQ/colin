@@ -9,18 +9,24 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
+from pydantic import TypeAdapter
+from typing_extensions import Self
 
-from colin.api.project import ProviderInstanceConfig
 from colin.providers.base import Provider
 from colin.providers.context import ProviderContext
 
 if TYPE_CHECKING:
     from colin.models import RefResult
+
+# TypeAdapter for parsing MCP server config from TOML
+MCPServerAdapter: TypeAdapter[StdioMCPServer | RemoteMCPServer] = TypeAdapter(
+    StdioMCPServer | RemoteMCPServer
+)
 
 
 @dataclass
@@ -114,25 +120,6 @@ def _strip_scheme(uri: str) -> str:
     return uri
 
 
-def create_mcp_provider(config: ProviderInstanceConfig) -> MCPProvider:
-    """Create an MCP provider from a provider config."""
-    data = config.config
-    if "url" in data:
-        server: StdioMCPServer | RemoteMCPServer = RemoteMCPServer(
-            url=str(data["url"]),
-            headers=data.get("headers", {}),
-        )
-    elif "command" in data:
-        server = StdioMCPServer(
-            command=str(data["command"]),
-            args=data.get("args", []),
-            env=data.get("env", {}),
-        )
-    else:
-        raise ValueError("MCP provider requires 'command' or 'url' config")
-    return MCPProvider(config.name, server, scheme=config.scheme)
-
-
 class MCPProvider(Provider):
     """Read-only provider for MCP server integration.
 
@@ -143,32 +130,45 @@ class MCPProvider(Provider):
     or: mcp.{instance}://?prompt=<name>&arg1=val1&arg2=val2
     """
 
-    def __init__(
-        self,
-        instance: str | None,
-        server: StdioMCPServer | RemoteMCPServer,
-        scheme: str | None = None,
-    ) -> None:
-        """Initialize MCP provider for a specific server.
+    namespace: ClassVar[str] = "mcp"
+
+    def __init__(self, name: str, server: StdioMCPServer | RemoteMCPServer) -> None:
+        """Initialize MCPProvider with server instance.
 
         Args:
-            instance: Server name (e.g., 'linear' for [[providers.mcp.linear]]).
-            server: MCP server configuration.
-            scheme: Override scheme for URI routing.
+            name: Instance name (required).
+            server: StdioMCPServer or RemoteMCPServer instance.
         """
-        if instance is not None and not instance.strip():
+        if not name:
             raise ValueError("MCP provider requires an instance name")
 
-        self._instance = instance or "default"
+        super().__init__()
+        self._instance = name
         self._server = server
-        provider_scheme = scheme or (f"mcp.{instance}" if instance else "mcp")
-        self.schemes = [provider_scheme]
-        self.namespace = "mcp"
-        self._client: Client | None = None
+        self._client = None
+        self.schemes = [f"mcp.{name}"]
+
+    @classmethod
+    def from_config(cls, name: str | None, config: dict[str, Any]) -> Self:
+        """Create MCP provider from TOML configuration.
+
+        Args:
+            name: Instance name from TOML config.
+            config: Config dict with command, args, env, url, headers.
+
+        Returns:
+            Configured MCPProvider instance.
+        """
+        if not name:
+            raise ValueError("MCP provider requires an instance name")
+        server = MCPServerAdapter.validate_python(config)
+        return cls(name, server)
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         """Manage MCP client lifecycle."""
+        if self._server is None:
+            raise RuntimeError("MCPProvider not configured - use from_config()")
         mcp_config = MCPConfig(mcpServers={self._instance: self._server})
         async with Client(mcp_config) as client:
             self._client = client

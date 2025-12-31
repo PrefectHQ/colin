@@ -13,10 +13,20 @@ from colin.providers.referenceable import Referenceable
 class DummyProvider(Provider):
     """Simple provider for namespace tests."""
 
-    def __init__(self, namespace: str, label: str) -> None:
-        self.schemes = [namespace]
-        self.namespace = namespace
+    _label: str = ""
+    _namespace: str = "default"
+
+    def __init__(self, scheme: str, label: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.schemes = [scheme]
         self._label = label
+        # Extract namespace from scheme (handle "s3" and "s3.dev" -> both map to "s3")
+        self._namespace = scheme.split(".")[0]
+
+    @property
+    def namespace(self) -> str:
+        """Return the namespace for this provider."""
+        return self._namespace
 
     async def read(self, uri: str) -> str:
         return f"{self._label}:{uri}"
@@ -45,6 +55,12 @@ async def _fake_extract(content: str, prompt: str, call_id: str | None, model: s
     return f"{prompt}:{content}:{call_id}:{model}"
 
 
+async def _fake_classify(
+    content: str, labels: list[str], call_id: str | None, model: str | None, multi: bool
+) -> str | bool | list[str | bool]:
+    return labels[0] if labels else ""
+
+
 def _make_context() -> ProviderContext:
     return ProviderContext(
         manifest=Manifest(),
@@ -53,6 +69,7 @@ def _make_context() -> ProviderContext:
         ref=_fake_ref,
         track_ref=lambda _uri: None,
         extract=_fake_extract,
+        classify=_fake_classify,
     )
 
 

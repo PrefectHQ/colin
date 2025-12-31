@@ -19,7 +19,7 @@ class TestParseProviders:
         result = _parse_providers(data)
 
         assert "s3" in result
-        assert result["s3"].scheme == "s3"
+        assert result["s3"].get_schemes() == ["s3"]
         assert result["s3"].provider_type == "s3"
         assert result["s3"].name is None
         assert result["s3"].config == {"bucket": "my-bucket", "region": "us-east-1"}
@@ -36,13 +36,13 @@ class TestParseProviders:
         result = _parse_providers(data)
 
         assert "s3.dev" in result
-        assert result["s3.dev"].scheme == "s3.dev"
+        assert result["s3.dev"].get_schemes() == ["s3.dev"]
         assert result["s3.dev"].provider_type == "s3"
         assert result["s3.dev"].name == "dev"
         assert result["s3.dev"].config == {"bucket": "dev-bucket"}
 
         assert "s3.prod" in result
-        assert result["s3.prod"].scheme == "s3.prod"
+        assert result["s3.prod"].get_schemes() == ["s3.prod"]
         assert result["s3.prod"].provider_type == "s3"
         assert result["s3.prod"].name == "prod"
         assert result["s3.prod"].config == {"bucket": "prod-bucket"}
@@ -56,7 +56,7 @@ class TestParseProviders:
         result = _parse_providers(data)
 
         assert "markdown" in result
-        assert result["markdown"].scheme == "markdown"
+        assert result["markdown"].get_schemes() == ["markdown"]
         assert result["markdown"].config == {}
 
     def test_multiple_provider_types(self) -> None:
@@ -114,7 +114,7 @@ class TestParseProviders:
         result = _parse_providers(data)
 
         assert "api" in result
-        assert result["api"].scheme == "api"
+        assert result["api"].get_schemes() == ["api"]
         assert result["api"].config["endpoint"] == "https://api.example.com"
         assert result["api"].config["headers"] == {"Authorization": "Bearer token"}
 
@@ -146,24 +146,39 @@ class TestParseProviders:
         assert "mcp.my-custom-server" in result
         assert result["mcp.my-custom-server"].name == "my-custom-server"
 
-    def test_provider_scheme_suffix_override(self) -> None:
-        """scheme-suffix overrides the scheme suffix for named instances."""
+    def test_provider_schemes_override(self) -> None:
+        """schemes explicitly sets which URI schemes the instance handles."""
         data = {
-            "s3": [{"name": "dev", "scheme-suffix": "stage", "bucket": "dev-bucket"}],
+            "s3": [{"name": "dev", "schemes": ["s3", "s3.stage"], "bucket": "dev-bucket"}],
         }
 
         result = _parse_providers(data)
 
+        # Both schemes map to the same instance
+        assert "s3" in result
         assert "s3.stage" in result
+        assert result["s3"].name == "dev"
         assert result["s3.stage"].name == "dev"
-        assert result["s3.stage"].scheme_suffix == "stage"
+        assert result["s3"].schemes == ["s3", "s3.stage"]
 
-    def test_scheme_suffix_requires_name(self) -> None:
-        """scheme-suffix without a name raises an error."""
-        data = {"s3": [{"scheme-suffix": "stage", "bucket": "dev-bucket"}]}
+    def test_provider_schemes_without_name(self) -> None:
+        """schemes can be set on unnamed instances."""
+        data = {"s3": [{"schemes": ["s3", "aws"], "bucket": "dev-bucket"}]}
 
-        with pytest.raises(ValueError, match="scheme-suffix requires a name"):
-            _parse_providers(data)
+        result = _parse_providers(data)
+
+        assert "s3" in result
+        assert "aws" in result
+        assert result["s3"].name is None
+        assert result["s3"].schemes == ["s3", "aws"]
+
+    def test_schemes_strips_uri_suffix(self) -> None:
+        """Schemes with :// suffix are cleaned."""
+        data = {"s3": [{"schemes": ["s3://", "aws://"]}]}
+
+        result = _parse_providers(data)
+
+        assert result["s3"].schemes == ["s3", "aws"]
 
     def test_requires_array_of_tables(self) -> None:
         """Providers must use array-of-tables syntax."""

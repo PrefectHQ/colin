@@ -32,6 +32,11 @@ async def test_llm_provider_extract_serializes_refresult() -> None:
             uri=uri,
         )
 
+    async def fake_classify(
+        content: str, labels: list[str], call_id: str | None, model: str | None, multi: bool
+    ) -> str | bool | list[str | bool]:
+        return labels[0] if labels else ""
+
     ctx = ProviderContext(
         manifest=Manifest(),
         document_uri="project://test.md",
@@ -39,6 +44,7 @@ async def test_llm_provider_extract_serializes_refresult() -> None:
         ref=fake_ref,
         track_ref=lambda _uri: None,
         extract=fake_extract,
+        classify=fake_classify,
     )
 
     provider = LLMProvider()

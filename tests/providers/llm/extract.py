@@ -16,7 +16,7 @@ from colin.providers.project import ProjectProvider
 from colin.providers.storage.file import FileStorage
 
 # Block real API requests during tests
-models.ALLOW_MODEL_REQUESTS = False
+models.ALLOW_MODEL_REQUESTS = False  # type: ignore[assignment]
 
 
 @pytest.fixture

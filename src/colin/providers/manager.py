@@ -3,45 +3,37 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 
 from colin.api.project import ProjectConfig, ProviderInstanceConfig
 from colin.providers.base import Provider
 from colin.providers.context import ProviderContext
+from colin.providers.http import HTTPProvider
+from colin.providers.llm import LLMProvider
+from colin.providers.mcp import MCPProvider
 from colin.providers.namespace import Namespace, build_namespace
 
 logger = logging.getLogger(__name__)
 
-ProviderFactory = Callable[[ProviderInstanceConfig], Provider]
-
-_PROVIDER_FACTORIES: dict[str, ProviderFactory] = {}
-
-
-def register_provider_factory(provider_type: str, factory: ProviderFactory) -> None:
-    """Register a factory for a provider type."""
-    if provider_type in _PROVIDER_FACTORIES:
-        logger.warning("Overwriting provider factory for %s", provider_type)
-    _PROVIDER_FACTORIES[provider_type] = factory
+_PROVIDER_CLASSES: dict[str, type[Provider]] = {
+    "http": HTTPProvider,
+    "https": HTTPProvider,
+    "llm": LLMProvider,
+    "mcp": MCPProvider,
+}
 
 
 def create_provider(config: ProviderInstanceConfig) -> Provider:
     """Create a provider instance from configuration."""
-    if config.provider_type not in _PROVIDER_FACTORIES:
-        available = ", ".join(sorted(_PROVIDER_FACTORIES)) or "(none)"
+    if config.provider_type not in _PROVIDER_CLASSES:
+        available = ", ".join(sorted(_PROVIDER_CLASSES)) or "(none)"
         raise ValueError(f"Unknown provider type '{config.provider_type}'. Available: {available}")
-    provider = _PROVIDER_FACTORIES[config.provider_type](config)
-    if config.scheme:
-        provider.schemes = [config.scheme]
+    provider_cls = _PROVIDER_CLASSES[config.provider_type]
+    provider = provider_cls.from_config(config.name, config.config)
+    provider.schemes = config.get_schemes()
     return provider
-
-
-def _register_builtin_factories() -> None:
-    from colin.providers.mcp import create_mcp_provider
-
-    if "mcp" not in _PROVIDER_FACTORIES:
-        register_provider_factory("mcp", create_mcp_provider)
 
 
 class ProviderInstanceEntry:
@@ -135,15 +127,11 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
     manager = ProviderManager()
 
     async with AsyncExitStack() as stack:
-        _register_builtin_factories()
         for instance in config.providers.values():
             provider = create_provider(instance)
             manager.register(provider, instance=instance.name)
 
-        # Register builtin providers
-        from colin.providers.http import HTTPProvider
-        from colin.providers.llm import LLMProvider
-
+        # Register builtin providers if not configured
         if "http" not in manager._registry.types:
             manager.register(HTTPProvider())
 

@@ -74,7 +74,7 @@ class TestHTTPProvider:
         """Custom timeout is accepted."""
         provider = HTTPProvider(timeout=60.0)
 
-        assert provider._timeout == 60.0
+        assert provider.timeout == 60.0
 
 
 class TestHTTPProviderRead:

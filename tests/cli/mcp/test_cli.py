@@ -148,3 +148,76 @@ class TestMCPList:
         captured = capsys.readouterr()
         assert "remote" in captured.out
         assert "http" in captured.out
+
+
+class TestMCPInvalidToml:
+    """Tests for invalid MCP configurations in colin.toml."""
+
+    def test_missing_command_and_url(self, project: Path) -> None:
+        """MCP config with neither command nor url fails on provider creation."""
+        from colin.providers.manager import create_provider
+
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
+
+[[providers.mcp]]
+name = "broken"
+""")
+        config = load_project(toml)
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp.broken"])
+
+    def test_invalid_args_type(self, project: Path) -> None:
+        """MCP config with non-list args fails validation."""
+        from colin.providers.manager import create_provider
+
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
+
+[[providers.mcp]]
+name = "broken"
+command = "python"
+args = "not-a-list"
+""")
+        config = load_project(toml)
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp.broken"])
+
+    def test_invalid_env_type(self, project: Path) -> None:
+        """MCP config with non-dict env fails validation."""
+        from colin.providers.manager import create_provider
+
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
+
+[[providers.mcp]]
+name = "broken"
+command = "python"
+env = "not-a-dict"
+""")
+        config = load_project(toml)
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp.broken"])
+
+    def test_missing_name(self, project: Path) -> None:
+        """MCP config without name fails on provider creation."""
+        from colin.providers.manager import create_provider
+
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
+
+[[providers.mcp]]
+command = "python"
+""")
+        config = load_project(toml)
+        # Without a name, the provider key will be just "mcp"
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp"])
