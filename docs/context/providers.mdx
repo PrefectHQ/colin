@@ -130,3 +130,25 @@ env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 | `env` | Environment variables passed to the server |
 | `url` | Server URL (for remote servers) |
 | `headers` | HTTP headers (for remote servers) |
+
+## Creating Custom Providers
+
+Providers extend the `Provider` base class. Each provider declares which URI schemes it handles via the `schemes` attribute and implements an async `read()` method that returns content as a string.
+
+### Resource Lifecycle
+
+Providers that manage stateful resources—database connections, HTTP clients, API sessions—override the `lifespan()` method. This is an async context manager that Colin enters at startup and exits at shutdown. Set up your resources before the `yield`, and they'll be cleaned up automatically when the context exits.
+
+```python
+@asynccontextmanager
+async def lifespan(self) -> AsyncIterator[None]:
+    async with httpx.AsyncClient() as client:
+        self._client = client
+        yield
+```
+
+Resources are created eagerly when Colin starts, not lazily on first use. This surfaces connection errors early and ensures consistent behavior. Providers without resources to manage inherit a default `lifespan()` that does nothing.
+
+### Template Functions
+
+To expose functions in templates, override `get_functions()` and return a dictionary mapping function names to async callables. A provider with `schemes = ["myscheme"]` that returns `{"fetch": self._fetch}` becomes accessible as `myscheme.fetch()` in templates.

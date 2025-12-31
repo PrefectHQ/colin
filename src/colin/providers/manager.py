@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 
 from colin.api.project import ProjectConfig, ProviderInstanceConfig
@@ -128,18 +128,13 @@ class ProviderManager:
 
         return await provider.get_last_updated(uri)
 
-    async def close(self) -> None:
-        for provider in self._providers.values():
-            close = getattr(provider, "close", None)
-            if callable(close):
-                await close()
-
 
 @asynccontextmanager
 async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[ProviderManager]:
     """Create a provider manager for a project."""
     manager = ProviderManager()
-    try:
+
+    async with AsyncExitStack() as stack:
         _register_builtin_factories()
         for instance in config.providers.values():
             provider = create_provider(instance)
@@ -155,6 +150,11 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
         if "llm" not in manager._registry.types:
             manager.register(LLMProvider())
 
+        # Enter lifespans for unique provider instances
+        seen: set[int] = set()
+        for provider in manager._providers.values():
+            if id(provider) not in seen:
+                seen.add(id(provider))
+                await stack.enter_async_context(provider.lifespan())
+
         yield manager
-    finally:
-        await manager.close()

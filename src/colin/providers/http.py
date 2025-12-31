@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -63,17 +64,19 @@ class HTTPProvider(Provider):
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._timeout)
-        return self._client
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        """Manage HTTP client lifecycle."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            self._client = client
+            yield
+        self._client = None
 
-    async def close(self) -> None:
-        """Close HTTP client."""
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+    def _require_client(self) -> httpx.AsyncClient:
+        """Get client, raising if not initialized."""
+        if self._client is None:
+            raise RuntimeError("HTTPProvider not initialized - use within lifespan context")
+        return self._client
 
     async def read(self, uri: str) -> str:
         """Fetch content from URL.
@@ -87,8 +90,9 @@ class HTTPProvider(Provider):
         Raises:
             FileNotFoundError: If URL returns 404.
             httpx.HTTPStatusError: For other HTTP errors.
+            RuntimeError: If called outside lifespan context.
         """
-        client = await self._get_client()
+        client = self._require_client()
         response = await client.get(uri)
 
         if response.status_code == 404:
@@ -107,7 +111,7 @@ class HTTPProvider(Provider):
             Last-Modified datetime, or None if not available.
         """
         try:
-            client = await self._get_client()
+            client = self._require_client()
             response = await client.head(uri)
 
             if response.status_code >= 400:
@@ -141,7 +145,7 @@ class HTTPProvider(Provider):
             HTTPResource with content and metadata.
         """
         uri = self._normalize_url(uri)
-        client = await self._get_client()
+        client = self._require_client()
         response = await client.get(uri)
         response.raise_for_status()
 

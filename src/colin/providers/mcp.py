@@ -5,7 +5,8 @@ Provides a read-only provider for mcp:// and mcp.{instance}:// URIs.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -165,20 +166,20 @@ class MCPProvider(Provider):
         self.namespace = "mcp"
         self._client: Client | None = None
 
-    async def _get_client(self) -> Client:
-        """Get or create an MCP client for this provider."""
-        if self._client is None:
-            mcp_config = MCPConfig(mcpServers={self._instance: self._server})
-            client = Client(mcp_config)
-            await client.__aenter__()
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        """Manage MCP client lifecycle."""
+        mcp_config = MCPConfig(mcpServers={self._instance: self._server})
+        async with Client(mcp_config) as client:
             self._client = client
-        return self._client
+            yield
+        self._client = None
 
-    async def close(self) -> None:
-        """Close the MCP client if open."""
-        if self._client is not None:
-            await self._client.__aexit__(None, None, None)
-            self._client = None
+    def _require_client(self) -> Client:
+        """Get client, raising if not initialized."""
+        if self._client is None:
+            raise RuntimeError("MCPProvider not initialized - use within lifespan context")
+        return self._client
 
     async def read(self, uri: str) -> str:
         """Read content from an MCP resource or prompt.
@@ -208,7 +209,7 @@ class MCPProvider(Provider):
 
     async def _read_resource(self, resource_uri: str) -> str:
         """Read a resource from the MCP server."""
-        client = await self._get_client()
+        client = self._require_client()
         contents = await client.read_resource(resource_uri)
         if contents:
             return contents[0].text or ""
@@ -216,7 +217,7 @@ class MCPProvider(Provider):
 
     async def _get_prompt(self, name: str, arguments: dict[str, str]) -> str:
         """Get a prompt from the MCP server."""
-        client = await self._get_client()
+        client = self._require_client()
         result = await client.get_prompt(name, arguments)
         parts = []
         for msg in result.messages:
