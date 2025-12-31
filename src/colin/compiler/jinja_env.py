@@ -57,10 +57,13 @@ def bind_context_to_environment(
     providers = provider_manager.namespace(provider_ctx)
     env.globals["providers"] = providers
 
+    # Builtin provider shortcuts
+    env.globals["http"] = providers.http
+    env.globals["extract"] = getattr(providers.llm, "extract")
+
+    # MCP is optional (only if configured)
     if hasattr(providers, "mcp"):
-        env.globals["mcp"] = getattr(providers, "mcp")
-    if hasattr(providers, "llm"):
-        env.globals["extract"] = getattr(getattr(providers, "llm"), "extract")
+        env.globals["mcp"] = providers.mcp
 
     # LLM filters
     env.filters["extract"] = create_extract_filter(context)

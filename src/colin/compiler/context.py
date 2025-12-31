@@ -135,12 +135,12 @@ class CompileContext:
             # Fetch from storage via project provider
             async def fetch_from_provider() -> RefResult:
                 try:
-                    content = await self.project_provider.read(path)
+                    content = await self.project_provider.read(uri)
                 except FileNotFoundError as e:
                     raise RefNotFoundError(f"Referenced document not found: {uri}") from e
 
                 # Get actual compiled_at timestamp from manifest (or now if unavailable)
-                last_updated = await self.project_provider.get_last_updated(path)
+                last_updated = await self.project_provider.get_last_updated(uri)
                 updated = last_updated or datetime.now(timezone.utc)
 
                 # Create RefResult from raw content
@@ -164,12 +164,12 @@ class CompileContext:
             except KeyError as e:
                 raise ValueError(f"No provider registered for scheme '{scheme}'") from e
             try:
-                content = await provider.read(path)
+                content = await provider.read(uri)
             except FileNotFoundError as e:
                 raise RefNotFoundError(f"Referenced document not found: {uri}") from e
 
             # Get actual timestamp from provider (or now if unavailable)
-            last_updated = await provider.get_last_updated(path)
+            last_updated = await provider.get_last_updated(uri)
             updated = last_updated or datetime.now(timezone.utc)
 
             name = path.split("/")[-1] or uri

@@ -29,7 +29,7 @@ class TestSchemalessRefValidation:
 
         manifest = Manifest()
         file_storage = FileStorage(base_path=output_dir)
-        project_provider = ProjectProvider(provider=file_storage)
+        project_provider = ProjectProvider(storage=file_storage)
 
         context = CompileContext(
             manifest=manifest,
@@ -124,7 +124,7 @@ class TestPathTraversalPrevention:
 
         manifest = Manifest()
         file_storage = FileStorage(base_path=output_dir)
-        project_provider = ProjectProvider(provider=file_storage)
+        project_provider = ProjectProvider(storage=file_storage)
 
         context = CompileContext(
             manifest=manifest,

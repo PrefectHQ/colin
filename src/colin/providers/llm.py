@@ -11,9 +11,9 @@ from colin.providers.context import ProviderContext
 class LLMProvider(Provider):
     """Provider wrapper for LLM template functions."""
 
-    scheme = "llm"
+    schemes = ["llm"]
 
-    async def read(self, path: str) -> str:
+    async def read(self, uri: str) -> str:
         raise ValueError("LLM provider does not support read()")
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:

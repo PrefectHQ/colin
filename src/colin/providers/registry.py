@@ -20,17 +20,16 @@ _RENDERERS: dict[str, Renderer] = {}
 
 
 def register_provider(provider: Provider) -> None:
-    """Register a provider instance.
+    """Register a provider instance for all its schemes.
 
     Args:
-        provider: Provider instance with a 'scheme' attribute.
+        provider: Provider instance with 'schemes' attribute.
     """
-    # Provider base class validates 'scheme' in __init_subclass__
-    scheme = provider.scheme
-    if scheme in _PROVIDERS:
-        logger.warning(f"Overwriting provider for scheme: {scheme}")
-    _PROVIDERS[scheme] = provider
-    logger.debug(f"Registered provider: {scheme}://")
+    for scheme in provider.schemes:
+        if scheme in _PROVIDERS:
+            logger.warning(f"Overwriting provider for scheme: {scheme}")
+        _PROVIDERS[scheme] = provider
+        logger.debug(f"Registered provider: {scheme}://")
 
 
 def register_renderer(renderer: Renderer) -> None:

@@ -8,6 +8,30 @@ Providers connect Colin templates to external data sources. A provider handles a
 
 Providers return domain objects with `.content` and metadata. You can use these objects directly or wrap them with `ref()` to track dependencies in the manifest.
 
+## HTTP Provider
+
+The HTTP provider fetches content from web URLs. It's a builtin—no configuration needed.
+
+```markdown
+{{ http.get('https://api.example.com/data.json') }}
+```
+
+URLs without a scheme default to `https://`:
+
+```markdown
+{{ http.get('example.com/api/users') }}
+```
+
+The function returns an `HTTPResource` with `.content`, `.uri`, and `.content_type` properties:
+
+```markdown
+{% set response = http.get('https://api.example.com/status') %}
+
+{{ response.content }}
+
+Content-Type: {{ response.content_type }}
+```
+
 ## MCP Provider
 
 The MCP provider connects to Model Context Protocol servers. Configure servers in `colin.toml`, then access them in templates as `mcp.<name>`:

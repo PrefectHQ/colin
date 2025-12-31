@@ -13,12 +13,13 @@ from colin.providers.referenceable import Referenceable
 class DummyProvider(Provider):
     """Simple provider for namespace tests."""
 
-    def __init__(self, scheme: str, label: str) -> None:
-        self.scheme = scheme
+    def __init__(self, namespace: str, label: str) -> None:
+        self.schemes = [namespace]
+        self.namespace = namespace
         self._label = label
 
-    async def read(self, path: str) -> str:
-        return f"{self._label}:{path}"
+    async def read(self, uri: str) -> str:
+        return f"{self._label}:{uri}"
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         async def read(ctx: ProviderContext, path: str) -> str:
@@ -58,8 +59,12 @@ def _make_context() -> ProviderContext:
 async def test_namespace_default_instance_fallback() -> None:
     """Default instance handles shorthand function calls."""
     manager = ProviderManager()
-    manager.register("s3", None, DummyProvider("s3", "default"))
-    manager.register("s3", "dev", DummyProvider("s3.dev", "dev"))
+    # Register default s3 provider (no instance name)
+    manager.register(DummyProvider("s3", "default"))
+    # Register named instance (same namespace, but instance="dev")
+    dev_provider = DummyProvider("s3", "dev")
+    dev_provider.schemes = ["s3.dev"]  # Different scheme for routing
+    manager.register(dev_provider, instance="dev")
 
     providers = manager.namespace(_make_context())
 
