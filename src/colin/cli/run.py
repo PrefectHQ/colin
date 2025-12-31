@@ -26,6 +26,7 @@ def _get_icon(op: OperationState) -> RenderableType:
     if op.status == Status.FAILED:
         return Text("✗", style="red")
     if op.status == Status.SKIPPED:
+        # SKIPPED is only for upstream failures now (cached files use DONE)
         return Text("○", style="yellow")
     if op.status == Status.PROCESSING:
         return Spinner("dots", style="dim")

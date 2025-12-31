@@ -20,7 +20,7 @@ Level 3:              executive_brief.md
 |---------|------|-------|
 | `ref()` | all | Reference other documents |
 | `ref().content` | goal_status, executive_brief | Access compiled content |
-| `| extract()` | analysis, recommendations, executive_brief | LLM extraction filter |
+| `| llm_extract()` | analysis, recommendations, executive_brief | LLM extraction filter |
 | `{% llm %}` | goal_status, recommendations | LLM generation blocks |
 | Frontmatter | all | Document metadata |
 | Multi-level deps | executive_brief | 3 levels of dependencies |

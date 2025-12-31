@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from jinja2 import Environment
 
-from colin.compiler.extensions.filters import create_classify_filter, create_extract_filter
+from colin.compiler.extensions.filters import create_llm_classify_filter, create_llm_extract_filter
 from colin.compiler.extensions.llm_block import LLMBlockExtension
 
 if TYPE_CHECKING:
@@ -38,12 +38,14 @@ def bind_context_to_environment(
 ) -> Environment:
     """Bind compile context functions to the environment.
 
-    This adds the ref() function and extract filter, and attaches
+    This adds the ref() function and LLM filters, and attaches
     the context so the LLM block extension can access it.
 
     Args:
         env: The Jinja environment.
         context: The compile context.
+        provider_manager: Provider manager for accessing providers.
+        provider_ctx: Provider context for function calls.
 
     Returns:
         The environment with context bound.
@@ -59,14 +61,17 @@ def bind_context_to_environment(
 
     # Builtin provider shortcuts
     env.globals["http"] = providers.http
-    env.globals["extract"] = getattr(providers.llm, "extract")
+    env.globals["llm"] = providers.llm
+
+    # Attach llm namespace for LLM block extension
+    env.llm_namespace = providers.llm  # type: ignore[attr-defined]
 
     # MCP is optional (only if configured)
     if hasattr(providers, "mcp"):
         env.globals["mcp"] = providers.mcp
 
-    # LLM filters
-    env.filters["extract"] = create_extract_filter(context)
-    env.filters["classify"] = create_classify_filter(context)
+    # LLM filters (pipe syntax: content | llm_extract('prompt'))
+    env.filters["llm_extract"] = create_llm_extract_filter(providers.llm)
+    env.filters["llm_classify"] = create_llm_classify_filter(providers.llm)
 
     return env

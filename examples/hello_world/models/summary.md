@@ -13,7 +13,7 @@ Here's some content to work with:
 
 ## Extracted Info
 
-{{ ref('greeting') | extract('the main message in one sentence') }}
+{{ ref('greeting') | llm_extract('the main message in one sentence') }}
 
 ## LLM-Generated Content
 

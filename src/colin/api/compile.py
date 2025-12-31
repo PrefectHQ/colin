@@ -58,7 +58,6 @@ async def compile_project(
     *,
     target_dir: Path | None = None,
     force: bool = False,
-    default_model: str | None = None,
     dry_run: bool = False,
     state: CompilationState | None = None,
 ) -> CompileResult | list[tuple[str, Path]]:
@@ -68,7 +67,6 @@ async def compile_project(
         project_dir: Project directory (must contain colin.toml).
         target_dir: Override target directory (default: from colin.toml).
         force: Force recompile all documents.
-        default_model: Override default LLM model.
         dry_run: If True, return list of (uri, path) tuples instead of compiling.
         state: Optional compilation state for progress tracking.
 
@@ -119,9 +117,6 @@ async def compile_project(
                 uris.append((uri, compiled_dir / str(relative)))
         return sorted(uris, key=lambda x: x[0])
 
-    # Resolve model: param > project config > settings
-    effective_model = default_model or config.default_llm_model or settings.default_llm_model
-
     # Create artifact storage (FileStorage with base at compiled_dir)
     artifact_storage = FileStorage(base_path=compiled_dir)
 
@@ -129,7 +124,6 @@ async def compile_project(
     engine = CompileEngine(
         config=config,
         artifact_storage=artifact_storage,
-        default_model=effective_model,
         state=state,
         force=force,
     )

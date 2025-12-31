@@ -28,6 +28,7 @@ from colin.models import (
     RefreshPolicy,
     parse_duration,
 )
+from colin.providers.cache import set_compile_context
 from colin.providers.context import ProviderContext
 from colin.providers.manager import ProviderManager, create_provider_manager
 from colin.providers.project import ProjectProvider
@@ -57,7 +58,6 @@ class CompileEngine:
         self,
         config: ProjectConfig,
         artifact_storage: Storage,
-        default_model: str,
         state: CompilationState | None = None,
         force: bool = False,
     ) -> None:
@@ -66,13 +66,11 @@ class CompileEngine:
         Args:
             config: Project configuration with resolved paths.
             artifact_storage: Storage for compiled outputs.
-            default_model: Default LLM model to use.
             state: Optional compilation state for progress tracking.
             force: Force recompile (ignore existing manifest).
         """
         self.config = config
         self.artifact_storage = artifact_storage
-        self.default_model = default_model
         self.state = state
         self.graph = DependencyGraph()
         # Load manifest from config path (or empty if force/not exists)
@@ -255,7 +253,7 @@ class CompileEngine:
             is_stale, reason = await self._is_document_stale(doc, provider_manager, recompiled_uris)
             if not is_stale:
                 if doc_state:
-                    doc_state.mark_skipped(reason)
+                    doc_state.mark_cached()
                 skipped_uris.add(uri)
                 return (uri, None, False)
 
@@ -502,7 +500,6 @@ class CompileEngine:
         context = CompileContext(
             manifest=self.manifest,
             document_uri=doc.uri,
-            default_model=self.default_model,
             project_provider=self._project_provider,
             compiled_outputs=compiled_outputs,
             provider_manager=provider_manager,
@@ -520,14 +517,16 @@ class CompileEngine:
                 doc_state=doc_state,
                 ref=context.ref,
                 track_ref=context.track_ref,
-                extract=context.extract,
-                classify=context.classify,
             ),
         )
 
-        # Compile template
+        # Compile template with compile context set for caching
         template = env.from_string(doc.template_content)
-        output = await template.render_async()
+        set_compile_context(context)
+        try:
+            output = await template.render_async()
+        finally:
+            set_compile_context(None)
 
         # Calculate output hash
         output_hash = hashlib.sha256(output.encode()).hexdigest()[:16]

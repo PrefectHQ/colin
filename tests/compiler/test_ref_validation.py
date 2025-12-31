@@ -34,7 +34,6 @@ class TestSchemalessRefValidation:
         context = CompileContext(
             manifest=manifest,
             document_uri="test-doc",
-            default_model="test-model",
             project_provider=project_provider,
         )
         return context, source_dir, output_dir
@@ -129,7 +128,6 @@ class TestPathTraversalPrevention:
         context = CompileContext(
             manifest=manifest,
             document_uri="test-doc",
-            default_model="test-model",
             project_provider=project_provider,
         )
         return context, source_dir, output_dir

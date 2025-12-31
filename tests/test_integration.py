@@ -58,7 +58,7 @@ You just saw an example of `ref()` pulling in content from another document.
         (source_dir / "summary.md").write_text("""\
 ---
 name: Summary
-description: Demonstrates LLM blocks and extract filter
+description: Demonstrates LLM blocks and llm_extract filter
 ---
 
 # Summary Example
@@ -69,7 +69,7 @@ Here's some content to work with:
 
 ## Extracted Info
 
-{{ ref('greeting') | extract('the main message in one sentence') }}
+{{ ref('greeting') | llm_extract('the main message in one sentence') }}
 
 ## LLM-Generated Content
 
@@ -93,7 +93,6 @@ Write a haiku about being welcomed.
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
-            default_model="test-model",
         )
 
         compiled = await engine.compile_all()
@@ -174,7 +173,6 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
-            default_model="test-model",
         )
 
         compiled = await engine.compile_all()
@@ -224,7 +222,6 @@ Report includes {{ ref('base').content }}
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
-            default_model="test-model",
         )
 
         await engine.compile_all()

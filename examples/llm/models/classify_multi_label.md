@@ -15,4 +15,4 @@ This document demonstrates how to use the `classify()` filter with `multi=True` 
 
 ## Multi-Label Classification Result
 
-**Topics**: {{ ref('source') | classify(labels=['interface', 'performance', 'pricing', 'support', 'features', 'bugs'], multi=True) }}
+**Topics**: {{ ref('source') | llm_classify(labels=['interface', 'performance', 'pricing', 'support', 'features', 'bugs'], multi=True) }}

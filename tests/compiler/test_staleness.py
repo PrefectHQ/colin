@@ -38,7 +38,6 @@ class TestStalenessDetection:
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
-            default_model="test-model",
         )
         return engine, source_dir, output_dir
 
@@ -213,7 +212,6 @@ class TestRefreshPolicies:
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
-            default_model="test-model",
         )
         return engine, source_dir, output_dir
 
@@ -742,7 +740,6 @@ class TestTimeBasedStaleness:
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
-            default_model="test-model",
         )
         return engine, source_dir, output_dir
 

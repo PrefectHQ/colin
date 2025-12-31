@@ -2,105 +2,92 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
 from colin.models import RefResult
 
-if TYPE_CHECKING:
-    from colin.compiler.context import CompileContext
 
-
-def _serialize_for_llm(value: str | RefResult | object) -> str:
-    """Serialize a value for LLM consumption.
-
-    For RefResult, includes name, description, content, and uri.
-    Excludes template source to avoid confusion.
-    """
-    if isinstance(value, RefResult):
-        parts = [f"# {value.name}"]
-        if value.description:
-            parts.append(f"Description: {value.description}")
-        parts.append(f"URI: {value.uri}")
-        parts.append("")
-        parts.append(value.content)
-        return "\n".join(parts)
-    return str(value)
-
-
-def create_extract_filter(context: CompileContext):
-    """Create the extract filter bound to a compile context.
+def create_llm_extract_filter(llm_namespace: Any):
+    """Create the llm_extract filter bound to the LLM provider.
 
     Args:
-        context: The compile context to use for LLM calls.
+        llm_namespace: The LLM provider namespace.
 
     Returns:
         An async filter function.
     """
 
-    async def extract_filter(
+    async def llm_extract_filter(
         content: str | RefResult | object,
         prompt: str,
-        id: str | None = None,  # noqa: A002 - using 'id' to match template syntax
         model: str | None = None,
+        _cache_id: str | None = None,
+        _cache: bool = True,
     ) -> str:
         """Extract information from content using LLM.
 
         Usage in templates:
-            {{ content | extract('feature requests') }}
-            {{ content | extract('status', id='status-extraction') }}
-            {{ ref('doc') | extract('summary', model='openai:gpt-4o') }}
+            {{ content | llm_extract('feature requests') }}
+            {{ content | llm_extract('status', _cache_id='status-extraction') }}
+            {{ ref('doc') | llm_extract('summary', model='openai:gpt-4o') }}
+            {{ content | llm_extract('summary', _cache=False) }}
 
         Args:
             content: The content to extract from (string or RefResult).
             prompt: What to extract.
-            id: Optional manual ID for caching.
             model: Optional model override.
+            _cache_id: Optional custom cache ID.
+            _cache: Set to False to bypass cache.
 
         Returns:
             The extracted text.
         """
-        serialized = _serialize_for_llm(content)
-        return await context.extract(serialized, prompt, call_id=id, model=model)
+        return await llm_namespace.extract(
+            content, prompt, model=model, _cache_id=_cache_id, _cache=_cache
+        )
 
-    return extract_filter
+    return llm_extract_filter
 
 
-def create_classify_filter(context: CompileContext):
-    """Create the classify filter bound to a compile context.
+def create_llm_classify_filter(llm_namespace: Any):
+    """Create the llm_classify filter bound to the LLM provider.
 
     Args:
-        context: The compile context to use for LLM calls.
+        llm_namespace: The LLM provider namespace.
 
     Returns:
         An async filter function.
     """
 
-    async def classify_filter(
+    async def llm_classify_filter(
         content: str | RefResult | object,
         labels: list[str | bool],
-        id: str | None = None,  # noqa: A002 - using 'id' to match template syntax
         model: str | None = None,
         multi: bool = False,
+        _cache_id: str | None = None,
+        _cache: bool = True,
     ) -> str | bool | list[str | bool]:
         """Classify content into predefined labels using LLM.
 
         Usage in templates:
-            {{ content | classify(labels=['movie', 'book', 'podcast']) }}
-            {{ content | classify(labels=['positive', 'negative'], id='sentiment') }}
-            {{ ref('doc') | classify(labels=[True, False]) }}
-            {{ ref('doc') | classify(labels=['tag1', 'tag2'], multi=True) }}
+            {{ content | llm_classify(labels=['movie', 'book', 'podcast']) }}
+            {{ content | llm_classify(labels=['positive', 'negative'], _cache_id='sentiment') }}
+            {{ ref('doc') | llm_classify(labels=[True, False]) }}
+            {{ ref('doc') | llm_classify(labels=['tag1', 'tag2'], multi=True) }}
 
         Args:
             content: The content to classify (string or RefResult).
             labels: List of valid labels to choose from (strings or booleans).
-            id: Optional manual ID for caching.
             model: Optional model override.
             multi: Whether to allow multiple labels (multi-label classification).
+            _cache_id: Optional custom cache ID.
+            _cache: Set to False to bypass cache.
 
         Returns:
             Single label (str or bool) if multi=False, list of labels if multi=True.
         """
-        serialized = _serialize_for_llm(content)
-        return await context.classify(serialized, labels, call_id=id, model=model, multi=multi)
+        return await llm_namespace.classify(
+            content, labels, model=model, multi=multi, _cache_id=_cache_id, _cache=_cache
+        )
 
-    return classify_filter
+    return llm_classify_filter

@@ -65,8 +65,27 @@ class LLMCall(BaseModel):
     cost_usd: float = 0.0
     """Cost of this call in USD."""
 
+    is_successful: bool = True
+    """Whether the LLM call succeeded."""
+
+    error: str | None = None
+    """Error message if call failed."""
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     """When this call was made."""
+
+
+class CacheEntry(BaseModel):
+    """A cached provider function result."""
+
+    cache_key: str
+    """Unique key for this cache entry."""
+
+    output: str
+    """The cached result (JSON-serialized)."""
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    """When this entry was created."""
 
 
 class ColinConfig(BaseModel):
@@ -147,6 +166,9 @@ class Manifest(BaseModel):
 
     documents: dict[str, DocumentMeta] = Field(default_factory=dict)
     """Document metadata, keyed by URI."""
+
+    cache: dict[str, CacheEntry] = Field(default_factory=dict)
+    """Global cache for provider function results."""
 
     def get_document(self, uri: str) -> DocumentMeta | None:
         """Get metadata for a document by URI."""
