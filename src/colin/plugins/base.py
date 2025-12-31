@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from colin.compiler.graph import DependencyGraph
     from colin.models import CompiledDocument, RefResult
 
 
@@ -63,26 +62,3 @@ class OutputPlugin(Protocol):
         ...
 
 
-class MaterializationPlugin(Protocol):
-    """Protocol for materialization plugins that control compilation order."""
-
-    name: str
-    """Materialization strategy name (e.g., 'dag', 'bfs')."""
-
-    async def materialize(
-        self,
-        changed: set[str],
-        graph: DependencyGraph,
-        compile_fn: Callable[[str], Awaitable[CompiledDocument]],
-    ) -> list[str]:
-        """Compile affected documents in appropriate order.
-
-        Args:
-            changed: Set of URIs that have changed.
-            graph: The dependency graph.
-            compile_fn: Function to compile a single document by URI.
-
-        Returns:
-            List of URIs that were compiled.
-        """
-        ...

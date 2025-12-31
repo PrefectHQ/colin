@@ -81,9 +81,6 @@ class ColinConfig(BaseModel):
     storage: str | None = None
     """Storage backend (future feature)."""
 
-    materialization: str | None = None
-    """Materialization strategy (future feature)."""
-
 
 class Frontmatter(BaseModel):
     """Parsed frontmatter from a .colin file."""

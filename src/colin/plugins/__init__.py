@@ -1,1 +1,1 @@
-"""Colin plugins for input, output, and materialization."""
+"""Colin plugins for input and output."""
