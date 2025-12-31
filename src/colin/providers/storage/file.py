@@ -1,5 +1,6 @@
 """Filesystem storage implementation."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from colin.providers.storage.base import Storage
@@ -48,3 +49,18 @@ class FileStorage(Storage):
         full_path = self.base_path / path
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
+
+    async def get_last_updated(self, path: str) -> datetime | None:
+        """Get file modification time without reading content.
+
+        Args:
+            path: Relative path within base_path.
+
+        Returns:
+            File mtime as datetime, or None if file doesn't exist.
+        """
+        full_path = self.base_path / path
+        if not full_path.exists():
+            return None
+        mtime = full_path.stat().st_mtime
+        return datetime.fromtimestamp(mtime, tz=timezone.utc)

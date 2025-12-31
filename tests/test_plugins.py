@@ -148,7 +148,9 @@ Template content here.
 ---
 colin:
   output: skill
-  refresh: 1h
+  refresh:
+    policy: always
+    stale: 1h
 name: Test
 ---
 
@@ -158,7 +160,8 @@ Content here.
         fm, content = plugin.parse_frontmatter(model_file)
 
         assert fm.colin.output == "skill"
-        assert fm.colin.refresh == "1h"
+        assert fm.colin.refresh.policy.value == "always"
+        assert fm.colin.refresh.stale == "1h"
         assert fm.metadata["name"] == "Test"
         assert "Content here." in content
 

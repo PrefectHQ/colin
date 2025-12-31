@@ -12,6 +12,8 @@ from colin.models import (
     Frontmatter,
     LLMCall,
     Manifest,
+    RefreshConfig,
+    RefreshPolicy,
     RefResult,
 )
 
@@ -49,14 +51,43 @@ class TestColinConfig:
     def test_defaults(self) -> None:
         config = ColinConfig()
         assert config.output == "markdown"
-        assert config.refresh is None
+        assert config.refresh.policy == RefreshPolicy.AUTO
+        assert config.refresh.stale is None
         assert config.storage is None
         assert config.materialization is None
 
+    def test_custom_refresh_policy(self) -> None:
+        config = ColinConfig(refresh=RefreshConfig(policy=RefreshPolicy.ALWAYS))
+        assert config.refresh.policy == RefreshPolicy.ALWAYS
+
+    def test_custom_refresh_stale(self) -> None:
+        config = ColinConfig(refresh=RefreshConfig(stale="1h"))
+        assert config.refresh.policy == RefreshPolicy.AUTO
+        assert config.refresh.stale == "1h"
+
+    def test_refresh_stale_calendar_aligned(self) -> None:
+        config = ColinConfig(refresh=RefreshConfig(stale="1cM"))
+        assert config.refresh.stale == "1cM"
+
+    def test_refresh_stale_validation(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            RefreshConfig(stale="invalid")
+
+        with pytest.raises(ValidationError):
+            RefreshConfig(stale="1x")  # Invalid unit
+
+        with pytest.raises(ValidationError):
+            RefreshConfig(stale="h1")  # Wrong order
+
+        with pytest.raises(ValidationError):
+            RefreshConfig(stale="")  # Empty string
+
     def test_custom_values(self) -> None:
-        config = ColinConfig(output="skill", refresh="1h")
+        config = ColinConfig(output="skill")
         assert config.output == "skill"
-        assert config.refresh == "1h"
 
 
 class TestFrontmatter:

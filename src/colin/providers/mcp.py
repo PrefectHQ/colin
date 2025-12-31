@@ -32,6 +32,11 @@ class MCPResource:
     description: str | None = None
     updated: datetime | None = None
 
+    @property
+    def last_updated(self) -> datetime:
+        """When this resource was last modified."""
+        return self.updated or datetime.now(timezone.utc)
+
     def to_ref_result(self) -> RefResult:
         """Convert to RefResult for dependency tracking."""
         from colin.models import RefResult
@@ -41,7 +46,7 @@ class MCPResource:
             description=self.description,
             content=self.content,
             template="",
-            updated=self.updated or datetime.now(timezone.utc),
+            updated=self.last_updated,
             uri=self.uri,
             source=self,
         )
@@ -55,6 +60,12 @@ class MCPPrompt:
     content: str
     name: str
     description: str | None = None
+    updated: datetime | None = None
+
+    @property
+    def last_updated(self) -> datetime:
+        """When this prompt was last retrieved."""
+        return self.updated or datetime.now(timezone.utc)
 
     def to_ref_result(self) -> RefResult:
         """Convert to RefResult for dependency tracking."""
@@ -65,7 +76,7 @@ class MCPPrompt:
             description=self.description,
             content=self.content,
             template="",
-            updated=datetime.now(timezone.utc),
+            updated=self.last_updated,
             uri=self.uri,
             source=self,
         )
@@ -245,4 +256,5 @@ class MCPProvider(Provider):
             uri=build_mcp_uri(self.scheme, prompt=name, **arguments),
             content=content,
             name=name,
+            updated=datetime.now(timezone.utc),
         )
