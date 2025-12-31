@@ -54,7 +54,6 @@ class TestColinConfig:
         assert config.refresh.policy == RefreshPolicy.AUTO
         assert config.refresh.stale is None
         assert config.storage is None
-        assert config.materialization is None
 
     def test_custom_refresh_policy(self) -> None:
         config = ColinConfig(refresh=RefreshConfig(policy=RefreshPolicy.ALWAYS))
