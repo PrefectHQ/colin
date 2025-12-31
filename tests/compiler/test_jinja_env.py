@@ -36,6 +36,7 @@ def test_bind_context_sets_extract_alias(tmp_path: Path) -> None:
         ref=context.ref,
         track_ref=context.track_ref,
         extract=context.extract,
+        classify=context.classify,
     )
 
     bind_context_to_environment(env, context, provider_manager, provider_ctx)

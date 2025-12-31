@@ -16,7 +16,7 @@ from colin.providers.project import ProjectProvider
 from colin.providers.storage.file import FileStorage
 
 # Block real API requests during tests
-models.ALLOW_MODEL_REQUESTS = False
+models.ALLOW_MODEL_REQUESTS = False  # type: ignore[assignment]
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def create_multi_classify_function_model(
 
     def classify_function(messages: list[ModelMessage], info) -> ModelResponse:  # type: ignore[no-untyped-def]
         """Function that returns a multi-label classification result."""
-        ClassificationModel = create_classification_model(labels, True)
+        ClassificationModel = create_classification_model(labels, True)  # type: ignore[arg-type]
         classification = ClassificationModel(labels=selected_labels)
         # Return JSON that pydantic_ai will parse
         return ModelResponse(parts=[TextPart(content=classification.model_dump_json())])
@@ -88,7 +88,7 @@ def create_multi_classify_agent_factory(labels: list[str], selected_labels: list
     def agent_factory(*args, **kwargs):
         """Factory that creates Agent with FunctionModel, ignoring model string."""
         function_model = create_multi_classify_function_model(labels, selected_labels)
-        ClassificationModel = create_classification_model(labels, True)
+        ClassificationModel = create_classification_model(labels, True)  # type: ignore[arg-type]
         # Use output_type from kwargs (Agent is called with output_type=...)
         output_type = kwargs.get("output_type", ClassificationModel)
         return Agent(function_model, output_type=output_type)
@@ -234,7 +234,7 @@ async def test_classify_multi_label(context: CompileContext) -> None:
 
 async def test_classify_with_bool_labels(context: CompileContext) -> None:
     """Test classification with boolean labels."""
-    labels: list[bool] = [True, False]
+    labels: list[str | bool] = [True, False]
     agent_factory = create_classify_agent_factory(True, labels)
 
     with patch("colin.compiler.context.Agent", side_effect=agent_factory):

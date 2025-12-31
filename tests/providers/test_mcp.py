@@ -137,12 +137,6 @@ class TestMCPProvider:
         assert provider2.schemes == ["mcp.linear"]
         assert provider3.schemes == ["mcp.my-custom-server"]
 
-    def test_default_instance_name(self) -> None:
-        """Default instance uses bare mcp name."""
-        provider = MCPProvider.from_config(None, {"command": "npx", "args": ["@github/mcp"]})
-
-        assert provider.namespace == "mcp"
-
     async def test_read_rejects_invalid_uri(self) -> None:
         """read() rejects URI without resource or prompt."""
         provider = MCPProvider.from_config("test", {"command": "test"})
@@ -156,3 +150,39 @@ class TestMCPProvider:
 
         with pytest.raises(ValueError, match="Invalid MCP URI"):
             await provider.read("mcp.test://?")
+
+
+class TestMCPProviderValidation:
+    """Tests for MCP provider config validation."""
+
+    def test_rejects_none_name(self) -> None:
+        """MCP provider rejects None as name."""
+        with pytest.raises(ValueError, match="requires an instance name"):
+            MCPProvider.from_config(None, {"command": "test"})
+
+    def test_missing_command_and_url(self) -> None:
+        """MCP config with neither command nor url fails."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {})
+
+    def test_missing_command_and_url_with_other_fields(self) -> None:
+        """MCP config with args but no command/url fails."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {"args": ["foo"]})
+
+    def test_invalid_args_type(self) -> None:
+        """MCP config with non-list args fails validation."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {"command": "python", "args": "not-a-list"})
+
+    def test_invalid_env_type(self) -> None:
+        """MCP config with non-dict env fails validation."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config("test", {"command": "python", "env": "not-a-dict"})
+
+    def test_invalid_headers_type(self) -> None:
+        """MCP config with non-dict headers fails validation."""
+        with pytest.raises(Exception):
+            MCPProvider.from_config(
+                "test", {"url": "http://example.com", "headers": ["not", "dict"]}
+            )

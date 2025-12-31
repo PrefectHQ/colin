@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
+from pydantic import TypeAdapter
 from typing_extensions import Self
 
 from colin.providers.base import Provider
@@ -21,6 +22,11 @@ from colin.providers.context import ProviderContext
 
 if TYPE_CHECKING:
     from colin.models import RefResult
+
+# TypeAdapter for parsing MCP server config from TOML
+MCPServerAdapter: TypeAdapter[StdioMCPServer | RemoteMCPServer] = TypeAdapter(
+    StdioMCPServer | RemoteMCPServer
+)
 
 
 @dataclass
@@ -126,49 +132,37 @@ class MCPProvider(Provider):
 
     namespace: ClassVar[str] = "mcp"
 
-    command: str | None = None
-    """Command to run for stdio MCP server."""
+    def __init__(self, name: str, server: StdioMCPServer | RemoteMCPServer) -> None:
+        """Initialize MCPProvider with server instance.
 
-    args: list[str] = []
-    """Arguments for the command."""
+        Args:
+            name: Instance name (required).
+            server: StdioMCPServer or RemoteMCPServer instance.
+        """
+        if not name:
+            raise ValueError("MCP provider requires an instance name")
 
-    env: dict[str, str] = {}
-    """Environment variables for the command."""
-
-    url: str | None = None
-    """URL for remote MCP server."""
-
-    headers: dict[str, str] = {}
-    """HTTP headers for remote server."""
-
-    _instance: str = "default"
-    _server: StdioMCPServer | RemoteMCPServer | None = None
-    _client: Client | None = None
+        super().__init__()
+        self._instance = name
+        self._server = server
+        self._client = None
+        self.schemes = [f"mcp.{name}"]
 
     @classmethod
     def from_config(cls, name: str | None, config: dict[str, Any]) -> Self:
-        """Create MCP provider from configuration."""
-        if name == "":
+        """Create MCP provider from TOML configuration.
+
+        Args:
+            name: Instance name from TOML config.
+            config: Config dict with command, args, env, url, headers.
+
+        Returns:
+            Configured MCPProvider instance.
+        """
+        if not name:
             raise ValueError("MCP provider requires an instance name")
-
-        instance = cls(**config)
-        instance._instance = name or "default"
-        instance.schemes = [f"mcp.{name}" if name else "mcp"]
-
-        if instance.url:
-            instance._server = RemoteMCPServer(
-                url=instance.url,
-                headers=instance.headers,
-            )
-        elif instance.command:
-            instance._server = StdioMCPServer(
-                command=instance.command,
-                args=instance.args,
-                env=instance.env,
-            )
-        else:
-            raise ValueError("MCP provider requires 'command' or 'url' config")
-        return instance
+        server = MCPServerAdapter.validate_python(config)
+        return cls(name, server)
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:

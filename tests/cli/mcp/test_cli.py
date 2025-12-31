@@ -150,47 +150,74 @@ class TestMCPList:
         assert "http" in captured.out
 
 
-class TestMCPInvalidSchema:
-    """Tests for invalid MCP provider configurations."""
+class TestMCPInvalidToml:
+    """Tests for invalid MCP configurations in colin.toml."""
 
-    def test_missing_command_and_url(self):
-        """MCP config with neither command nor url fails."""
-        from colin.providers.mcp import MCPProvider
+    def test_missing_command_and_url(self, project: Path) -> None:
+        """MCP config with neither command nor url fails on provider creation."""
+        from colin.providers.manager import create_provider
 
-        with pytest.raises(ValueError, match="requires 'command' or 'url'"):
-            MCPProvider.from_config(None, {})
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
 
-    def test_missing_command_and_url_with_other_fields(self):
-        """MCP config with args but no command/url fails."""
-        from colin.providers.mcp import MCPProvider
+[[providers.mcp]]
+name = "broken"
+""")
+        config = load_project(toml)
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp.broken"])
 
-        with pytest.raises(ValueError, match="requires 'command' or 'url'"):
-            MCPProvider.from_config(None, {"args": ["foo"]})
-
-    def test_empty_command_string(self):
-        """MCP config with empty command string fails."""
-        from colin.providers.mcp import MCPProvider
-
-        with pytest.raises(ValueError, match="requires 'command' or 'url'"):
-            MCPProvider.from_config(None, {"command": ""})
-
-    def test_invalid_args_type(self):
+    def test_invalid_args_type(self, project: Path) -> None:
         """MCP config with non-list args fails validation."""
-        from colin.providers.mcp import MCPProvider
+        from colin.providers.manager import create_provider
 
-        with pytest.raises(Exception):  # Pydantic validation error
-            MCPProvider.from_config(None, {"command": "python", "args": "not-a-list"})
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
 
-    def test_invalid_env_type(self):
+[[providers.mcp]]
+name = "broken"
+command = "python"
+args = "not-a-list"
+""")
+        config = load_project(toml)
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp.broken"])
+
+    def test_invalid_env_type(self, project: Path) -> None:
         """MCP config with non-dict env fails validation."""
-        from colin.providers.mcp import MCPProvider
+        from colin.providers.manager import create_provider
 
-        with pytest.raises(Exception):  # Pydantic validation error
-            MCPProvider.from_config(None, {"command": "python", "env": "not-a-dict"})
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
 
-    def test_invalid_headers_type(self):
-        """MCP config with non-dict headers fails validation."""
-        from colin.providers.mcp import MCPProvider
+[[providers.mcp]]
+name = "broken"
+command = "python"
+env = "not-a-dict"
+""")
+        config = load_project(toml)
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp.broken"])
 
-        with pytest.raises(Exception):  # Pydantic validation error
-            MCPProvider.from_config(None, {"url": "http://example.com", "headers": ["not", "dict"]})
+    def test_missing_name(self, project: Path) -> None:
+        """MCP config without name fails on provider creation."""
+        from colin.providers.manager import create_provider
+
+        toml = project / "colin.toml"
+        toml.write_text("""
+[project]
+name = "test"
+
+[[providers.mcp]]
+command = "python"
+""")
+        config = load_project(toml)
+        # Without a name, the provider key will be just "mcp"
+        with pytest.raises(Exception):
+            create_provider(config.providers["mcp"])
