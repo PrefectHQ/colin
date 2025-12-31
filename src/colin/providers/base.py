@@ -1,7 +1,8 @@
 """Provider base class for URI handlers."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 
@@ -63,3 +64,19 @@ class Provider(ABC):
             Last update time, or None if unknown. None means "treat as stale".
         """
         return None
+
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        """Provider lifecycle hook for resource management.
+
+        Override this to manage resources like database connections or HTTP clients.
+        The manager enters this context at startup and exits at shutdown.
+
+        Example:
+            @asynccontextmanager
+            async def lifespan(self) -> AsyncIterator[None]:
+                async with httpx.AsyncClient() as client:
+                    self._client = client
+                    yield
+        """
+        yield

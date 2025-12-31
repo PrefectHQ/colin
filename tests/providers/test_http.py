@@ -1,7 +1,7 @@
 """Tests for HTTP provider."""
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -91,9 +91,9 @@ class TestHTTPProviderRead:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            result = await provider.read("https://example.com/test.txt")
+        result = await provider.read("https://example.com/test.txt")
 
         assert result == "Hello, World!"
         mock_client.get.assert_called_once_with("https://example.com/test.txt")
@@ -107,10 +107,10 @@ class TestHTTPProviderRead:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            with pytest.raises(FileNotFoundError, match="URL not found"):
-                await provider.read("https://example.com/missing.txt")
+        with pytest.raises(FileNotFoundError, match="URL not found"):
+            await provider.read("https://example.com/missing.txt")
 
     async def test_read_raises_on_other_http_errors(self) -> None:
         """read() raises HTTPStatusError on non-404 errors."""
@@ -126,10 +126,17 @@ class TestHTTPProviderRead:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            with pytest.raises(httpx.HTTPStatusError):
-                await provider.read("https://example.com/error")
+        with pytest.raises(httpx.HTTPStatusError):
+            await provider.read("https://example.com/error")
+
+    async def test_read_raises_when_not_initialized(self) -> None:
+        """read() raises RuntimeError when called outside lifespan."""
+        provider = HTTPProvider()
+
+        with pytest.raises(RuntimeError, match="not initialized"):
+            await provider.read("https://example.com/test.txt")
 
 
 class TestHTTPProviderGetLastUpdated:
@@ -145,9 +152,9 @@ class TestHTTPProviderGetLastUpdated:
 
         mock_client = AsyncMock()
         mock_client.head = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            result = await provider.get_last_updated("https://example.com/file.txt")
+        result = await provider.get_last_updated("https://example.com/file.txt")
 
         assert result is not None
         assert result.year == 2024
@@ -164,9 +171,9 @@ class TestHTTPProviderGetLastUpdated:
 
         mock_client = AsyncMock()
         mock_client.head = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            result = await provider.get_last_updated("https://example.com/file.txt")
+        result = await provider.get_last_updated("https://example.com/file.txt")
 
         assert result is None
 
@@ -179,9 +186,9 @@ class TestHTTPProviderGetLastUpdated:
 
         mock_client = AsyncMock()
         mock_client.head = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            result = await provider.get_last_updated("https://example.com/missing.txt")
+        result = await provider.get_last_updated("https://example.com/missing.txt")
 
         assert result is None
 
@@ -191,9 +198,9 @@ class TestHTTPProviderGetLastUpdated:
 
         mock_client = AsyncMock()
         mock_client.head = AsyncMock(side_effect=httpx.ConnectError("Connection failed"))
+        provider._client = mock_client
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            result = await provider.get_last_updated("https://example.com/file.txt")
+        result = await provider.get_last_updated("https://example.com/file.txt")
 
         assert result is None
 
@@ -216,11 +223,11 @@ class TestHTTPProviderTemplateGet:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
 
         mock_ctx = MagicMock()
 
-        with patch.object(provider, "_get_client", return_value=mock_client):
-            result = await provider._template_get(mock_ctx, "https://api.example.com/data")
+        result = await provider._template_get(mock_ctx, "https://api.example.com/data")
 
         assert isinstance(result, HTTPResource)
         assert result.uri == "https://api.example.com/data"
@@ -259,24 +266,25 @@ class TestHTTPProviderNormalizeUrl:
 
 
 class TestHTTPProviderLifecycle:
-    """Tests for HTTPProvider client lifecycle."""
+    """Tests for HTTPProvider lifespan lifecycle."""
 
-    async def test_close_closes_client(self) -> None:
-        """close() properly closes the HTTP client."""
+    async def test_lifespan_creates_and_clears_client(self) -> None:
+        """lifespan() creates client on enter and clears on exit."""
         provider = HTTPProvider()
 
-        mock_client = AsyncMock()
-        mock_client.aclose = AsyncMock()
-        provider._client = mock_client
-
-        await provider.close()
-
-        mock_client.aclose.assert_called_once()
         assert provider._client is None
 
-    async def test_close_is_safe_when_no_client(self) -> None:
-        """close() is safe to call when no client exists."""
-        provider = HTTPProvider()
+        async with provider.lifespan():
+            assert provider._client is not None
+            assert isinstance(provider._client, httpx.AsyncClient)
 
-        # Should not raise
-        await provider.close()
+        assert provider._client is None
+
+    async def test_lifespan_uses_configured_timeout(self) -> None:
+        """lifespan() creates client with configured timeout."""
+        provider = HTTPProvider(timeout=60.0)
+
+        async with provider.lifespan():
+            assert provider._client is not None
+            # httpx.AsyncClient stores timeout as Timeout object
+            assert provider._client.timeout.connect == 60.0
