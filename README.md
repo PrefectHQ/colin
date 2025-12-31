@@ -94,6 +94,15 @@ LLM extracts specific information from content:
 {{ ref('customer-calls') | extract('feature requests mentioned') }}
 ```
 
+### http.get() — Fetch Web Content
+
+Pull content directly from URLs:
+
+```jinja
+{{ http.get('https://api.example.com/data.json') }}
+{{ http.get('example.com/api/users') }}  {# https:// added automatically #}
+```
+
 ### mcp.server.resource() — Fetch Live Data
 
 Pull from external sources via MCP:
