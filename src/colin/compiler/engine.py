@@ -255,7 +255,7 @@ class CompileEngine:
             is_stale, reason = await self._is_document_stale(doc, provider_manager, recompiled_uris)
             if not is_stale:
                 if doc_state:
-                    doc_state.mark_skipped(reason)
+                    doc_state.mark_cached()
                 skipped_uris.add(uri)
                 return (uri, None, False)
 
