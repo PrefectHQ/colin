@@ -191,7 +191,9 @@ Colin compiles `company` first (no dependencies), then `pitch` (depends on `comp
 name = "my-context"
 model-path = "models"
 target-path = "target"
-default-llm-model = "anthropic:claude-sonnet-4-5"
+
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-5"
 
 [[providers.mcp]]
 name = "linear"

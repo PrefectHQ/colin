@@ -48,7 +48,17 @@ target-path = "target"
 | `name` | Project name for display | Directory name |
 | `model-path` | Source documents directory | `models` |
 | `target-path` | Compiled output directory | `target` |
-| `default-llm-model` | Default model for LLM operations | `anthropic:claude-sonnet-4-5` |
+
+### LLM Provider
+
+Configure the default LLM model:
+
+```toml colin.toml
+[[providers.llm]]
+model = "anthropic:claude-haiku-4-5"
+```
+
+See [Configuration](/running/configuration#llm-provider) for details on model identifiers and overrides.
 
 ### MCP Servers
 

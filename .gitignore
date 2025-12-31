@@ -55,6 +55,7 @@ dmypy.json
 .envrc
 .envrc.private
 .direnv/
+.worktrees/
 
 # Logs and databases
 *.log

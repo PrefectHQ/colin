@@ -104,7 +104,6 @@ class ProjectConfig(BaseModel):
     """Absolute path to target directory."""
     manifest_path: Path
     """Absolute path to manifest file."""
-    default_llm_model: str | None = None
 
     # Provider configuration
     project_storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -261,7 +260,6 @@ def load_project(path: Path) -> ProjectConfig:
         model_path=model_path,
         target_path=target_path,
         manifest_path=manifest_path,
-        default_llm_model=project.get("default-llm-model"),
         project_storage=project_storage,
         artifacts_storage=artifacts_storage,
         providers=providers,
@@ -353,8 +351,6 @@ def save_project(path: Path, config: ProjectConfig) -> None:
         "model-path": str(model_path_rel),
         "target-path": str(target_path_rel),
     }
-    if config.default_llm_model:
-        project_data["default-llm-model"] = config.default_llm_model
 
     data: dict[str, Any] = {"project": project_data}
 
