@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+from collections.abc import Coroutine
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from colin.compiler.state import OperationState, Status
 from colin.exceptions import RefNotFoundError
-from colin.models import CompiledDocument, LLMCall, RefResult
-from colin.providers.manager import ProviderManager
-from colin.providers.referenceable import Referenceable
+from colin.models import Address, CompiledDocument, LLMCall
+from colin.providers.addressable import Addressable
+from colin.providers.file import FileResource
+from colin.providers.project import ProjectResource
 
 if TYPE_CHECKING:
     from colin.models import Manifest
     from colin.providers.project import ProjectProvider
 
-
-def _strip_scheme(uri: str) -> str:
-    """Strip URI scheme prefix for cleaner display."""
-    if "://" in uri:
-        return uri.split("://", 1)[1]
-    return uri
+T = TypeVar("T", bound=Addressable)
 
 
 class CompileContext:
@@ -35,7 +34,6 @@ class CompileContext:
         document_uri: str,
         project_provider: ProjectProvider,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
-        provider_manager: ProviderManager | None = None,
         doc_state: OperationState | None = None,
     ) -> None:
         """Initialize the compile context.
@@ -45,150 +43,121 @@ class CompileContext:
             document_uri: URI of the document being compiled.
             project_provider: Provider for reading compiled outputs (refs).
             compiled_outputs: Already-compiled documents from current run.
-            provider_manager: Provider manager for external schemes.
             doc_state: Optional state for progress tracking.
         """
         self.manifest = manifest
         self.document_uri = document_uri
         self.project_provider = project_provider
         self.compiled_outputs = compiled_outputs or {}
-        self.provider_manager = provider_manager or ProviderManager()
         self.doc_state = doc_state
 
         # Tracking during render
-        self.refs_evaluated: list[str] = []
+        self.refs_evaluated: list[Address] = []
         self.llm_calls: dict[str, LLMCall] = {}
         self.total_cost: float = 0.0
 
-    async def ref(self, target: str | Referenceable) -> RefResult:
-        """Fetch content from a referenced document or referenceable object.
+    @overload
+    async def ref(self, target: str) -> FileResource: ...
 
-        This:
-        1. Handles referenceable objects by calling to_ref_result()
-        2. Normalizes shorthand refs to project:// URIs
-        3. Records the dependency edge
-        4. Returns the compiled content of the referenced document
+    @overload
+    async def ref(self, target: T) -> T: ...
 
-        Shorthand URIs (e.g., 'data') are normalized to project://data.md.
+    @overload
+    async def ref(self, target: Coroutine[Any, Any, T]) -> T: ...
+
+    async def ref(self, target: str | T | Coroutine[Any, Any, T]) -> FileResource | T:
+        """Track a dependency and return the addressable resource.
+
+        Usage in templates:
+            {{ ref("other-doc") }}                    # Project ref
+            {{ ref(s3.get("bucket/key")) }}           # S3 resource, tracked
+            {{ ref(mcp.github.resource("...")) }}    # MCP resource, tracked
+
+        For provider resources, wrap the provider call in ref() to track
+        it as a dependency. Without ref(), the resource is fetched but
+        not tracked for staleness checking.
 
         Args:
-            target: URI string or object implementing Referenceable protocol.
+            target: One of:
+                - String path: relative path for project refs (e.g., "other-doc")
+                - Coroutine: async provider call (e.g., s3.get("..."))
+                - Addressable: already-fetched resource to track
 
         Returns:
-            RefResult with content and metadata.
+            The same type passed in: ProjectResource for strings, T for Addressable/Coroutine[T].
 
         Raises:
             RefNotFoundError: If the referenced document doesn't exist.
         """
-        # Handle referenceable objects (e.g., MCPResource, MCPPrompt)
-        if isinstance(target, Referenceable):
-            result = target.to_ref_result()
-            self.track_ref(result.uri)
+        # Handle coroutines from provider calls (e.g., ref(s3.get("...")))
+        if asyncio.iscoroutine(target):
+            target = await target
+
+        # Handle addressable objects (e.g., MCPResource, HTTPResource, S3Resource)
+        if isinstance(target, Addressable):
+            self._track_address(target.address())
+            return cast(T, target)
+
+        # String path → project ref
+        path = self._normalize_path(target)
+        uri = f"project://{path}"
+
+        # Check in-memory compiled outputs first (from current compile run)
+        if uri in self.compiled_outputs:
+            compiled = self.compiled_outputs[uri]
+            name_val = compiled.frontmatter.metadata.get("name")
+            desc_val = compiled.frontmatter.metadata.get("description")
+            resource = ProjectResource(
+                path=path,
+                _content=compiled.output,
+                name=name_val if isinstance(name_val, str) else path.split("/")[-1],
+                description=desc_val if isinstance(desc_val, str) else None,
+                _last_updated=datetime.now(timezone.utc),
+            )
+            is_first = self._track_address(resource.address())
+            if is_first and self.doc_state is not None:
+                op = self.doc_state.child("ref", detail=path)
+                op.status = Status.DONE
+            return resource
+
+        # Fetch from storage via project provider
+        async def fetch_from_provider() -> ProjectResource:
+            try:
+                result = await self.project_provider.load_uri(uri)
+            except FileNotFoundError as e:
+                raise RefNotFoundError(f"Referenced document not found: {path}") from e
             return result
 
-        # Normalize shorthand refs to project:// URIs
-        uri = self._normalize_uri(target)
-        scheme, path = self._split_uri(uri)
+        is_first = self._track_address(
+            Address(provider="project", instance="", payload={"path": path})
+        )
+        if is_first and self.doc_state is not None:
+            with self.doc_state.child("ref", detail=path):
+                return await fetch_from_provider()
+        return await fetch_from_provider()
 
-        # Record the dependency (only track first ref to each URI)
-        is_first_ref = uri not in self.refs_evaluated
-        if is_first_ref:
-            self.refs_evaluated.append(uri)
+    def _normalize_path(self, path: str) -> str:
+        """Normalize a path for project refs.
 
-        if scheme == "project":
-            # Check in-memory compiled outputs first (from current compile run)
-            if uri in self.compiled_outputs:
-                compiled = self.compiled_outputs[uri]
-                name_val = compiled.frontmatter.metadata.get("name")
-                desc_val = compiled.frontmatter.metadata.get("description")
-                # Track as completed ref (no processing needed for in-memory)
-                if is_first_ref and self.doc_state is not None:
-                    op = self.doc_state.child("ref", detail=_strip_scheme(uri))
-                    op.status = Status.DONE
-                return RefResult(
-                    name=name_val if isinstance(name_val, str) else uri.split("/")[-1],
-                    description=desc_val if isinstance(desc_val, str) else None,
-                    content=compiled.output,
-                    template="",  # Not needed for in-memory refs
-                    updated=datetime.now(timezone.utc),
-                    uri=uri,
-                )
-
-            # Fetch from storage via project provider
-            async def fetch_from_provider() -> RefResult:
-                try:
-                    content = await self.project_provider.read(uri)
-                except FileNotFoundError as e:
-                    raise RefNotFoundError(f"Referenced document not found: {uri}") from e
-
-                # Get actual compiled_at timestamp from manifest (or now if unavailable)
-                last_updated = await self.project_provider.get_last_updated(uri)
-                updated = last_updated or datetime.now(timezone.utc)
-
-                # Create RefResult from raw content
-                return RefResult(
-                    name=path.split("/")[-1],  # Filename from path
-                    description=None,
-                    content=content,
-                    template="",
-                    updated=updated,
-                    uri=uri,
-                )
-
-            if is_first_ref and self.doc_state is not None:
-                with self.doc_state.child("ref", detail=_strip_scheme(uri)):
-                    return await fetch_from_provider()
-            return await fetch_from_provider()
-
-        async def fetch_external() -> RefResult:
-            try:
-                provider = self.provider_manager.get_provider(scheme)
-            except KeyError as e:
-                raise ValueError(f"No provider registered for scheme '{scheme}'") from e
-            try:
-                content = await provider.read(uri)
-            except FileNotFoundError as e:
-                raise RefNotFoundError(f"Referenced document not found: {uri}") from e
-
-            # Get actual timestamp from provider (or now if unavailable)
-            last_updated = await provider.get_last_updated(uri)
-            updated = last_updated or datetime.now(timezone.utc)
-
-            name = path.split("/")[-1] or uri
-            return RefResult(
-                name=name,
-                description=None,
-                content=content,
-                template="",
-                updated=updated,
-                uri=uri,
-            )
-
-        if is_first_ref and self.doc_state is not None:
-            with self.doc_state.child("ref", detail=_strip_scheme(uri)):
-                return await fetch_external()
-        return await fetch_external()
-
-    def _normalize_uri(self, uri: str) -> str:
-        """Normalize a URI to project:// format.
-
-        Converts shorthand refs like 'data' to 'project://data.md'.
+        Adds .md extension if missing.
         """
-        if "://" in uri:
-            return uri
-        if not uri.endswith(".md"):
-            uri = f"{uri}.md"
-        return f"project://{uri}"
+        if not path.endswith(".md"):
+            path = f"{path}.md"
+        return path
 
-    def _split_uri(self, uri: str) -> tuple[str, str]:
-        """Split a URI into scheme and path."""
-        scheme, path = uri.split("://", 1)
-        return scheme, path
+    def _track_address(self, addr: Address) -> bool:
+        """Record an address as a dependency. Returns True if first time seen."""
+        # Use JSON serialization for deduplication
+        addr_key = json.dumps(addr, sort_keys=True)
+        for existing in self.refs_evaluated:
+            if json.dumps(existing, sort_keys=True) == addr_key:
+                return False
+        self.refs_evaluated.append(addr)
+        return True
 
-    def track_ref(self, uri: str) -> None:
+    def track_ref(self, addr: Address) -> None:
         """Record a ref dependency without fetching content."""
-        if uri not in self.refs_evaluated:
-            self.refs_evaluated.append(uri)
+        self._track_address(addr)
 
     def add_llm_call(self, call: LLMCall) -> None:
         """Record an LLM call made during compilation.

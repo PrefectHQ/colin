@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from colin.models import CompiledDocument, RefResult
+    from colin.models import CompiledDocument
+    from colin.providers.addressable import Addressable
 
 
 class InputPlugin(Protocol):
@@ -15,14 +16,14 @@ class InputPlugin(Protocol):
     scheme: str
     """URI scheme this plugin handles (e.g., 'file', 'mcp', 'colin')."""
 
-    async def fetch(self, uri: str) -> RefResult:
+    async def fetch(self, uri: str) -> Addressable:
         """Fetch content and metadata for a URI.
 
         Args:
             uri: The URI to fetch.
 
         Returns:
-            RefResult with content and metadata.
+            Addressable object with content and metadata.
         """
         ...
 

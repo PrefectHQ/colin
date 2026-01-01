@@ -1,64 +1,63 @@
 """Tests for provider template namespaces."""
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any, ClassVar
 
-from colin.models import Manifest, RefResult
+from colin.models import Address
+from colin.providers.addressable import Addressable
 from colin.providers.base import Provider
-from colin.providers.context import ProviderContext
 from colin.providers.manager import ProviderManager
-from colin.providers.referenceable import Referenceable
+
+
+@dataclass
+class DummyResource(Addressable):
+    """Simple Addressable for testing."""
+
+    path: str
+    _content: str
+
+    @property
+    def content(self) -> str:
+        return self._content
+
+    @property
+    def last_updated(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    def address(self) -> Address:
+        return Address(provider="dummy", instance="", payload={"path": self.path})
 
 
 class DummyProvider(Provider):
     """Simple provider for namespace tests."""
 
+    namespace: ClassVar[str] = "dummy"
     _label: str = ""
-    _namespace: str = "default"
 
-    def __init__(self, scheme: str, label: str, **kwargs) -> None:
+    def __init__(self, namespace_name: str, label: str, **kwargs: object) -> None:
         super().__init__(**kwargs)
-        self.schemes = [scheme]
         self._label = label
-        # Extract namespace from scheme (handle "s3" and "s3.dev" -> both map to "s3")
-        self._namespace = scheme.split(".")[0]
+        # Override the class-level namespace for this instance
+        # Note: We use a workaround since namespace is a ClassVar
+        self.__class__ = type(
+            f"DummyProvider_{namespace_name}_{label}",
+            (DummyProvider,),
+            {"namespace": namespace_name},
+        )
 
-    @property
-    def namespace(self) -> str:
-        """Return the namespace for this provider."""
-        return self._namespace
-
-    async def read(self, uri: str) -> str:
-        return f"{self._label}:{uri}"
+    async def load_address(self, payload: dict[str, Any]) -> DummyResource:
+        path = payload["path"]
+        return DummyResource(path=path, _content=f"{self._label}:{path}")
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
-        async def read(ctx: ProviderContext, path: str) -> str:
-            return f"{self._label}:{path}"
+        label = self._label
+
+        async def read(path: str) -> str:
+            return f"{label}:{path}"
 
         return {"read": read}
-
-
-async def _fake_ref(target: str | Referenceable) -> RefResult:
-    # In tests, we only pass strings
-    uri = target if isinstance(target, str) else target.uri
-    return RefResult(
-        name="ref",
-        description=None,
-        content="content",
-        template="",
-        updated=datetime.now(timezone.utc),
-        uri=uri,
-    )
-
-
-def _make_context() -> ProviderContext:
-    return ProviderContext(
-        manifest=Manifest(),
-        document_uri="project://test.md",
-        doc_state=None,
-        ref=_fake_ref,
-        track_ref=lambda _uri: None,
-    )
 
 
 async def test_namespace_default_instance_fallback() -> None:
@@ -67,11 +66,9 @@ async def test_namespace_default_instance_fallback() -> None:
     # Register default s3 provider (no instance name)
     manager.register(DummyProvider("s3", "default"))
     # Register named instance (same namespace, but instance="dev")
-    dev_provider = DummyProvider("s3", "dev")
-    dev_provider.schemes = ["s3.dev"]  # Different scheme for routing
-    manager.register(dev_provider, instance="dev")
+    manager.register(DummyProvider("s3", "dev"), instance="dev")
 
-    providers = manager.namespace(_make_context())
+    providers = manager.namespace()
 
     # type: ignore needed - Namespace returns object, but works at runtime
     assert await providers.s3.read("config.json") == "default:config.json"  # type: ignore[attr-defined]

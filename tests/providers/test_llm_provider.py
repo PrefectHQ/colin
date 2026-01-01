@@ -1,19 +1,14 @@
 """Tests for LLM provider functions."""
 
-from datetime import datetime, timezone
-
 import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
 from colin.compiler.context import CompileContext
-from colin.models import Manifest, RefResult
+from colin.models import Manifest
 from colin.providers.cache import set_compile_context
-from colin.providers.context import ProviderContext
 from colin.providers.llm import LLMProvider
 from colin.providers.project import ProjectProvider
-from colin.providers.referenceable import Referenceable
-from colin.providers.storage.file import FileStorage
 
 
 class TestLLMProvider:
@@ -23,30 +18,8 @@ class TestLLMProvider:
         return LLMProvider(model="test")
 
     @pytest.fixture
-    def provider_ctx(self) -> ProviderContext:
-        async def fake_ref(target: str | Referenceable) -> RefResult:
-            uri = target if isinstance(target, str) else target.uri
-            return RefResult(
-                name="ref",
-                description=None,
-                content="content",
-                template="",
-                updated=datetime.now(timezone.utc),
-                uri=uri,
-            )
-
-        return ProviderContext(
-            manifest=Manifest(),
-            document_uri="project://test.md",
-            doc_state=None,
-            ref=fake_ref,
-            track_ref=lambda _uri: None,
-        )
-
-    @pytest.fixture
     def compile_ctx(self, tmp_path) -> CompileContext:
-        storage = FileStorage(base_path=tmp_path)
-        project_provider = ProjectProvider(storage=storage)
+        project_provider = ProjectProvider(base_path=tmp_path)
         return CompileContext(
             manifest=Manifest(),
             document_uri="project://test.md",
@@ -71,12 +44,12 @@ class TestLLMProvider:
         assert "complete" in funcs
 
     async def test_extract_returns_result(
-        self, provider: LLMProvider, provider_ctx: ProviderContext, compile_ctx: CompileContext
+        self, provider: LLMProvider, compile_ctx: CompileContext
     ) -> None:
         """Test that extract returns a result using TestModel."""
         set_compile_context(compile_ctx)
         try:
-            result = await provider._extract(provider_ctx, "content", "prompt")
+            result = await provider._extract("content", "prompt")
         finally:
             set_compile_context(None)
 
@@ -84,25 +57,25 @@ class TestLLMProvider:
         assert isinstance(result, str)
 
     async def test_extract_records_llm_call(
-        self, provider: LLMProvider, provider_ctx: ProviderContext, compile_ctx: CompileContext
+        self, provider: LLMProvider, compile_ctx: CompileContext
     ) -> None:
         """Test that extract records the LLM call in context."""
         set_compile_context(compile_ctx)
         try:
-            await provider._extract(provider_ctx, "content", "prompt")
+            await provider._extract("content", "prompt")
         finally:
             set_compile_context(None)
 
         assert len(compile_ctx.llm_calls) == 1
 
     async def test_extract_uses_cache(
-        self, provider: LLMProvider, provider_ctx: ProviderContext, compile_ctx: CompileContext
+        self, provider: LLMProvider, compile_ctx: CompileContext
     ) -> None:
         """Test that extract uses cache on second call with same inputs."""
         set_compile_context(compile_ctx)
         try:
-            result1 = await provider._extract(provider_ctx, "content", "prompt")
-            result2 = await provider._extract(provider_ctx, "content", "prompt")
+            result1 = await provider._extract("content", "prompt")
+            result2 = await provider._extract("content", "prompt")
         finally:
             set_compile_context(None)
 
@@ -111,13 +84,13 @@ class TestLLMProvider:
         assert len(compile_ctx.llm_calls) == 1
 
     async def test_extract_bypasses_cache_when_disabled(
-        self, provider: LLMProvider, provider_ctx: ProviderContext, compile_ctx: CompileContext
+        self, provider: LLMProvider, compile_ctx: CompileContext
     ) -> None:
         """Test that _cache=False bypasses the cache."""
         set_compile_context(compile_ctx)
         try:
-            await provider._extract(provider_ctx, "content", "prompt", _cache=False)
-            await provider._extract(provider_ctx, "content", "prompt", _cache=False)
+            await provider._extract("content", "prompt", _cache=False)
+            await provider._extract("content", "prompt", _cache=False)
         finally:
             set_compile_context(None)
 
@@ -126,9 +99,7 @@ class TestLLMProvider:
         # LLM call is still recorded (last one with same call_id)
         assert len(compile_ctx.llm_calls) == 1
 
-    async def test_extract_records_failure(
-        self, provider_ctx: ProviderContext, compile_ctx: CompileContext
-    ) -> None:
+    async def test_extract_records_failure(self, compile_ctx: CompileContext) -> None:
         """Test that extract records failed LLM calls with is_successful=False."""
 
         def failing_model(messages, info):
@@ -139,7 +110,7 @@ class TestLLMProvider:
         set_compile_context(compile_ctx)
         try:
             with pytest.raises(RuntimeError, match="LLM error"):
-                await provider._extract(provider_ctx, "content", "prompt")
+                await provider._extract("content", "prompt")
         finally:
             set_compile_context(None)
 
@@ -149,9 +120,7 @@ class TestLLMProvider:
         assert llm_call.is_successful is False
         assert llm_call.error == "LLM error"
 
-    async def test_extract_failure_not_cached(
-        self, provider_ctx: ProviderContext, compile_ctx: CompileContext
-    ) -> None:
+    async def test_extract_failure_not_cached(self, compile_ctx: CompileContext) -> None:
         """Test that failed LLM calls are not cached."""
         call_count = 0
 
@@ -168,10 +137,10 @@ class TestLLMProvider:
         try:
             # First call fails
             with pytest.raises(RuntimeError, match="First call fails"):
-                await provider._extract(provider_ctx, "content", "prompt")
+                await provider._extract("content", "prompt")
 
             # Second call with same inputs should NOT use cache (failures not cached)
-            result = await provider._extract(provider_ctx, "content", "prompt")
+            result = await provider._extract("content", "prompt")
             assert result == "success"
         finally:
             set_compile_context(None)

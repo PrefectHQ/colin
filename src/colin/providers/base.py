@@ -1,55 +1,53 @@
-"""Provider base class for URI handlers."""
+"""Provider base class."""
 
 from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import Self
 
+if TYPE_CHECKING:
+    from colin.providers.addressable import Addressable
+
 
 class Provider(BaseModel):
-    """Base class for all providers. Low-level I/O for URI schemes.
+    """Base class for all providers.
 
-    Providers handle reading content from URIs. The `schemes` list defines
-    which URI schemes route to this provider. The `namespace` is used for
-    template namespaces and config (defaults to schemes[0]).
+    Providers expose template functions (via get_functions()) and support
+    re-fetching from structured addresses (via load_address()).
 
-    Returns raw content (str), not RefResult. The ref() function handles
-    wrapping content in RefResult and tracking dependencies.
+    The `namespace` determines the template namespace (e.g., `s3`, `mcp.github`).
 
-    Subclasses must set `schemes` (at least one) and implement `read()`.
-    Provider config fields are defined as Pydantic fields on the subclass.
+    Subclasses must:
+    - Set `namespace` (class variable)
+    - Implement `load_address()` for re-fetching from structured payloads
+
+    The payload should include a 'type' field when the provider supports
+    multiple addressable types, enabling TypeAdapter-based discrimination.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    schemes: list[str] = []
-    """URI schemes this provider handles for routing. Set by framework from config."""
-
     namespace: ClassVar[str | None] = None
-    """Template/config namespace. Auto-set to schemes[0] if not specified."""
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        super().__init_subclass__(**kwargs)
-        # Auto-set namespace from schemes[0] if not explicitly set
-        schemes = getattr(cls, "schemes", None)
-        if schemes and cls.namespace is None:
-            # schemes might be a FieldInfo during class construction
-            if isinstance(schemes, list):
-                cls.namespace = schemes[0]
+    """Template namespace for this provider (e.g., 's3', 'mcp')."""
 
     @abstractmethod
-    async def read(self, uri: str) -> str:
-        """Read content from URI.
+    async def load_address(self, payload: dict[str, Any]) -> "Addressable":
+        """Load a resource from structured payload.
+
+        Used for re-fetching resources from stored addresses and for
+        staleness checking. The payload format is provider-specific.
 
         Args:
-            uri: Full URI including scheme (e.g., 'https://example.com/data').
+            payload: Provider-specific data for fetching the resource.
+                     Should include 'type' field for discrimination when
+                     provider has multiple addressable types.
 
         Returns:
-            Raw content as string.
+            Addressable object with content and metadata.
 
         Raises:
             FileNotFoundError: If resource doesn't exist.
@@ -60,50 +58,27 @@ class Provider(BaseModel):
         """Return template functions this provider contributes."""
         return {}
 
-    async def get_last_updated(self, uri: str) -> datetime | None:
-        """Get last update time for a resource without reading content.
+    async def get_last_updated(self, payload: dict[str, Any]) -> datetime | None:
+        """Get last update time without loading full content.
 
-        This enables efficient staleness detection. Providers should override
-        this to return timestamps without loading full content (e.g., file mtime,
-        HTTP HEAD request, manifest lookup).
+        Override for efficient staleness detection (e.g., HEAD request,
+        S3 metadata). Default loads the full resource.
 
         Args:
-            uri: Full URI including scheme.
+            payload: Provider-specific address payload.
 
         Returns:
-            Last update time, or None if unknown. None means "treat as stale".
+            Last modification time, or None if unknown.
         """
-        return None
+        result = await self.load_address(payload)
+        return result.last_updated
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
-        """Provider lifecycle hook for resource management.
-
-        Override this to manage resources like database connections or HTTP clients.
-        The manager enters this context at startup and exits at shutdown.
-
-        Example:
-            @asynccontextmanager
-            async def lifespan(self) -> AsyncIterator[None]:
-                async with httpx.AsyncClient() as client:
-                    self._client = client
-                    yield
-        """
+        """Provider lifecycle hook for resource management."""
         yield
 
     @classmethod
     def from_config(cls, name: str | None, config: dict[str, Any]) -> Self:
-        """Create provider instance from configuration.
-
-        Override this to handle provider-specific configuration.
-        The framework calls this with the instance name and config dict
-        from colin.toml (with reserved fields like 'schemes' stripped).
-
-        Args:
-            name: Instance name from [[providers.x]] name field, or None for default.
-            config: Provider-specific configuration dict.
-
-        Returns:
-            Configured provider instance.
-        """
+        """Create provider instance from configuration."""
         return cls(**config)

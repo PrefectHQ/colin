@@ -6,11 +6,9 @@ import importlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import datetime
 
 from colin.api.project import ProjectConfig, ProviderInstanceConfig
 from colin.providers.base import Provider
-from colin.providers.context import ProviderContext
 from colin.providers.http import HTTPProvider
 from colin.providers.llm import LLMProvider
 from colin.providers.mcp import MCPProvider
@@ -20,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
     "http": HTTPProvider,
-    "https": HTTPProvider,
     "llm": LLMProvider,
     "mcp": MCPProvider,
     "s3": "colin.providers.s3:S3Provider",  # Lazy import
@@ -47,9 +44,7 @@ def _get_provider_class(provider_type: str) -> type[Provider]:
 def create_provider(config: ProviderInstanceConfig) -> Provider:
     """Create a provider instance from configuration."""
     provider_cls = _get_provider_class(config.provider_type)
-    provider = provider_cls.from_config(config.name, config.config)
-    provider.schemes = config.get_schemes()
-    return provider
+    return provider_cls.from_config(config.name, config.config)
 
 
 class ProviderInstanceEntry:
@@ -82,8 +77,15 @@ class ProviderRegistry:
         else:
             entry.instances[instance] = instance_entry
 
-    def get_type(self, provider_type: str) -> ProviderTypeEntry:
-        return self._types[provider_type]
+    def get_provider(self, provider_type: str, instance: str | None = None) -> Provider | None:
+        """Get a provider by type and optional instance name."""
+        if provider_type not in self._types:
+            return None
+        entry = self._types[provider_type]
+        if instance:
+            inst_entry = entry.instances.get(instance)
+            return inst_entry.provider if inst_entry else None
+        return entry.default.provider if entry.default else None
 
     @property
     def types(self) -> dict[str, ProviderTypeEntry]:
@@ -94,47 +96,23 @@ class ProviderManager:
     """Manages provider lifecycle and namespace access."""
 
     def __init__(self) -> None:
-        self._providers: dict[str, Provider] = {}
         self._registry = ProviderRegistry()
+        self._all_providers: list[Provider] = []
 
-    def namespace(self, ctx: ProviderContext) -> Namespace:
-        return build_namespace(ctx, self._registry)
+    def namespace(self) -> Namespace:
+        return build_namespace(self._registry)
 
     def register(self, provider: Provider, instance: str | None = None) -> None:
-        """Register a provider for all its schemes."""
-        for scheme in provider.schemes:
-            self._providers[scheme] = provider
-        namespace = provider.namespace or provider.schemes[0]
+        """Register a provider."""
+        namespace = provider.namespace
+        if namespace is None:
+            raise ValueError(f"Provider {type(provider).__name__} has no namespace")
         self._registry.register(namespace, instance, provider)
+        self._all_providers.append(provider)
 
-    def get_provider(self, scheme: str) -> Provider:
-        return self._providers[scheme]
-
-    async def get_ref_last_updated(self, uri: str) -> datetime | None:
-        """Get last update time for a URI without loading content.
-
-        Parses the URI scheme and delegates to the appropriate provider's
-        get_last_updated() method.
-
-        Args:
-            uri: Full URI (e.g., 'project://greeting.md', 'mcp.linear://?resource=...')
-
-        Returns:
-            Last update time, or None if unknown (treat as stale).
-        """
-        if "://" not in uri:
-            # Schemaless - assume project://
-            uri = f"project://{uri}"
-
-        scheme = uri.split("://", 1)[0]
-
-        try:
-            provider = self.get_provider(scheme)
-        except KeyError:
-            # Unknown scheme - treat as stale
-            return None
-
-        return await provider.get_last_updated(uri)
+    def get_provider(self, provider_type: str, instance: str | None = None) -> Provider | None:
+        """Get a provider by type and optional instance name."""
+        return self._registry.get_provider(provider_type, instance)
 
 
 @asynccontextmanager
@@ -143,9 +121,9 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
     manager = ProviderManager()
 
     async with AsyncExitStack() as stack:
-        for instance in config.providers.values():
-            provider = create_provider(instance)
-            manager.register(provider, instance=instance.name)
+        for inst_config in config.providers.values():
+            provider = create_provider(inst_config)
+            manager.register(provider, instance=inst_config.name)
 
         # Register builtin providers if not configured
         if "http" not in manager._registry.types:
@@ -154,11 +132,8 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
         if "llm" not in manager._registry.types:
             manager.register(LLMProvider())
 
-        # Enter lifespans for unique provider instances
-        seen: set[int] = set()
-        for provider in manager._providers.values():
-            if id(provider) not in seen:
-                seen.add(id(provider))
-                await stack.enter_async_context(provider.lifespan())
+        # Enter lifespans for all providers
+        for provider in manager._all_providers:
+            await stack.enter_async_context(provider.lifespan())
 
         yield manager

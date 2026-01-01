@@ -5,17 +5,16 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext as _nullcontext
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic_ai import Agent
 from pydantic_ai.models import Model, infer_model
 
 from colin.llm.prompts import render_classify_prompt, render_complete_prompt, render_extract_prompt
 from colin.llm.types import LLMOutput, create_classification_model
-from colin.models import LLMCall, RefResult
+from colin.models import LLMCall
 from colin.providers.base import Provider
 from colin.providers.cache import _serialize_value, cached, get_compile_context, hash_args
-from colin.providers.context import ProviderContext
 from colin.settings import settings
 
 
@@ -28,20 +27,31 @@ def _truncate(text: str, max_len: int = 40) -> str:
 
 
 class LLMProvider(Provider):
-    """Provider wrapper for LLM template functions.
+    """Provider for LLM template functions.
+
+    Template usage:
+        {{ llm.complete("Write a haiku about...") }}
+        {{ llm.classify("Is this positive?", ["positive", "negative"]) }}
 
     Configuration via colin.toml:
         [[providers.llm]]
         model = "openai:gpt-4o"  # Override default model
     """
 
-    schemes: list[str] = ["llm"]
+    namespace: ClassVar[str] = "llm"
 
     model: str | Model | None = None
     """Model for LLM calls. Falls back to COLIN_DEFAULT_LLM_MODEL env var."""
 
-    async def read(self, uri: str) -> str:
-        raise ValueError("LLM provider does not support read()")
+    async def load_address(self, payload: dict[str, Any]):  # type: ignore[override]
+        """LLM provider does not support load_address.
+
+        LLM is a transformation provider that returns raw values (strings, labels),
+        not addressable resources. Use the template functions instead.
+        """
+        raise NotImplementedError(
+            "LLM provider does not support load_address - use template functions"
+        )
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         return {
@@ -53,15 +63,13 @@ class LLMProvider(Provider):
     @cached(key="llm.extract")
     async def _extract(
         self,
-        ctx: ProviderContext,
-        content: str | RefResult | object,
+        content: object,
         prompt: str,
         model: str | None = None,
     ) -> str:
         """Extract information from content using LLM.
 
         Args:
-            ctx: Provider context.
             content: The content to extract from.
             prompt: What to extract.
             model: Optional model override.
@@ -85,7 +93,7 @@ class LLMProvider(Provider):
         full_prompt = render_extract_prompt(serialized, prompt, previous_output)
 
         # Call LLM (with state tracking if enabled)
-        doc_state = ctx.doc_state
+        doc_state = compile_ctx.doc_state if compile_ctx else None
         op = doc_state.child("llm", detail=f"extract({_truncate(prompt)})") if doc_state else None
         with op if op else _nullcontext():
             try:
@@ -132,8 +140,7 @@ class LLMProvider(Provider):
     @cached(key="llm.classify")
     async def _classify(
         self,
-        ctx: ProviderContext,
-        content: str | RefResult | object,
+        content: object,
         labels: list[str | bool],
         model: str | None = None,
         multi: bool = False,
@@ -141,7 +148,6 @@ class LLMProvider(Provider):
         """Classify content into one or more predefined labels using LLM.
 
         Args:
-            ctx: Provider context.
             content: The content to classify.
             labels: List of valid labels to choose from.
             model: Optional model override.
@@ -179,7 +185,7 @@ class LLMProvider(Provider):
         ClassificationModel = create_classification_model(sorted_labels, multi)
 
         # Call LLM (with state tracking if enabled)
-        doc_state = ctx.doc_state
+        doc_state = compile_ctx.doc_state if compile_ctx else None
         labels_display = ",".join(str(lbl) for lbl in sorted_labels[:3])
         if len(sorted_labels) > 3:
             labels_display += "..."
@@ -244,7 +250,6 @@ class LLMProvider(Provider):
     @cached(key="llm.complete")
     async def _complete(
         self,
-        ctx: ProviderContext,
         prompt: str,
         model: str | None = None,
     ) -> str:
@@ -253,7 +258,6 @@ class LLMProvider(Provider):
         Used for {% llm %}...{% endllm %} blocks.
 
         Args:
-            ctx: Provider context.
             prompt: The prompt to complete.
             model: Optional model override.
 
@@ -275,7 +279,7 @@ class LLMProvider(Provider):
         full_prompt = render_complete_prompt(prompt, previous_output)
 
         # Call LLM (with state tracking if enabled)
-        doc_state = ctx.doc_state
+        doc_state = compile_ctx.doc_state if compile_ctx else None
         op = doc_state.child("llm", detail=f"complete({_truncate(prompt)})") if doc_state else None
         with op if op else _nullcontext():
             try:

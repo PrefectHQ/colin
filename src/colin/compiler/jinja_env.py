@@ -11,7 +11,6 @@ from colin.compiler.extensions.llm_block import LLMBlockExtension
 
 if TYPE_CHECKING:
     from colin.compiler.context import CompileContext
-    from colin.providers.context import ProviderContext
     from colin.providers.manager import ProviderManager
 
 
@@ -34,7 +33,6 @@ def bind_context_to_environment(
     env: Environment,
     context: CompileContext,
     provider_manager: ProviderManager,
-    provider_ctx: ProviderContext,
 ) -> Environment:
     """Bind compile context functions to the environment.
 
@@ -45,7 +43,6 @@ def bind_context_to_environment(
         env: The Jinja environment.
         context: The compile context.
         provider_manager: Provider manager for accessing providers.
-        provider_ctx: Provider context for function calls.
 
     Returns:
         The environment with context bound.
@@ -56,7 +53,7 @@ def bind_context_to_environment(
     # Core functions
     env.globals["ref"] = context.ref
 
-    providers = provider_manager.namespace(provider_ctx)
+    providers = provider_manager.namespace()
     env.globals["providers"] = providers
 
     # Builtin provider shortcuts

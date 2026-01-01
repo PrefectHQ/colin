@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Registered providers by scheme
+# Registered providers by namespace
 _PROVIDERS: dict[str, Provider] = {}
 
 # Registered renderers by name
@@ -20,16 +20,18 @@ _RENDERERS: dict[str, Renderer] = {}
 
 
 def register_provider(provider: Provider) -> None:
-    """Register a provider instance for all its schemes.
+    """Register a provider instance by its namespace.
 
     Args:
-        provider: Provider instance with 'schemes' attribute.
+        provider: Provider instance with 'namespace' ClassVar.
     """
-    for scheme in provider.schemes:
-        if scheme in _PROVIDERS:
-            logger.warning(f"Overwriting provider for scheme: {scheme}")
-        _PROVIDERS[scheme] = provider
-        logger.debug(f"Registered provider: {scheme}://")
+    namespace = provider.namespace
+    if namespace is None:
+        raise ValueError(f"Provider {type(provider).__name__} has no namespace")
+    if namespace in _PROVIDERS:
+        logger.warning(f"Overwriting provider for namespace: {namespace}")
+    _PROVIDERS[namespace] = provider
+    logger.debug(f"Registered provider: {namespace}")
 
 
 def register_renderer(renderer: Renderer) -> None:
@@ -46,44 +48,44 @@ def register_renderer(renderer: Renderer) -> None:
     logger.debug(f"Registered renderer: {name}")
 
 
-def get_provider(scheme: str) -> Provider:
-    """Get provider for a URI scheme.
+def get_provider(namespace: str) -> Provider:
+    """Get provider for a namespace.
 
     Args:
-        scheme: URI scheme (e.g., 's3', 'mcp.linear').
+        namespace: Provider namespace (e.g., 's3', 'mcp', 'http').
 
     Returns:
         Provider instance.
 
     Raises:
-        KeyError: If no provider for scheme.
+        KeyError: If no provider for namespace.
     """
-    if scheme not in _PROVIDERS:
+    if namespace not in _PROVIDERS:
         available = ", ".join(sorted(_PROVIDERS.keys())) or "(none)"
-        raise KeyError(f"No provider for scheme: {scheme!r}. Available: {available}")
-    return _PROVIDERS[scheme]
+        raise KeyError(f"No provider for namespace: {namespace!r}. Available: {available}")
+    return _PROVIDERS[namespace]
 
 
-def get_storage(scheme: str) -> Storage:
-    """Get storage for a URI scheme.
+def get_storage(namespace: str) -> Storage:
+    """Get storage for a namespace.
 
     Storage is a Provider that also supports write().
 
     Args:
-        scheme: URI scheme (e.g., 'file', 's3').
+        namespace: Provider namespace (e.g., 'file', 's3').
 
     Returns:
         Storage instance.
 
     Raises:
-        KeyError: If no provider for scheme.
+        KeyError: If no provider for namespace.
         TypeError: If provider is not a Storage.
     """
     from colin.providers.storage.base import Storage
 
-    provider = get_provider(scheme)
+    provider = get_provider(namespace)
     if not isinstance(provider, Storage):
-        raise TypeError(f"Provider for {scheme!r} is not a Storage (cannot write)")
+        raise TypeError(f"Provider for {namespace!r} is not a Storage (cannot write)")
     return provider
 
 
@@ -106,10 +108,10 @@ def get_renderer(name: str) -> Renderer:
 
 
 def list_providers() -> list[str]:
-    """List all registered provider schemes.
+    """List all registered provider namespaces.
 
     Returns:
-        List of scheme names.
+        List of namespace names.
     """
     return sorted(_PROVIDERS.keys())
 

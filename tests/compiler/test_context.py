@@ -8,9 +8,8 @@ import pytest
 
 from colin.compiler import CompileContext
 from colin.exceptions import RefNotFoundError
-from colin.models import LLMCall, Manifest
+from colin.models import Address, LLMCall, Manifest
 from colin.providers.project import ProjectProvider
-from colin.providers.storage.file import FileStorage
 
 
 class TestCompileContext:
@@ -22,8 +21,7 @@ class TestCompileContext:
         output_dir.mkdir()
 
         manifest = Manifest()
-        file_storage = FileStorage(base_path=output_dir)
-        project_provider = ProjectProvider(storage=file_storage)
+        project_provider = ProjectProvider(base_path=output_dir)
 
         return CompileContext(
             manifest=manifest,
@@ -39,9 +37,13 @@ class TestCompileContext:
 
         await context.ref("other")
 
-        assert "project://other.md" in context.refs_evaluated
+        # Check that an Address with the right payload was tracked
+        assert len(context.refs_evaluated) == 1
+        addr = context.refs_evaluated[0]
+        assert addr["provider"] == "project"
+        assert addr["payload"]["path"] == "other.md"
 
-    async def test_ref_returns_ref_result(self, context: CompileContext, tmp_path: Path) -> None:
+    async def test_ref_returns_addressable(self, context: CompileContext, tmp_path: Path) -> None:
         source_file = tmp_path / "context" / "doc.md"
         source_file.write_text("---\nname: Doc\ndescription: A doc\n---\nTemplate")
         output_file = tmp_path / "target" / "doc.md"
@@ -49,10 +51,14 @@ class TestCompileContext:
 
         result = await context.ref("doc")
 
-        # When reading from storage, name is derived from URI (not frontmatter)
-        assert result.name == "doc.md"
+        # Returns Addressable (ProjectResource) with content
         assert result.content == "Compiled content"
-        assert str(result) == "Ref('project://doc.md')"
+        # Address has structured payload for re-fetching
+        addr = result.address()
+        assert addr["provider"] == "project"
+        assert addr["payload"]["path"] == "doc.md"
+        # __str__ returns content for template use
+        assert str(result) == "Compiled content"
 
     async def test_ref_not_found(self, context: CompileContext) -> None:
         with pytest.raises(RefNotFoundError):
@@ -102,14 +108,17 @@ class TestCompileContext:
         assert context.total_cost == pytest.approx(0.03)
 
     async def test_track_ref_adds_to_refs_evaluated(self, context: CompileContext) -> None:
-        """Test that track_ref adds URI to refs_evaluated without fetching."""
-        context.track_ref("some://uri")
+        """Test that track_ref adds Address to refs_evaluated without fetching."""
+        addr = Address(provider="test", instance="", payload={"uri": "some://uri"})
+        context.track_ref(addr)
 
-        assert "some://uri" in context.refs_evaluated
+        assert len(context.refs_evaluated) == 1
+        assert context.refs_evaluated[0] == addr
 
     async def test_track_ref_deduplicates(self, context: CompileContext) -> None:
         """Test that track_ref doesn't add duplicates."""
-        context.track_ref("some://uri")
-        context.track_ref("some://uri")
+        addr = Address(provider="test", instance="", payload={"uri": "some://uri"})
+        context.track_ref(addr)
+        context.track_ref(addr)
 
-        assert context.refs_evaluated.count("some://uri") == 1
+        assert len(context.refs_evaluated) == 1

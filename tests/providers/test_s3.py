@@ -19,12 +19,6 @@ class TestS3Provider:
 
         assert provider.namespace == "s3"
 
-    def test_schemes_includes_s3(self) -> None:
-        """Provider handles s3 scheme."""
-        provider = S3Provider()
-
-        assert provider.schemes == ["s3"]
-
     def test_from_config_creates_provider(self) -> None:
         """from_config() creates provider with validated config."""
         provider = S3Provider.from_config(None, {"region": "us-west-2"})
@@ -55,63 +49,11 @@ class TestS3Provider:
         assert provider.region is None
 
 
-class TestS3ProviderParseUri:
-    """Tests for S3Provider._parse_uri()."""
+class TestS3ProviderLoadAddress:
+    """Tests for S3Provider.load_address()."""
 
-    def test_parses_simple_uri(self) -> None:
-        """Parses bucket and key from simple URI."""
-        provider = S3Provider()
-
-        bucket, key = provider._parse_uri("s3://my-bucket/file.txt")
-
-        assert bucket == "my-bucket"
-        assert key == "file.txt"
-
-    def test_parses_nested_path(self) -> None:
-        """Parses bucket and key from nested path."""
-        provider = S3Provider()
-
-        bucket, key = provider._parse_uri("s3://my-bucket/path/to/file.txt")
-
-        assert bucket == "my-bucket"
-        assert key == "path/to/file.txt"
-
-    def test_parses_deeply_nested_path(self) -> None:
-        """Parses bucket and key from deeply nested path."""
-        provider = S3Provider()
-
-        bucket, key = provider._parse_uri("s3://bucket/a/b/c/d/e/f.txt")
-
-        assert bucket == "bucket"
-        assert key == "a/b/c/d/e/f.txt"
-
-    def test_raises_on_invalid_scheme(self) -> None:
-        """Raises ValueError for non-s3 URI."""
-        provider = S3Provider()
-
-        with pytest.raises(ValueError, match="Invalid S3 URI"):
-            provider._parse_uri("https://bucket/file.txt")
-
-    def test_raises_on_missing_key(self) -> None:
-        """Raises ValueError when key is missing."""
-        provider = S3Provider()
-
-        with pytest.raises(ValueError, match="Invalid S3 URI"):
-            provider._parse_uri("s3://bucket")
-
-    def test_raises_on_empty_bucket(self) -> None:
-        """Raises ValueError when bucket is empty."""
-        provider = S3Provider()
-
-        with pytest.raises(ValueError, match="Invalid S3 URI"):
-            provider._parse_uri("s3:///file.txt")
-
-
-class TestS3ProviderRead:
-    """Tests for S3Provider.read()."""
-
-    async def test_read_returns_content(self) -> None:
-        """read() returns object content as string."""
+    async def test_load_address_returns_s3_resource(self) -> None:
+        """load_address() returns S3Resource with content."""
         with mock_aws():
             # Set up mocked S3 with sync boto3
             s3_client = boto3.client("s3", region_name="us-east-1")
@@ -121,12 +63,17 @@ class TestS3ProviderRead:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                result = await provider.read("s3://my-bucket/file.txt")
+                result = await provider.load_address({"bucket": "my-bucket", "key": "file.txt"})
 
-            assert result == "Hello, World!"
+            from colin.providers.s3 import S3Resource
 
-    async def test_read_decodes_utf8(self) -> None:
-        """read() decodes content as UTF-8."""
+            assert isinstance(result, S3Resource)
+            assert result.content == "Hello, World!"
+            assert result.bucket == "my-bucket"
+            assert result.key == "file.txt"
+
+    async def test_load_address_decodes_utf8(self) -> None:
+        """load_address() decodes content as UTF-8."""
         with mock_aws():
             test_content = "Hello, 世界!"
             s3_client = boto3.client("s3", region_name="us-east-1")
@@ -136,16 +83,16 @@ class TestS3ProviderRead:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                result = await provider.read("s3://bucket/file.txt")
+                result = await provider.load_address({"bucket": "bucket", "key": "file.txt"})
 
-            assert result == test_content
+            assert result.content == test_content
 
-    async def test_read_raises_when_not_initialized(self) -> None:
-        """read() raises RuntimeError when called outside lifespan."""
+    async def test_load_address_raises_when_not_initialized(self) -> None:
+        """load_address() raises RuntimeError when called outside lifespan."""
         provider = S3Provider()
 
         with pytest.raises(RuntimeError, match="not initialized"):
-            await provider.read("s3://bucket/file.txt")
+            await provider.load_address({"bucket": "bucket", "key": "file.txt"})
 
 
 class TestS3ProviderGetLastUpdated:
@@ -161,7 +108,7 @@ class TestS3ProviderGetLastUpdated:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                result = await provider.get_last_updated("s3://my-bucket/file.txt")
+                result = await provider.get_last_updated({"bucket": "my-bucket", "key": "file.txt"})
 
             assert result is not None
             assert isinstance(result, datetime)
@@ -175,7 +122,7 @@ class TestS3ProviderGetLastUpdated:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                result = await provider.get_last_updated("s3://bucket/missing.txt")
+                result = await provider.get_last_updated({"bucket": "bucket", "key": "missing.txt"})
 
             assert result is None
 
@@ -184,7 +131,7 @@ class TestS3ProviderGetLastUpdated:
         provider = S3Provider()
 
         with pytest.raises(RuntimeError, match="not initialized"):
-            await provider.get_last_updated("s3://bucket/file.txt")
+            await provider.get_last_updated({"bucket": "bucket", "key": "file.txt"})
 
 
 class TestS3ProviderLifespan:
@@ -241,8 +188,8 @@ class TestS3ProviderLifespan:
 class TestS3ProviderIntegration:
     """Integration tests using moto to mock S3."""
 
-    async def test_read_from_mocked_s3(self) -> None:
-        """read() actually reads from mocked S3 bucket."""
+    async def test_load_address_from_mocked_s3(self) -> None:
+        """load_address() actually reads from mocked S3 bucket."""
         with mock_aws():
             s3_client = boto3.client("s3", region_name="us-east-1")
             s3_client.create_bucket(Bucket="test-bucket")
@@ -251,12 +198,14 @@ class TestS3ProviderIntegration:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                content = await provider.read("s3://test-bucket/test-file.txt")
+                result = await provider.load_address(
+                    {"bucket": "test-bucket", "key": "test-file.txt"}
+                )
 
-            assert content == "Hello from S3!"
+            assert result.content == "Hello from S3!"
 
-    async def test_read_utf8_content(self) -> None:
-        """read() correctly decodes UTF-8 content."""
+    async def test_load_address_utf8_content(self) -> None:
+        """load_address() correctly decodes UTF-8 content."""
         with mock_aws():
             test_content = "Hello, 世界! 🌍"
             s3_client = boto3.client("s3", region_name="us-east-1")
@@ -268,12 +217,14 @@ class TestS3ProviderIntegration:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                content = await provider.read("s3://test-bucket/unicode.txt")
+                result = await provider.load_address(
+                    {"bucket": "test-bucket", "key": "unicode.txt"}
+                )
 
-            assert content == test_content
+            assert result.content == test_content
 
-    async def test_read_nested_path(self) -> None:
-        """read() handles nested S3 paths."""
+    async def test_load_address_nested_path(self) -> None:
+        """load_address() handles nested S3 paths."""
         with mock_aws():
             s3_client = boto3.client("s3", region_name="us-east-1")
             s3_client.create_bucket(Bucket="my-bucket")
@@ -284,12 +235,14 @@ class TestS3ProviderIntegration:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                content = await provider.read("s3://my-bucket/path/to/nested/file.txt")
+                result = await provider.load_address(
+                    {"bucket": "my-bucket", "key": "path/to/nested/file.txt"}
+                )
 
-            assert content == "Nested content"
+            assert result.content == "Nested content"
 
-    async def test_read_raises_on_missing_object(self) -> None:
-        """read() raises error for missing objects."""
+    async def test_load_address_raises_on_missing_object(self) -> None:
+        """load_address() raises error for missing objects."""
         from botocore.exceptions import ClientError
 
         with mock_aws():
@@ -300,7 +253,9 @@ class TestS3ProviderIntegration:
 
             async with provider.lifespan():
                 with pytest.raises(ClientError):
-                    await provider.read("s3://test-bucket/missing-file.txt")
+                    await provider.load_address(
+                        {"bucket": "test-bucket", "key": "missing-file.txt"}
+                    )
 
     async def test_get_last_updated_returns_timestamp(self) -> None:
         """get_last_updated() returns LastModified timestamp."""
@@ -312,7 +267,9 @@ class TestS3ProviderIntegration:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                last_updated = await provider.get_last_updated("s3://test-bucket/file.txt")
+                last_updated = await provider.get_last_updated(
+                    {"bucket": "test-bucket", "key": "file.txt"}
+                )
 
             assert last_updated is not None
             assert isinstance(last_updated, datetime)
@@ -326,6 +283,61 @@ class TestS3ProviderIntegration:
             provider = S3Provider(region="us-east-1")
 
             async with provider.lifespan():
-                last_updated = await provider.get_last_updated("s3://test-bucket/missing.txt")
+                last_updated = await provider.get_last_updated(
+                    {"bucket": "test-bucket", "key": "missing.txt"}
+                )
 
             assert last_updated is None
+
+
+class TestS3ProviderGet:
+    """Tests for S3Provider.get() template function."""
+
+    async def test_get_returns_s3_resource(self) -> None:
+        """get() returns S3Resource with content."""
+        with mock_aws():
+            s3_client = boto3.client("s3", region_name="us-east-1")
+            s3_client.create_bucket(Bucket="my-bucket")
+            s3_client.put_object(Bucket="my-bucket", Key="file.txt", Body=b"Hello!")
+
+            provider = S3Provider(region="us-east-1")
+
+            async with provider.lifespan():
+                result = await provider.get("my-bucket/file.txt")
+
+            from colin.providers.s3 import S3Resource
+
+            assert isinstance(result, S3Resource)
+            assert result.content == "Hello!"
+            assert result.bucket == "my-bucket"
+            assert result.key == "file.txt"
+
+    async def test_get_handles_nested_path(self) -> None:
+        """get() handles nested paths correctly."""
+        with mock_aws():
+            s3_client = boto3.client("s3", region_name="us-east-1")
+            s3_client.create_bucket(Bucket="bucket")
+            s3_client.put_object(Bucket="bucket", Key="path/to/file.txt", Body=b"Nested")
+
+            provider = S3Provider(region="us-east-1")
+
+            async with provider.lifespan():
+                result = await provider.get("bucket/path/to/file.txt")
+
+            assert result.content == "Nested"
+            assert result.bucket == "bucket"
+            assert result.key == "path/to/file.txt"
+
+    async def test_get_raises_on_invalid_path(self) -> None:
+        """get() raises ValueError for path without slash."""
+        provider = S3Provider()
+
+        with pytest.raises(ValueError, match="Invalid S3 path"):
+            await provider.get("nobucket")
+
+    async def test_get_raises_on_empty_bucket(self) -> None:
+        """get() raises ValueError when bucket name is empty."""
+        provider = S3Provider()
+
+        with pytest.raises(ValueError, match="Bucket name cannot be empty"):
+            await provider.get("/path/to/file.txt")

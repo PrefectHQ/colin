@@ -18,6 +18,7 @@ from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_e
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
+    Address,
     CalendarDuration,
     ColinConfig,
     ColinDocument,
@@ -29,7 +30,6 @@ from colin.models import (
     parse_duration,
 )
 from colin.providers.cache import set_compile_context
-from colin.providers.context import ProviderContext
 from colin.providers.manager import ProviderManager, create_provider_manager
 from colin.providers.project import ProjectProvider
 from colin.providers.storage.base import Storage
@@ -76,8 +76,10 @@ class CompileEngine:
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
 
-        # Project provider wraps artifact storage and uses manifest for timestamps
-        self._project_provider = ProjectProvider(artifact_storage, self.manifest)
+        # Project provider reads from target directory, uses manifest for timestamps
+        self._project_provider = ProjectProvider(
+            base_path=config.target_path, manifest=self.manifest
+        )
 
     def _load_manifest(self) -> Manifest:
         """Load manifest from config path if it exists."""
@@ -147,46 +149,51 @@ class CompileEngine:
                     return (True, f"stale after {stale_duration}")
 
         # Upstream dependency recompiled this run
-        for ref_uri in doc_meta.refs_evaluated:
-            if ref_uri in recompiled_uris:
-                return (True, f"upstream recompiled: {ref_uri}")
+        for ref_addr in doc_meta.refs_evaluated:
+            # Check if this ref's path matches a recompiled URI
+            if ref_addr["provider"] == "project":
+                ref_uri = f"project://{ref_addr['payload'].get('path', '')}"
+                if ref_uri in recompiled_uris:
+                    return (True, f"upstream recompiled: {ref_uri}")
 
         # Check ref timestamps
-        for ref_uri in doc_meta.refs_evaluated:
-            ref_updated = await self._get_ref_last_updated(ref_uri, provider_manager)
+        for ref_addr in doc_meta.refs_evaluated:
+            ref_updated = await self._get_ref_last_updated(ref_addr, provider_manager)
+            ref_display = f"{ref_addr['provider']}://{ref_addr['payload']}"
             if ref_updated is None:
-                return (True, f"ref timestamp unknown: {ref_uri}")
+                return (True, f"ref timestamp unknown: {ref_display}")
             if ref_updated > doc_meta.compiled_at:
-                return (True, f"ref updated: {ref_uri}")
+                return (True, f"ref updated: {ref_display}")
 
         return (False, "up to date")
 
     async def _get_ref_last_updated(
-        self, uri: str, provider_manager: ProviderManager
+        self, addr: Address, provider_manager: ProviderManager
     ) -> datetime | None:
-        """Get last update time for a referenced URI.
+        """Get last update time for a referenced address.
 
-        Routes to appropriate provider based on URI scheme.
+        Routes to appropriate provider based on address.
 
         Args:
-            uri: Full or schemaless URI.
+            addr: Structured address with provider, instance, payload.
             provider_manager: For external provider lookups.
 
         Returns:
             Last update time, or None if unknown.
         """
-        # Normalize to full URI
-        if "://" not in uri:
-            uri = f"project://{uri}"
+        provider_name = addr["provider"]
+        instance = addr["instance"]
+        payload = addr["payload"]
 
-        scheme = uri.split("://", 1)[0]
+        # Project refs use our project provider (which has manifest)
+        if provider_name == "project":
+            return await self._project_provider.get_last_updated(payload)
 
-        # Project URIs use our project provider (which has manifest)
-        if scheme == "project":
-            return await self._project_provider.get_last_updated(uri)
-
-        # Other schemes go through provider manager
-        return await provider_manager.get_ref_last_updated(uri)
+        # Other providers go through provider manager
+        provider = provider_manager.get_provider(provider_name, instance or None)
+        if provider is None:
+            return None
+        return await provider.get_last_updated(payload)
 
     async def compile_all(self) -> list[CompiledDocument]:
         """Discover and compile all documents.
@@ -502,7 +509,6 @@ class CompileEngine:
             document_uri=doc.uri,
             project_provider=self._project_provider,
             compiled_outputs=compiled_outputs,
-            provider_manager=provider_manager,
             doc_state=doc_state,
         )
 
@@ -511,13 +517,6 @@ class CompileEngine:
             env,
             context,
             provider_manager=provider_manager,
-            provider_ctx=ProviderContext(
-                manifest=self.manifest,
-                document_uri=doc.uri,
-                doc_state=doc_state,
-                ref=context.ref,
-                track_ref=context.track_ref,
-            ),
         )
 
         # Compile template with compile context set for caching
