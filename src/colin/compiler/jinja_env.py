@@ -53,22 +53,15 @@ def bind_context_to_environment(
     # Core functions
     env.globals["ref"] = context.ref
 
-    providers = provider_manager.namespace()
-    env.globals["providers"] = providers
-
-    # Builtin provider shortcuts
-    env.globals["http"] = providers.http
-    env.globals["llm"] = providers.llm
+    # Providers namespace - exposed as `colin.*` in templates
+    colin = provider_manager.namespace()
+    env.globals["colin"] = colin
 
     # Attach llm namespace for LLM block extension
-    env.llm_namespace = providers.llm  # type: ignore[attr-defined]
-
-    # MCP is optional (only if configured)
-    if hasattr(providers, "mcp"):
-        env.globals["mcp"] = providers.mcp
+    env.llm_namespace = colin.llm  # type: ignore[attr-defined]
 
     # LLM filters (pipe syntax: content | llm_extract('prompt'))
-    env.filters["llm_extract"] = create_llm_extract_filter(providers.llm)
-    env.filters["llm_classify"] = create_llm_classify_filter(providers.llm)
+    env.filters["llm_extract"] = create_llm_extract_filter(colin.llm)
+    env.filters["llm_classify"] = create_llm_classify_filter(colin.llm)
 
     return env

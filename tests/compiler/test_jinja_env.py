@@ -11,8 +11,8 @@ from colin.providers.manager import ProviderManager
 from colin.providers.project import ProjectProvider
 
 
-def test_bind_context_sets_llm_shortcut(tmp_path: Path) -> None:
-    """llm global points at providers.llm."""
+def test_bind_context_sets_colin_namespace(tmp_path: Path) -> None:
+    """colin namespace exposes providers."""
     project_provider = ProjectProvider(base_path=tmp_path)
     context = CompileContext(
         manifest=Manifest(),
@@ -28,9 +28,14 @@ def test_bind_context_sets_llm_shortcut(tmp_path: Path) -> None:
 
     bind_context_to_environment(env, context, provider_manager)
 
-    providers = env.globals["providers"]
-    # llm is a shortcut to providers.llm
-    assert env.globals["llm"] is getattr(providers, "llm")
+    # colin namespace contains providers
+    colin = env.globals["colin"]
+    assert hasattr(colin, "llm")
+    assert hasattr(colin, "http")
+    # Root-level shortcuts are removed (no mcp, llm, http at root)
+    assert "llm" not in env.globals
+    assert "http" not in env.globals
+    assert "mcp" not in env.globals
     # llm_extract and llm_classify are filters
     assert "llm_extract" in env.filters
     assert "llm_classify" in env.filters

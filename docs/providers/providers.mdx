@@ -45,8 +45,8 @@ model = "anthropic:claude-sonnet-4-20250514"
 ```
 
 ```markdown
-{{ llm.extract(content, 'summary') }}
-{{ llm.classify(content, ['yes', 'no']) }}
+{{ colin.llm.extract(content, 'summary') }}
+{{ colin.llm.classify(content, ['yes', 'no']) }}
 ```
 
 A provider **with** a `name` becomes a named instance accessible under that name:
@@ -58,7 +58,7 @@ model = "anthropic:claude-haiku-3"
 ```
 
 ```markdown
-{{ llm.fast.extract(content, 'quick summary') }}
+{{ colin.llm.fast.extract(content, 'quick summary') }}
 ```
 
 You can configure both—a default and one or more named instances:
@@ -81,13 +81,13 @@ model = "anthropic:claude-opus-4"
 
 ```markdown
 {# Uses the default model #}
-{{ llm.extract(content, 'summary') }}
+{{ colin.llm.extract(content, 'summary') }}
 
 {# Uses the fast model #}
-{{ llm.fast.extract(content, 'word count') }}
+{{ colin.llm.fast.extract(content, 'word count') }}
 
 {# Uses the capable model #}
-{{ llm.capable.extract(content, 'detailed analysis') }}
+{{ colin.llm.capable.extract(content, 'detailed analysis') }}
 ```
 
 Some providers require names and have no default. MCP providers always need a name because each instance represents a different server—there's no meaningful default.
@@ -100,7 +100,7 @@ MCP and S3 providers require explicit configuration before use.
 
 ## Architecture
 
-Providers serve two roles in Colin. First, they implement URI scheme handlers for the `ref()` system. When you write `ref('s3://bucket/key')`, Colin routes the request to the S3 provider based on the `s3://` scheme. Second, providers contribute template functions accessible through namespaced globals like `http.get()` or `mcp.github.resource()`.
+Providers serve two roles in Colin. First, they implement URI scheme handlers for the `ref()` system. When you write `ref('s3://bucket/key')`, Colin routes the request to the S3 provider based on the `s3://` scheme. Second, providers contribute template functions accessible through the `colin` namespace like `colin.http.get()` or `colin.mcp.github.resource()`.
 
 ### URI Handling
 
@@ -122,7 +122,7 @@ def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
     return {"get": self._template_get}
 ```
 
-A provider with `schemes = ["http", "https"]` that returns `{"get": self._get}` becomes accessible as `http.get()` in templates. The first scheme in the list determines the namespace.
+A provider with `schemes = ["http", "https"]` that returns `{"get": self._get}` becomes accessible as `colin.http.get()` in templates. The first scheme in the list determines the namespace.
 
 ## Domain Objects
 
@@ -140,7 +140,7 @@ class HTTPResource:
 Access properties directly in templates:
 
 ```markdown
-{% set response = http.get('https://api.example.com/data') %}
+{% set response = colin.http.get('https://api.example.com/data') %}
 
 Content-Type: {{ response.content_type }}
 {{ response.content }}
@@ -154,10 +154,10 @@ By default, provider function calls are ephemeral. To record a dependency in the
 
 ```markdown
 {# Fetched but not tracked #}
-{{ http.get('https://api.example.com/data').content }}
+{{ colin.http.get('https://api.example.com/data').content }}
 
 {# Tracked as a dependency #}
-{{ ref(http.get('https://api.example.com/data')).content }}
+{{ ref(colin.http.get('https://api.example.com/data')).content }}
 ```
 
 Tracked dependencies appear in `refs_evaluated` in the manifest. Changes to tracked resources trigger recompilation of dependent documents.

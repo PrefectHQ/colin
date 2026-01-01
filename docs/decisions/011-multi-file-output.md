@@ -32,7 +32,7 @@ File blocks can contain any Jinja directives, including MCP resources:
 
 ```jinja
 {% file "tools/analyzer.py" %}
-{{ mcp.scripts.resource('scripts://analyzer') }}
+{{ colin.mcp.scripts.resource('scripts://analyzer') }}
 {% endfile %}
 ```
 

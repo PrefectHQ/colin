@@ -204,7 +204,7 @@ class JSONRenderer(Renderer):
 
 ### MCP as a Provider
 
-MCP servers are providers that return raw content from `read()`, plus template functions registered under `providers.mcp.<name>`:
+MCP servers are providers that return raw content from `read()`, plus template functions accessible via `colin.mcp.<name>`:
 
 ```python
 class MCPProvider(Provider):

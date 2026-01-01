@@ -155,7 +155,7 @@ name: Project Data
 ---
 
 {# Fetch MCP resource and track it as a dependency #}
-{{ ref(mcp.linear.resource('projects?team=engineering')).content }}
+{{ ref(colin.mcp.linear.resource('projects?team=engineering')).content }}
 ```
 
 This is equivalent to calling the provider function and having Colin track the dependency. The `ref()` function:
@@ -170,14 +170,14 @@ Use `ref()` when you want Colin to track the resource as a dependency:
 
 ```markdown
 {# Tracked dependency - appears in refs_evaluated #}
-{{ ref(mcp.github.resource('repo://owner/repo/README.md')).content }}
+{{ ref(colin.mcp.github.resource('repo://owner/repo/README.md')).content }}
 ```
 
 Skip `ref()` when you just want the content without tracking:
 
 ```markdown
 {# Not tracked - just fetches the content #}
-{{ mcp.github.resource('repo://owner/repo/README.md').content }}
+{{ colin.mcp.github.resource('repo://owner/repo/README.md').content }}
 ```
 
 ### Accessing the Original Object
@@ -189,7 +189,7 @@ When you use `ref()` with a provider object, the original domain object is prese
 name: Resource Analysis
 ---
 
-{% set resource = ref(mcp.github.resource('repo://owner/repo/README.md')) %}
+{% set resource = ref(colin.mcp.github.resource('repo://owner/repo/README.md')) %}
 
 Content: {{ resource.content }}
 Name: {{ resource.name }}

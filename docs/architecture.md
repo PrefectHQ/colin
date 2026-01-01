@@ -146,11 +146,10 @@ description: ...      # Passed through to output
 
 Providers handle scheme-based reads (`project://`, `mcp.<name>://`, and custom schemes). Storage providers also write compiled outputs.
 
-Providers can contribute template functions via `Provider.get_functions()`. These are bound under a shared namespace:
+Providers can contribute template functions via `Provider.get_functions()`. These are bound under the `colin` namespace:
 
 ```jinja
-{{ providers.mcp.github.resource("repo://owner/repo/readme") }}
-{{ mcp.github.resource("repo://owner/repo/readme") }}
+{{ colin.mcp.github.resource("repo://owner/repo/readme") }}
 {{ extract(ref("context/summary").content, "summarize") }}
 ```
 

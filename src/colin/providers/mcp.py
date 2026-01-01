@@ -26,7 +26,7 @@ MCPServerAdapter: TypeAdapter[StdioMCPServer | RemoteMCPServer] = TypeAdapter(
 
 @dataclass
 class MCPResource(Addressable):
-    """Domain object returned by mcp.resource(). Inherits from Addressable."""
+    """Domain object returned by colin.mcp.<name>.resource(). Inherits from Addressable."""
 
     resource_uri: str
     """The MCP resource URI that was fetched."""
@@ -64,7 +64,7 @@ class MCPResource(Addressable):
 
 @dataclass
 class MCPPrompt(Addressable):
-    """Domain object returned by mcp.prompt(). Inherits from Addressable."""
+    """Domain object returned by colin.mcp.<name>.prompt(). Inherits from Addressable."""
 
     name: str
     """The prompt name."""
@@ -104,8 +104,8 @@ class MCPProvider(Provider):
     """Provider for MCP server integration.
 
     Template usage:
-        {{ mcp.github.resource("colin://issues/123") }}
-        {{ mcp.github.prompt("summarize", url="...") }}
+        {{ colin.mcp.github.resource("colin://issues/123") }}
+        {{ colin.mcp.github.prompt("summarize", url="...") }}
 
     Payload format for load_address:
     - Resource: {"type": "resource", "uri": "colin://hello"}
