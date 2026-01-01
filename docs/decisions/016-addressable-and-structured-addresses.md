@@ -37,7 +37,7 @@ For all other providers, use the provider's functions directly:
 ```jinja
 {{ s3.get("bucket/key") }}                    {# Just reads, NOT tracked #}
 {{ ref(s3.get("bucket/key")) }}               {# Reads AND tracked as dependency #}
-{{ ref(mcp.github.resource("colin://...")) }} {# MCP resource, tracked #}
+{{ ref(colin.mcp.github.resource("colin://...")) }} {# MCP resource, tracked #}
 ```
 
 ### ref() Handles Coroutines
@@ -175,10 +175,10 @@ Providers expose their functionality via template functions (e.g., `s3.get()`, `
 {% set other = ref("other-doc") %}
 
 {# HTTP resource #}
-{% set api = ref(http.get("api.example.com/data")) %}
+{% set api = ref(colin.http.get("api.example.com/data")) %}
 
 {# MCP resource #}
-{% set issue = ref(mcp.github.resource("colin://issues/123")) %}
+{% set issue = ref(colin.mcp.github.resource("colin://issues/123")) %}
 ```
 
 ### S3Resource

@@ -14,13 +14,13 @@ We also need a configuration format that supports nested provider config tables 
 
 ### Template Namespace
 
-Provider functions live under a unified namespace:
+Provider functions live under the `colin` namespace (see [ADR 015](./015-provider-namespace-design.md)):
 
 ```
-providers.<type>.<name>.<function>(...)
+colin.<type>.<name>.<function>(...)
 ```
 
-`mcp` is always aliased to `providers.mcp`, and `extract` is aliased to `providers.llm.extract`.
+No root-level aliases are provided—all providers are accessed via `colin.*`.
 
 ### Configuration Format
 
@@ -72,10 +72,10 @@ Provider functions do NOT automatically track dependencies. To track a dependenc
 
 ```jinja
 {# Not tracked - returns MCPResource #}
-{{ mcp.github.resource('repo://...').content }}
+{{ colin.mcp.github.resource('repo://...').content }}
 
 {# Tracked - returns RefResult #}
-{{ ref(mcp.github.resource('repo://...')).content }}
+{{ ref(colin.mcp.github.resource('repo://...')).content }}
 ```
 
 The `ref()` function accepts both URI strings and `Referenceable` objects. For Referenceable objects, it calls `to_ref_result()` and records the dependency.
@@ -85,7 +85,7 @@ The `ref()` function accepts both URI strings and `Referenceable` objects. For R
 `RefResult.source` preserves the original domain object:
 
 ```jinja
-{% set r = ref(mcp.github.resource('repo://...')) %}
+{% set r = ref(colin.mcp.github.resource('repo://...')) %}
 {{ r.content }}        {# RefResult.content #}
 {{ r.source.uri }}     {# MCPResource.uri #}
 ```
@@ -96,4 +96,4 @@ The `ref()` function accepts both URI strings and `Referenceable` objects. For R
 - `ref()` accepts `str | Referenceable`
 - Dependency tracking is explicit via `ref()` wrapper
 - `RefResult.source` provides escape hatch to original object
-- `mcp.<server>.resource()` and `mcp.<server>.prompt()` replace old functions
+- `colin.mcp.<server>.resource()` and `colin.mcp.<server>.prompt()` replace old functions

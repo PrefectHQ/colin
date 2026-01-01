@@ -6,7 +6,7 @@ icon: plug
 
 The MCP provider connects Colin to Model Context Protocol servers. Through MCP, your documents can fetch live data from project trackers, databases, code repositories, and other systems. Colin acts as an MCP client, connecting to configured servers and fetching resources during compilation.
 
-Each configured MCP server becomes a separate provider instance with its own namespace. Configure a server named "github" and it becomes accessible as `mcp.github` in templates.
+Each configured MCP server becomes a separate provider instance with its own namespace. Configure a server named "github" and it becomes accessible as `colin.mcp.github` in templates.
 
 ## Configuration
 
@@ -24,13 +24,13 @@ command = "npx"
 args = ["-y", "@linear/mcp-server"]
 ```
 
-The `name` field determines the template namespace. A server named `github` becomes accessible as `mcp.github`, while `linear` becomes `mcp.linear`. The top-level `mcp` object provides access to all named servers.
+The `name` field determines the template namespace. A server named `github` becomes accessible as `colin.mcp.github`, while `linear` becomes `colin.mcp.linear`.
 
 Colin starts server processes when entering the provider lifespan and terminates them on shutdown.
 
 | Field | Description |
 | :---- | :---------- |
-| `name` | Required. Identifier used in templates as `mcp.<name>` |
+| `name` | Required. Identifier used in templates as `colin.mcp.<name>` |
 | `command` | Executable to run for stdio servers |
 | `args` | Command-line arguments as an array |
 | `env` | Environment variables passed to the server |
@@ -98,14 +98,14 @@ Each MCP server exposes two functions through its namespace:
 
 ### Resource
 
-Use `mcp.<name>.resource()` to fetch content from a server:
+Use `colin.mcp.<name>.resource()` to fetch content from a server:
 
 ```markdown models/sources/readme.md
 ---
 name: GitHub README
 ---
 
-{{ mcp.github.resource('repo://owner/repo/contents/README.md') }}
+{{ colin.mcp.github.resource('repo://owner/repo/contents/README.md') }}
 ```
 
 The function returns an `MCPResource` object with content and metadata:
@@ -121,7 +121,7 @@ The function returns an `MCPResource` object with content and metadata:
 Access properties directly:
 
 ```markdown
-{% set readme = mcp.github.resource('repo://owner/repo/contents/README.md') %}
+{% set readme = colin.mcp.github.resource('repo://owner/repo/contents/README.md') %}
 
 # {{ readme.name }}
 
@@ -132,30 +132,30 @@ Each MCP server defines its own URI scheme. Consult the server's documentation f
 
 ```markdown
 {# GitHub server #}
-{{ mcp.github.resource('repo://owner/repo/contents/README.md') }}
-{{ mcp.github.resource('repo://owner/repo/issues') }}
+{{ colin.mcp.github.resource('repo://owner/repo/contents/README.md') }}
+{{ colin.mcp.github.resource('repo://owner/repo/issues') }}
 
 {# Linear server #}
-{{ mcp.linear.resource('projects') }}
-{{ mcp.linear.resource('issues?teamId=TEAM-123') }}
+{{ colin.mcp.linear.resource('projects') }}
+{{ colin.mcp.linear.resource('issues?teamId=TEAM-123') }}
 
 {# Filesystem server #}
-{{ mcp.filesystem.resource('file:///data/config.json') }}
+{{ colin.mcp.filesystem.resource('file:///data/config.json') }}
 
 {# Postgres server #}
-{{ mcp.postgres.resource('query://SELECT * FROM users LIMIT 10') }}
+{{ colin.mcp.postgres.resource('query://SELECT * FROM users LIMIT 10') }}
 ```
 
 ### Prompt
 
-Some MCP servers provide prompt templates. Use `mcp.<name>.prompt()` to retrieve them:
+Some MCP servers provide prompt templates. Use `colin.mcp.<name>.prompt()` to retrieve them:
 
 ```markdown models/analysis.md
 ---
 name: Code Analysis
 ---
 
-{% set review = mcp.github.prompt('code-review', repo='owner/repo') %}
+{% set review = colin.mcp.github.prompt('code-review', repo='owner/repo') %}
 {{ review.content }}
 ```
 
@@ -193,10 +193,10 @@ MCP resources integrate with Colin's dependency system. Wrap results with `ref()
 
 ```markdown
 {# Fetched but not tracked #}
-{{ mcp.github.resource('repo://...').content }}
+{{ colin.mcp.github.resource('repo://...').content }}
 
 {# Tracked as a dependency #}
-{{ ref(mcp.github.resource('repo://...')).content }}
+{{ ref(colin.mcp.github.resource('repo://...')).content }}
 ```
 
 The manifest records MCP resources as standard refs:
@@ -244,11 +244,11 @@ name: Engineering Status
 
 ## Active Projects
 
-{{ mcp.linear.resource('projects?team=engineering') }}
+{{ colin.mcp.linear.resource('projects?team=engineering') }}
 
 ## Repository Health
 
-{% set issues = mcp.github.resource('repo://acme/platform/issues?state=open') %}
+{% set issues = colin.mcp.github.resource('repo://acme/platform/issues?state=open') %}
 {{ issues.content }}
 
 ## Analysis
@@ -257,7 +257,7 @@ name: Engineering Status
 Based on the project data and open issues, assess team health:
 
 Projects:
-{{ mcp.linear.resource('projects?team=engineering') }}
+{{ colin.mcp.linear.resource('projects?team=engineering') }}
 
 Issues:
 {{ issues.content }}

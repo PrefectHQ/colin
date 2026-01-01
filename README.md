@@ -46,7 +46,7 @@ name: Project Status
 
 # Current Sprint
 
-{{ mcp.linear.resource('projects/current-sprint').content }}
+{{ colin.mcp.linear.resource('projects/current-sprint').content }}
 
 ## Key Risks
 
@@ -57,7 +57,7 @@ name: Project Status
 {% llm %}
 Summarize recent customer feedback relevant to this sprint:
 
-{{ mcp.intercom.resource('conversations/last-7-days').content }}
+{{ colin.mcp.intercom.resource('conversations/last-7-days').content }}
 {% endllm %}
 ```
 
@@ -99,8 +99,8 @@ LLM extracts specific information from content:
 Pull content directly from URLs:
 
 ```jinja
-{{ http.get('https://api.example.com/data.json') }}
-{{ http.get('example.com/api/users') }}  {# https:// added automatically #}
+{{ colin.http.get('https://api.example.com/data.json') }}
+{{ colin.http.get('example.com/api/users') }}  {# https:// added automatically #}
 ```
 
 ### mcp.server.resource() — Fetch Live Data
@@ -108,8 +108,8 @@ Pull content directly from URLs:
 Pull from external sources via MCP:
 
 ```jinja
-{{ mcp.linear.resource('projects/engineering').content }}
-{{ mcp.github.resource('repo://org/repo/README.md').content }}
+{{ colin.mcp.linear.resource('projects/engineering').content }}
+{{ colin.mcp.github.resource('repo://org/repo/README.md').content }}
 ```
 
 ### {% llm %} — Synthesize Across Sources

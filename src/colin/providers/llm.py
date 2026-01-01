@@ -30,8 +30,8 @@ class LLMProvider(Provider):
     """Provider for LLM template functions.
 
     Template usage:
-        {{ llm.complete("Write a haiku about...") }}
-        {{ llm.classify("Is this positive?", ["positive", "negative"]) }}
+        {{ colin.llm.complete("Write a haiku about...") }}
+        {{ colin.llm.classify("Is this positive?", ["positive", "negative"]) }}
 
     Configuration via colin.toml:
         [[providers.llm]]

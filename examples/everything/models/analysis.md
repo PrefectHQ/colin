@@ -4,7 +4,7 @@ description: Extracted insights from product data
 ---
 # Product Analysis
 
-{{ mcp.demo.resource('demo://greeting/Analyst') }}
+{{ colin.mcp.demo.resource('demo://greeting/Analyst') }}
 
 ## Key Pain Points
 {{ ref('data') | llm_extract('List the top 3 user pain points mentioned in the feedback, as bullet points') }}
@@ -16,4 +16,4 @@ description: Extracted insights from product data
 {{ ref('data') | llm_extract('What are users happy about? List as bullet points') }}
 
 ## Analysis Guidance
-{{ mcp.demo.prompt('summarize', style='detailed') }}
+{{ colin.mcp.demo.prompt('summarize', style='detailed') }}

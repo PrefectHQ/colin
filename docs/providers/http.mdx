@@ -33,20 +33,20 @@ The HTTP provider exposes one function:
 
 ### Get
 
-Use `http.get()` to fetch content from any URL:
+Use `colin.http.get()` to fetch content from any URL:
 
 ```markdown models/sources/api-data.md
 ---
 name: API Data
 ---
 
-{{ http.get('https://api.example.com/data.json') }}
+{{ colin.http.get('https://api.example.com/data.json') }}
 ```
 
 URLs without a scheme default to `https://`:
 
 ```markdown
-{{ http.get('example.com/api/users') }}
+{{ colin.http.get('example.com/api/users') }}
 ```
 
 The function returns an `HTTPResource` object with content and metadata:
@@ -61,7 +61,7 @@ The function returns an `HTTPResource` object with content and metadata:
 Access properties directly in templates:
 
 ```markdown
-{% set response = http.get('https://api.example.com/status') %}
+{% set response = colin.http.get('https://api.example.com/status') %}
 
 Content-Type: {{ response.content_type }}
 Last Modified: {{ response.updated }}
@@ -90,7 +90,7 @@ URLs starting with `http://` or `https://` work directly with `ref()`:
 {{ ref('https://api.example.com/config.json') }}
 ```
 
-This is equivalent to using `http.get()` but automatically tracks the dependency.
+This is equivalent to using `colin.http.get()` but automatically tracks the dependency.
 
 ## Dependency Tracking
 
@@ -98,10 +98,10 @@ HTTP resources can be tracked as dependencies using `ref()`:
 
 ```markdown
 {# Fetched but not tracked #}
-{{ http.get('https://api.example.com/config').content }}
+{{ colin.http.get('https://api.example.com/config').content }}
 
 {# Tracked in manifest #}
-{{ ref(http.get('https://api.example.com/config')).content }}
+{{ ref(colin.http.get('https://api.example.com/config')).content }}
 ```
 
 Tracked dependencies appear in the manifest:
@@ -131,7 +131,7 @@ The HTTP provider works well with JSON APIs. Combine with LLM functions to proce
 name: GitHub Issues
 ---
 
-{% set issues = http.get('https://api.github.com/repos/owner/repo/issues') %}
+{% set issues = colin.http.get('https://api.github.com/repos/owner/repo/issues') %}
 
 {{ issues.content }}
 ```
@@ -159,7 +159,7 @@ env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
 Then access authenticated endpoints through MCP:
 
 ```markdown
-{{ mcp.github.resource('repo://owner/repo/issues') }}
+{{ colin.mcp.github.resource('repo://owner/repo/issues') }}
 ```
 
 ## Error Handling

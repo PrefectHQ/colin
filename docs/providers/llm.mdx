@@ -46,8 +46,8 @@ model = "anthropic:claude-opus-4"
 The default provider's functions are available directly on the `llm` namespace:
 
 ```markdown
-{{ llm.extract(content, 'summary') }}
-{{ llm.classify(content, ['positive', 'negative']) }}
+{{ colin.llm.extract(content, 'summary') }}
+{{ colin.llm.classify(content, ['positive', 'negative']) }}
 
 {% llm %}
 Analyze this content...
@@ -57,15 +57,15 @@ Analyze this content...
 Named providers are accessed through their name:
 
 ```markdown
-{{ llm.fast.extract(content, 'word count') }}
-{{ llm.capable.extract(content, 'detailed legal analysis') }}
+{{ colin.llm.fast.extract(content, 'word count') }}
+{{ colin.llm.capable.extract(content, 'detailed legal analysis') }}
 ```
 
 This lets you optimize cost and latency by routing simple tasks to faster, cheaper models while reserving capable models for complex work.
 
 ## Template Functions
 
-The LLM provider exposes three functions. When using the default provider, these are available both as direct functions (`extract()`, `classify()`) and on the `llm` namespace (`llm.extract()`, `llm.classify()`).
+The LLM provider exposes three functions accessible through the `colin.llm` namespace (`colin.llm.extract()`, `colin.llm.classify()`, `colin.llm.complete()`).
 
 | Function | Purpose |
 | :------- | :------ |
@@ -76,7 +76,7 @@ The LLM provider exposes three functions. When using the default provider, these
 Individual function calls can override the model:
 
 ```markdown
-{{ llm.extract(content, 'summary', model='anthropic:claude-haiku-3') }}
+{{ colin.llm.extract(content, 'summary', model='anthropic:claude-haiku-3') }}
 ```
 
 ### Extract
@@ -123,7 +123,7 @@ When you pass a `RefResult` to `extract()`, Colin includes document metadata in 
 The `classify()` function categorizes content into predefined labels:
 
 ```markdown
-{% set sentiment = llm.classify(ref('feedback').content, ['positive', 'negative', 'neutral']) %}
+{% set sentiment = colin.llm.classify(ref('feedback').content, ['positive', 'negative', 'neutral']) %}
 
 Customer sentiment: {{ sentiment }}
 ```
@@ -133,7 +133,7 @@ The function returns a single label from the provided list.
 For yes/no decisions, use boolean labels:
 
 ```markdown
-{% set urgent = llm.classify(ref('ticket').content, [true, false]) %}
+{% set urgent = colin.llm.classify(ref('ticket').content, [true, false]) %}
 
 {% if urgent %}
 **URGENT**: This ticket requires immediate attention.
@@ -143,7 +143,7 @@ For yes/no decisions, use boolean labels:
 Enable multiple labels with `multi=True`:
 
 ```markdown
-{% set tags = llm.classify(ref('article').content, ['technical', 'business', 'tutorial', 'news'], multi=true) %}
+{% set tags = colin.llm.classify(ref('article').content, ['technical', 'business', 'tutorial', 'news'], multi=true) %}
 
 Tags: {{ tags | join(', ') }}
 ```
@@ -155,7 +155,7 @@ This returns a list of applicable labels rather than a single choice.
 The `complete()` function generates text from a prompt:
 
 ```markdown
-{{ llm.complete('Write a haiku about documentation') }}
+{{ colin.llm.complete('Write a haiku about documentation') }}
 ```
 
 For multi-line prompts and complex generation, use `{% llm %}` blocks instead:

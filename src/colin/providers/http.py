@@ -18,7 +18,7 @@ from colin.providers.base import Provider
 
 @dataclass
 class HTTPResource(Addressable):
-    """Domain object returned by http.get(). Inherits from Addressable."""
+    """Domain object returned by colin.http.get(). Inherits from Addressable."""
 
     url: str
     """The URL that was fetched."""
@@ -54,7 +54,7 @@ class HTTPResource(Addressable):
 class HTTPProvider(Provider):
     """Provider for fetching HTTP resources.
 
-    Template usage: {{ http.get("example.com/data.json") }}
+    Template usage: {{ colin.http.get("example.com/data.json") }}
     """
 
     namespace: ClassVar[str] = "http"
@@ -147,7 +147,7 @@ class HTTPProvider(Provider):
     async def get(self, url: str) -> HTTPResource:
         """Fetch URL and return HTTPResource.
 
-        Template usage: {{ http.get("example.com/data.json") }}
+        Template usage: {{ colin.http.get("example.com/data.json") }}
 
         Args:
             url: URL to fetch (scheme optional, defaults to https://).
