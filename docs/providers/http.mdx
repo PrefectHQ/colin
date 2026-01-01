@@ -1,0 +1,178 @@
+---
+title: HTTP Provider
+sidebarTitle: HTTP
+icon: globe
+---
+
+The HTTP provider fetches content from web URLs. It handles both `http://` and `https://` schemes, managing connection pooling and timeouts automatically.
+
+The HTTP provider is registered by default—no configuration required.
+
+## Configuration
+
+Configure the HTTP provider in `colin.toml` to customize timeout behavior:
+
+```toml colin.toml
+[[providers.http]]
+timeout = 60.0
+```
+
+| Field | Description | Default |
+| :---- | :---------- | :------ |
+| `timeout` | Request timeout in seconds | `30.0` |
+
+Without explicit configuration, Colin registers the HTTP provider with default settings.
+
+## Template Functions
+
+The HTTP provider exposes one function:
+
+| Function | Purpose |
+| :------- | :------ |
+| `get()` | Fetch content from a URL |
+
+### Get
+
+Use `http.get()` to fetch content from any URL:
+
+```markdown models/sources/api-data.md
+---
+name: API Data
+---
+
+{{ http.get('https://api.example.com/data.json') }}
+```
+
+URLs without a scheme default to `https://`:
+
+```markdown
+{{ http.get('example.com/api/users') }}
+```
+
+The function returns an `HTTPResource` object with content and metadata:
+
+| Property | Description |
+| :------- | :---------- |
+| `.content` | Response body as a string |
+| `.uri` | The requested URL |
+| `.content_type` | Content-Type header value |
+| `.updated` | Last-Modified timestamp, if available |
+
+Access properties directly in templates:
+
+```markdown
+{% set response = http.get('https://api.example.com/status') %}
+
+Content-Type: {{ response.content_type }}
+Last Modified: {{ response.updated }}
+
+{{ response.content }}
+```
+
+## Objects
+
+**HTTPResource** - Returned by `get()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `uri` | `str` | Requested URL |
+| `content` | `str` | Response body |
+| `content_type` | `str \| None` | Content-Type header |
+| `updated` | `datetime \| None` | Last-Modified time |
+
+The object supports conversion to `RefResult` via the `to_ref_result()` method.
+
+## URI Support
+
+URLs starting with `http://` or `https://` work directly with `ref()`:
+
+```markdown
+{{ ref('https://api.example.com/config.json') }}
+```
+
+This is equivalent to using `http.get()` but automatically tracks the dependency.
+
+## Dependency Tracking
+
+HTTP resources can be tracked as dependencies using `ref()`:
+
+```markdown
+{# Fetched but not tracked #}
+{{ http.get('https://api.example.com/config').content }}
+
+{# Tracked in manifest #}
+{{ ref(http.get('https://api.example.com/config')).content }}
+```
+
+Tracked dependencies appear in the manifest:
+
+```json
+{
+  "documents": {
+    "sources/config": {
+      "refs_evaluated": ["https://api.example.com/config"]
+    }
+  }
+}
+```
+
+## Staleness Detection
+
+The HTTP provider supports efficient staleness checking via HEAD requests. When Colin evaluates whether a document needs recompilation, it checks `Last-Modified` headers without downloading full content.
+
+If the server provides a `Last-Modified` header, Colin compares it against the cached timestamp. Resources without this header are treated as potentially stale.
+
+## Working with APIs
+
+The HTTP provider works well with JSON APIs. Combine with LLM functions to process API responses:
+
+```markdown models/sources/github-issues.md
+---
+name: GitHub Issues
+---
+
+{% set issues = http.get('https://api.github.com/repos/owner/repo/issues') %}
+
+{{ issues.content }}
+```
+
+```markdown models/context/issue-summary.md
+---
+name: Issue Summary
+---
+
+{{ ref('sources/github-issues') | extract('open issues with their priorities and assignees') }}
+```
+
+### Authenticated Requests
+
+The HTTP provider supports unauthenticated requests only. For APIs requiring authentication, use an MCP server that handles credentials:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "github"
+command = "uvx"
+args = ["mcp-server-github"]
+env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+```
+
+Then access authenticated endpoints through MCP:
+
+```markdown
+{{ mcp.github.resource('repo://owner/repo/issues') }}
+```
+
+## Error Handling
+
+The provider raises specific exceptions for HTTP errors:
+
+| Status | Exception |
+| :----- | :-------- |
+| 404 | `FileNotFoundError` |
+| Other 4xx/5xx | `httpx.HTTPStatusError` |
+
+Template rendering stops on HTTP errors. Ensure URLs are valid and accessible before compilation.
+
+## Lifecycle
+
+The HTTP provider manages an `httpx.AsyncClient` through its lifespan context. Colin creates the client when starting compilation and closes it on shutdown. This connection pooling improves performance when fetching multiple URLs from the same host.

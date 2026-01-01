@@ -54,16 +54,19 @@
             "pages": [
               "projects/documents",
               "projects/references",
-              "projects/organization"
+              "projects/organization",
+              "context/dependencies"
             ]
           },
           {
-            "group": "Context",
+            "group": "Providers",
             "pages": [
-              "context/providers",
-              "context/dependencies",
-              "context/mcp",
-              "context/llm-workflows"
+              "providers/providers",
+              "providers/project",
+              "providers/http",
+              "providers/mcp",
+              "providers/llm",
+              "providers/s3"
             ]
           },
           {

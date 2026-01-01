@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -17,20 +18,35 @@ from colin.providers.namespace import Namespace, build_namespace
 
 logger = logging.getLogger(__name__)
 
-_PROVIDER_CLASSES: dict[str, type[Provider]] = {
+_PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
     "http": HTTPProvider,
     "https": HTTPProvider,
     "llm": LLMProvider,
     "mcp": MCPProvider,
+    "s3": "colin.providers.s3:S3Provider",  # Lazy import
 }
+
+
+def _get_provider_class(provider_type: str) -> type[Provider]:
+    """Get provider class, handling lazy imports for optional deps."""
+    if provider_type not in _PROVIDER_CLASSES:
+        available = ", ".join(sorted(_PROVIDER_CLASSES)) or "(none)"
+        raise ValueError(f"Unknown provider type '{provider_type}'. Available: {available}")
+
+    cls = _PROVIDER_CLASSES[provider_type]
+
+    if isinstance(cls, str):
+        module_path, class_name = cls.rsplit(":", 1)
+        module = importlib.import_module(module_path)  # Let ImportError bubble up
+        cls = getattr(module, class_name)
+        _PROVIDER_CLASSES[provider_type] = cls  # Cache for next time
+
+    return cls
 
 
 def create_provider(config: ProviderInstanceConfig) -> Provider:
     """Create a provider instance from configuration."""
-    if config.provider_type not in _PROVIDER_CLASSES:
-        available = ", ".join(sorted(_PROVIDER_CLASSES)) or "(none)"
-        raise ValueError(f"Unknown provider type '{config.provider_type}'. Available: {available}")
-    provider_cls = _PROVIDER_CLASSES[config.provider_type]
+    provider_cls = _get_provider_class(config.provider_type)
     provider = provider_cls.from_config(config.name, config.config)
     provider.schemes = config.get_schemes()
     return provider

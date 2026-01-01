@@ -1,0 +1,228 @@
+---
+title: LLM Provider
+sidebarTitle: LLM
+icon: wand-magic-sparkles
+---
+
+The LLM provider integrates language models into Colin's template system. Through `extract()`, `classify()`, and `complete()` functions, you can transform, analyze, and synthesize content during compilation. Results are cached by input hash, making subsequent compilations fast and predictable.
+
+The LLM provider is registered automatically—no configuration required. It uses pydantic-ai under the hood and supports any model that pydantic-ai can connect to.
+
+## Configuration
+
+Configure a default model in `colin.toml`:
+
+```toml colin.toml
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-20250514"
+```
+
+Model identifiers follow the `provider:model-name` format. Supported providers include `anthropic` and `openai`.
+
+| Field | Description | Default |
+| :---- | :---------- | :------ |
+| `model` | Model identifier (e.g., `anthropic:claude-sonnet-4-20250514`) | From settings |
+
+### Named Providers
+
+Beyond the default provider, you can configure named LLM instances for different use cases. A provider entry **without** a `name` becomes the default; entries **with** a `name` become accessible under that namespace.
+
+```toml colin.toml
+# Default LLM - used by llm.extract(), llm.classify(), {% llm %}, etc.
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-20250514"
+
+# Fast model for simple extractions
+[[providers.llm]]
+name = "fast"
+model = "anthropic:claude-haiku-3"
+
+# Capable model for complex reasoning
+[[providers.llm]]
+name = "capable"
+model = "anthropic:claude-opus-4"
+```
+
+The default provider's functions are available directly on the `llm` namespace:
+
+```markdown
+{{ llm.extract(content, 'summary') }}
+{{ llm.classify(content, ['positive', 'negative']) }}
+
+{% llm %}
+Analyze this content...
+{% endllm %}
+```
+
+Named providers are accessed through their name:
+
+```markdown
+{{ llm.fast.extract(content, 'word count') }}
+{{ llm.capable.extract(content, 'detailed legal analysis') }}
+```
+
+This lets you optimize cost and latency by routing simple tasks to faster, cheaper models while reserving capable models for complex work.
+
+## Template Functions
+
+The LLM provider exposes three functions. When using the default provider, these are available both as direct functions (`extract()`, `classify()`) and on the `llm` namespace (`llm.extract()`, `llm.classify()`).
+
+| Function | Purpose |
+| :------- | :------ |
+| `extract()` | Pull specific information from content |
+| `classify()` | Categorize content into predefined labels |
+| `complete()` | Generate text from a prompt |
+
+Individual function calls can override the model:
+
+```markdown
+{{ llm.extract(content, 'summary', model='anthropic:claude-haiku-3') }}
+```
+
+### Extract
+
+The `extract()` function pulls specific information from content using an LLM. Pass the content and a prompt describing what to extract:
+
+```markdown models/summary.md
+---
+name: Key Points
+---
+
+{{ extract(ref('sources/report').content, 'the top 5 key findings') }}
+```
+
+The function works as a filter for more readable chaining:
+
+```markdown
+{{ ref('sources/report') | extract('the top 5 key findings') }}
+```
+
+Both syntaxes are equivalent. The filter syntax reads more naturally when working with refs.
+
+Apply multiple extractions to distill different aspects of a document:
+
+```markdown models/brief.md
+---
+name: Executive Brief
+---
+
+## Summary
+{{ ref('sources/report') | extract('a one-paragraph executive summary') }}
+
+## Risks
+{{ ref('sources/report') | extract('identified risks and mitigation strategies') }}
+
+## Action Items
+{{ ref('sources/report') | extract('immediate action items with owners') }}
+```
+
+When you pass a `RefResult` to `extract()`, Colin includes document metadata in the prompt context. The LLM sees the document name, description, URI, and content—helping it understand the source material.
+
+### Classify
+
+The `classify()` function categorizes content into predefined labels:
+
+```markdown
+{% set sentiment = llm.classify(ref('feedback').content, ['positive', 'negative', 'neutral']) %}
+
+Customer sentiment: {{ sentiment }}
+```
+
+The function returns a single label from the provided list.
+
+For yes/no decisions, use boolean labels:
+
+```markdown
+{% set urgent = llm.classify(ref('ticket').content, [true, false]) %}
+
+{% if urgent %}
+**URGENT**: This ticket requires immediate attention.
+{% endif %}
+```
+
+Enable multiple labels with `multi=True`:
+
+```markdown
+{% set tags = llm.classify(ref('article').content, ['technical', 'business', 'tutorial', 'news'], multi=true) %}
+
+Tags: {{ tags | join(', ') }}
+```
+
+This returns a list of applicable labels rather than a single choice.
+
+### Complete
+
+The `complete()` function generates text from a prompt:
+
+```markdown
+{{ llm.complete('Write a haiku about documentation') }}
+```
+
+For multi-line prompts and complex generation, use `{% llm %}` blocks instead:
+
+```markdown
+{% llm %}
+Write a professional summary of this technical document:
+
+{{ ref('sources/spec').content }}
+
+Focus on practical implications for developers.
+{% endllm %}
+```
+
+Override the model for specific completions:
+
+```markdown
+{% llm model="anthropic:claude-haiku-3" %}
+Quick summary: {{ ref('data').content }}
+{% endllm %}
+```
+
+## Caching
+
+Colin caches LLM results by input hash. For `extract()` and `classify()`, the hash includes content and prompt. For `complete()` and `{% llm %}` blocks, it's the fully rendered prompt.
+
+If content or prompt changes, the cache misses and Colin makes a fresh call. During compilation, Colin shows cache status:
+
+```
+✓ summary.md
+  → llm:a1b2c3    # Fresh LLM call
+  ⚡ llm:d4e5f6   # Cache hit
+```
+
+Force fresh LLM calls by cleaning the manifest:
+
+```bash
+colin clean    # Removes manifest and cache
+colin run      # Full recompilation
+```
+
+Or bypass cache for specific documents:
+
+```bash
+colin run context/analysis.md --no-cache
+```
+
+## Cost Management
+
+LLM calls have associated costs. Colin's caching minimizes redundant calls, but you can further optimize by using cheaper models for simple tasks:
+
+```markdown
+{{ ref('data') | extract('word count', model='anthropic:claude-haiku-3') }}
+```
+
+Structure documents to avoid redundant extraction. Extract once into an intermediate document:
+
+```markdown models/context/extracted.md
+---
+name: Extracted Data
+---
+
+{{ ref('sources/raw') | extract('structured summary') }}
+```
+
+Other documents can then reference the extracted content without re-running the LLM:
+
+```markdown
+{{ ref('context/extracted').content }}
+```
