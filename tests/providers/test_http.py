@@ -13,59 +13,47 @@ class TestHTTPResource:
     """Tests for HTTPResource dataclass."""
 
     def test_last_updated_returns_updated_when_set(self) -> None:
-        """last_updated returns the updated field when set."""
+        """last_updated returns the _last_updated field when set."""
         ts = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
-        resource = HTTPResource(uri="https://example.com", content="test", updated=ts)
+        resource = HTTPResource(url="https://example.com", _content="test", _last_updated=ts)
 
         assert resource.last_updated == ts
 
     def test_last_updated_returns_now_when_not_set(self) -> None:
-        """last_updated returns current time when updated is None."""
-        resource = HTTPResource(uri="https://example.com", content="test")
+        """last_updated returns current time when _last_updated is None."""
+        resource = HTTPResource(url="https://example.com", _content="test")
 
         # Should be very recent
         now = datetime.now(timezone.utc)
         assert (now - resource.last_updated).total_seconds() < 1
 
-    def test_to_ref_result_creates_valid_result(self) -> None:
-        """to_ref_result creates a RefResult with correct fields."""
-        ts = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+    def test_str_returns_content(self) -> None:
+        """__str__ returns the content for template use."""
         resource = HTTPResource(
-            uri="https://example.com/data.json",
-            content='{"key": "value"}',
-            content_type="application/json",
-            updated=ts,
+            url="https://example.com/data.json",
+            _content='{"key": "value"}',
         )
 
-        result = resource.to_ref_result()
+        assert str(resource) == '{"key": "value"}'
 
-        assert result.name == "data.json"
-        assert result.content == '{"key": "value"}'
-        assert result.uri == "https://example.com/data.json"
-        assert result.updated == ts
-        assert result.source is resource
+    def test_address_returns_valid_address(self) -> None:
+        """address() returns an Address with correct fields."""
+        resource = HTTPResource(
+            url="https://example.com/data.json",
+            _content='{"key": "value"}',
+        )
 
-    def test_to_ref_result_uses_uri_as_name_when_no_path(self) -> None:
-        """to_ref_result uses full URI as name when path is empty."""
-        resource = HTTPResource(uri="https://example.com/", content="test")
+        addr = resource.address()
 
-        result = resource.to_ref_result()
-
-        # Empty string after split, so falls back to URI
-        assert result.name == "https://example.com/"
+        assert addr["provider"] == "http"
+        assert addr["payload"]["url"] == "https://example.com/data.json"
 
 
 class TestHTTPProvider:
     """Tests for HTTPProvider."""
 
-    def test_schemes_includes_http_and_https(self) -> None:
-        """Provider handles both http and https schemes."""
-        provider = HTTPProvider()
-
-        assert provider.schemes == ["http", "https"]
-
-    def test_namespace_defaults_to_http(self) -> None:
-        """Namespace defaults to first scheme (http)."""
+    def test_namespace_is_http(self) -> None:
+        """Namespace is 'http'."""
         provider = HTTPProvider()
 
         assert provider.namespace == "http"
@@ -77,29 +65,32 @@ class TestHTTPProvider:
         assert provider.timeout == 60.0
 
 
-class TestHTTPProviderRead:
-    """Tests for HTTPProvider.read()."""
+class TestHTTPProviderLoadAddress:
+    """Tests for HTTPProvider.load_address()."""
 
-    async def test_read_returns_response_text(self) -> None:
-        """read() returns response body as text."""
+    async def test_load_address_returns_http_resource(self) -> None:
+        """load_address() returns HTTPResource with content."""
         provider = HTTPProvider()
 
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = "Hello, World!"
+        mock_response.headers = {}
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
         provider._client = mock_client
 
-        result = await provider.read("https://example.com/test.txt")
+        result = await provider.load_address({"url": "https://example.com/test.txt"})
 
-        assert result == "Hello, World!"
+        assert isinstance(result, HTTPResource)
+        assert result.content == "Hello, World!"
+        assert result.url == "https://example.com/test.txt"
         mock_client.get.assert_called_once_with("https://example.com/test.txt")
 
-    async def test_read_raises_file_not_found_on_404(self) -> None:
-        """read() raises FileNotFoundError on 404."""
+    async def test_load_address_raises_file_not_found_on_404(self) -> None:
+        """load_address() raises FileNotFoundError on 404."""
         provider = HTTPProvider()
 
         mock_response = MagicMock()
@@ -110,10 +101,10 @@ class TestHTTPProviderRead:
         provider._client = mock_client
 
         with pytest.raises(FileNotFoundError, match="URL not found"):
-            await provider.read("https://example.com/missing.txt")
+            await provider.load_address({"url": "https://example.com/missing.txt"})
 
-    async def test_read_raises_on_other_http_errors(self) -> None:
-        """read() raises HTTPStatusError on non-404 errors."""
+    async def test_load_address_raises_on_other_http_errors(self) -> None:
+        """load_address() raises HTTPStatusError on non-404 errors."""
         provider = HTTPProvider()
 
         mock_response = MagicMock()
@@ -129,14 +120,7 @@ class TestHTTPProviderRead:
         provider._client = mock_client
 
         with pytest.raises(httpx.HTTPStatusError):
-            await provider.read("https://example.com/error")
-
-    async def test_read_raises_when_not_initialized(self) -> None:
-        """read() raises RuntimeError when called outside lifespan."""
-        provider = HTTPProvider()
-
-        with pytest.raises(RuntimeError, match="not initialized"):
-            await provider.read("https://example.com/test.txt")
+            await provider.load_address({"url": "https://example.com/error"})
 
 
 class TestHTTPProviderGetLastUpdated:
@@ -154,7 +138,7 @@ class TestHTTPProviderGetLastUpdated:
         mock_client.head = AsyncMock(return_value=mock_response)
         provider._client = mock_client
 
-        result = await provider.get_last_updated("https://example.com/file.txt")
+        result = await provider.get_last_updated({"url": "https://example.com/file.txt"})
 
         assert result is not None
         assert result.year == 2024
@@ -173,7 +157,7 @@ class TestHTTPProviderGetLastUpdated:
         mock_client.head = AsyncMock(return_value=mock_response)
         provider._client = mock_client
 
-        result = await provider.get_last_updated("https://example.com/file.txt")
+        result = await provider.get_last_updated({"url": "https://example.com/file.txt"})
 
         assert result is None
 
@@ -188,7 +172,7 @@ class TestHTTPProviderGetLastUpdated:
         mock_client.head = AsyncMock(return_value=mock_response)
         provider._client = mock_client
 
-        result = await provider.get_last_updated("https://example.com/missing.txt")
+        result = await provider.get_last_updated({"url": "https://example.com/missing.txt"})
 
         assert result is None
 
@@ -200,16 +184,16 @@ class TestHTTPProviderGetLastUpdated:
         mock_client.head = AsyncMock(side_effect=httpx.ConnectError("Connection failed"))
         provider._client = mock_client
 
-        result = await provider.get_last_updated("https://example.com/file.txt")
+        result = await provider.get_last_updated({"url": "https://example.com/file.txt"})
 
         assert result is None
 
 
-class TestHTTPProviderTemplateGet:
-    """Tests for HTTPProvider._template_get()."""
+class TestHTTPProviderGet:
+    """Tests for HTTPProvider.get() template function."""
 
     async def test_returns_http_resource(self) -> None:
-        """_template_get() returns HTTPResource with content."""
+        """get() returns HTTPResource with content."""
         provider = HTTPProvider()
 
         mock_response = MagicMock()
@@ -225,16 +209,14 @@ class TestHTTPProviderTemplateGet:
         mock_client.get = AsyncMock(return_value=mock_response)
         provider._client = mock_client
 
-        mock_ctx = MagicMock()
-
-        result = await provider._template_get(mock_ctx, "https://api.example.com/data")
+        result = await provider.get("https://api.example.com/data")
 
         assert isinstance(result, HTTPResource)
-        assert result.uri == "https://api.example.com/data"
+        assert result.url == "https://api.example.com/data"
         assert result.content == '{"data": true}'
         assert result.content_type == "application/json"
-        assert result.updated is not None
-        assert result.updated.year == 2024
+        assert result.last_updated is not None
+        assert result.last_updated.year == 2024
 
 
 class TestHTTPProviderNormalizeUrl:

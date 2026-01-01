@@ -72,7 +72,7 @@ class TestStalenessDetection:
             if (engine.config.manifest_path).exists()
             else "{}"
         )
-        engine._project_provider._manifest = engine.manifest
+        engine._project_provider.manifest = engine.manifest
 
         result = await engine.compile_all()
 
@@ -347,7 +347,6 @@ class TestProjectProviderGetLastUpdated:
         """get_last_updated() returns compiled_at from manifest."""
         from colin.providers.project import ProjectProvider
 
-        storage = FileStorage(base_path=tmp_path)
         manifest = Manifest()
         compiled_time = datetime.now(timezone.utc) - timedelta(hours=1)
         manifest.set_document(
@@ -359,9 +358,9 @@ class TestProjectProviderGetLastUpdated:
             ),
         )
 
-        provider = ProjectProvider(storage, manifest)
+        provider = ProjectProvider(base_path=tmp_path, manifest=manifest)
 
-        result = await provider.get_last_updated("project://test.md")
+        result = await provider.get_last_updated({"path": "test.md"})
 
         assert result == compiled_time
 
@@ -369,12 +368,11 @@ class TestProjectProviderGetLastUpdated:
         """get_last_updated() returns None if document not in manifest."""
         from colin.providers.project import ProjectProvider
 
-        storage = FileStorage(base_path=tmp_path)
         manifest = Manifest()
 
-        provider = ProjectProvider(storage, manifest)
+        provider = ProjectProvider(base_path=tmp_path, manifest=manifest)
 
-        result = await provider.get_last_updated("project://unknown.md")
+        result = await provider.get_last_updated({"path": "unknown.md"})
 
         assert result is None
 
@@ -382,10 +380,9 @@ class TestProjectProviderGetLastUpdated:
         """get_last_updated() returns None if no manifest provided."""
         from colin.providers.project import ProjectProvider
 
-        storage = FileStorage(base_path=tmp_path)
-        provider = ProjectProvider(storage)  # No manifest
+        provider = ProjectProvider(base_path=tmp_path)  # No manifest
 
-        result = await provider.get_last_updated("project://test.md")
+        result = await provider.get_last_updated({"path": "test.md"})
 
         assert result is None
 

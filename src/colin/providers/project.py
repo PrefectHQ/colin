@@ -1,60 +1,111 @@
-"""Project provider for project:// URIs."""
+"""Project provider - FileProvider scoped to the project's target directory."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import Any, ClassVar
 
-from colin.providers.base import Provider
-
-if TYPE_CHECKING:
-    from colin.models import Manifest
-    from colin.providers.storage.base import Storage
+from colin.models import Address, Manifest
+from colin.providers.file import FileProvider, FileResource
 
 
-class ProjectProvider(Provider):
-    """Provider for project:// URIs. Reads from compiled artifacts.
+@dataclass
+class ProjectResource(FileResource):
+    """Domain object returned by ProjectProvider. Extends FileResource."""
 
-    Wraps Storage to provide the project:// scheme for template refs.
-    The ref() function handles creating RefResult and tracking dependencies.
+    name: str = ""
+    """Resource name (typically filename)."""
+
+    description: str | None = None
+    """Resource description."""
+
+    def address(self) -> Address:
+        return Address(
+            provider="project",
+            instance=self._instance,
+            payload={"path": self.path},
+        )
+
+
+class ProjectProvider(FileProvider):
+    """FileProvider scoped to the project's target directory.
+
+    Reads compiled artifacts relative to base_path. Uses manifest
+    for timestamps instead of file mtime.
+
+    Template usage: ref("greeting.md") reads base_path/greeting.md
     """
 
-    schemes: list[str] = ["project"]
+    namespace: ClassVar[str] = "project"
 
-    def __init__(self, storage: Storage, manifest: Manifest | None = None) -> None:
-        """Initialize project provider.
+    base_path: Path
+    """Target directory containing compiled artifacts."""
 
-        Args:
-            storage: Storage for artifact reads.
-            manifest: Optional manifest for timestamp lookups.
-        """
-        self._storage = storage
-        self._manifest = manifest
+    manifest: Manifest | None = None
+    """Manifest for timestamp lookups."""
 
-    async def read(self, uri: str) -> str:
-        """Read compiled artifact by URI.
+    async def load_uri(self, uri: str) -> ProjectResource:
+        """Load compiled artifact by URI.
 
         Args:
             uri: Full URI (e.g., 'project://greeting.md').
 
         Returns:
-            Raw content.
+            ProjectResource with content and metadata.
         """
         path = uri.split("://", 1)[1] if "://" in uri else uri
-        return await self._storage.read(path)
+        return await self._fetch(path)
 
-    async def get_last_updated(self, uri: str) -> datetime | None:
+    async def load_address(self, payload: dict[str, Any]) -> ProjectResource:
+        """Load compiled artifact from address payload.
+
+        Args:
+            payload: Dict with 'path' key (relative to base_path).
+
+        Returns:
+            ProjectResource with content and metadata.
+        """
+        path = payload["path"]
+        return await self._fetch(path)
+
+    async def _fetch(self, path: str) -> ProjectResource:
+        """Fetch project resource by relative path."""
+        resolved = (self.base_path / path).resolve()
+
+        if not resolved.exists():
+            raise FileNotFoundError(f"File not found: {path} (expected at {resolved})")
+
+        content = resolved.read_text(encoding="utf-8")
+        updated = self._get_compiled_at(path)
+
+        return ProjectResource(
+            path=path,
+            _content=content,
+            name=path.split("/")[-1],
+            _last_updated=updated,
+            _instance=self._instance,
+        )
+
+    async def get_last_updated(self, payload: dict[str, Any]) -> datetime | None:
         """Get compiled_at from manifest for a document.
 
         Args:
-            uri: Full URI (e.g., 'project://greeting.md').
+            payload: Dict with 'path' key.
 
         Returns:
             Document's compiled_at time, or None if not in manifest.
         """
-        if self._manifest is None:
+        path = payload["path"]
+        return self._get_compiled_at(path)
+
+    def _get_compiled_at(self, path: str) -> datetime | None:
+        """Get compiled_at time from manifest."""
+        if self.manifest is None:
             return None
-        doc_meta = self._manifest.get_document(uri)
+        uri = f"project://{path}"
+        doc_meta = self.manifest.get_document(uri)
         if doc_meta is None:
             return None
         return doc_meta.compiled_at

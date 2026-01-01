@@ -114,7 +114,6 @@ def cached(
         @wraps(func)
         async def wrapper(
             self,
-            ctx,
             *args,
             _cache_id: str | None = None,
             _cache: bool = True,
@@ -124,15 +123,15 @@ def cached(
 
             # Skip cache if disabled or not in compilation
             if not _cache or compile_ctx is None:
-                return await func(self, ctx, *args, **kwargs)
+                return await func(self, *args, **kwargs)
 
             # Build cache key - only compute hash if no manual _cache_id
             if _cache_id:
                 cache_key = f"{key}:{_cache_id}"
             else:
-                bound = sig.bind(self, ctx, *args, **kwargs)
+                bound = sig.bind(self, *args, **kwargs)
                 bound.apply_defaults()
-                bound_args = {k: v for k, v in bound.arguments.items() if k not in ("self", "ctx")}
+                bound_args = {k: v for k, v in bound.arguments.items() if k != "self"}
                 cache_key = f"{key}:{hash_args_for_func(func, bound_args, exclude_args)}"
 
             # Check cache
@@ -141,7 +140,7 @@ def cached(
                 return json.loads(cached_entry.output)
 
             # Cache miss - execute function (exceptions propagate, not cached)
-            result = await func(self, ctx, *args, **kwargs)
+            result = await func(self, *args, **kwargs)
 
             # Store in cache
             compile_ctx.manifest.cache[cache_key] = CacheEntry(

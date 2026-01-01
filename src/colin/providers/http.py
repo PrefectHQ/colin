@@ -4,61 +4,66 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import TYPE_CHECKING
+from typing import Any, ClassVar
 
 import httpx
 
+from colin.models import Address
+from colin.providers.addressable import Addressable
 from colin.providers.base import Provider
-from colin.providers.context import ProviderContext
-
-if TYPE_CHECKING:
-    from colin.models import RefResult
 
 
 @dataclass
-class HTTPResource:
-    """Domain object returned by http.get()."""
+class HTTPResource(Addressable):
+    """Domain object returned by http.get(). Inherits from Addressable."""
 
-    uri: str
-    content: str
+    url: str
+    """The URL that was fetched."""
+
+    _content: str
+    """The response content."""
+
     content_type: str | None = None
-    updated: datetime | None = None
+    """Content-Type header from response."""
+
+    _last_updated: datetime | None = None
+    """Last-Modified header from response."""
+
+    _instance: str = field(default="", repr=False)
+    """Provider instance name."""
+
+    @property
+    def content(self) -> str:
+        return self._content
 
     @property
     def last_updated(self) -> datetime:
-        """When this resource was last modified."""
-        return self.updated or datetime.now(timezone.utc)
+        return self._last_updated or datetime.now(timezone.utc)
 
-    def to_ref_result(self) -> RefResult:
-        """Convert to RefResult for dependency tracking."""
-        from colin.models import RefResult
-
-        return RefResult(
-            name=self.uri.split("/")[-1] or self.uri,
-            description=None,
-            content=self.content,
-            template="",
-            updated=self.last_updated,
-            uri=self.uri,
-            source=self,
+    def address(self) -> Address:
+        return Address(
+            provider="http",
+            instance=self._instance,
+            payload={"url": self.url},
         )
 
 
 class HTTPProvider(Provider):
-    """Provider for http:// and https:// URIs.
+    """Provider for fetching HTTP resources.
 
-    Provides web content fetching with proper HTTP semantics.
+    Template usage: {{ http.get("example.com/data.json") }}
     """
 
-    schemes: list[str] = ["http", "https"]
+    namespace: ClassVar[str] = "http"
 
     timeout: float = 30.0
     """Request timeout in seconds."""
 
     _client: httpx.AsyncClient | None = None
+    _instance: str = ""
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
@@ -74,41 +79,50 @@ class HTTPProvider(Provider):
             raise RuntimeError("HTTPProvider not initialized - use within lifespan context")
         return self._client
 
-    async def read(self, uri: str) -> str:
-        """Fetch content from URL.
+    async def load_address(self, payload: dict[str, Any]) -> HTTPResource:
+        """Load content from address payload.
 
         Args:
-            uri: Full URL (e.g., 'https://example.com/data.json').
+            payload: Dict with 'url' key.
 
         Returns:
-            Response body as string.
-
-        Raises:
-            FileNotFoundError: If URL returns 404.
-            httpx.HTTPStatusError: For other HTTP errors.
-            RuntimeError: If called outside lifespan context.
+            HTTPResource with content and metadata.
         """
+        url = payload["url"]
+        return await self._fetch(url)
+
+    async def _fetch(self, url: str) -> HTTPResource:
+        """Fetch URL and return HTTPResource."""
         client = self._require_client()
-        response = await client.get(uri)
+        response = await client.get(url)
 
         if response.status_code == 404:
-            raise FileNotFoundError(f"URL not found: {uri}")
+            raise FileNotFoundError(f"URL not found: {url}")
 
         response.raise_for_status()
-        return response.text
 
-    async def get_last_updated(self, uri: str) -> datetime | None:
-        """Get last modified time via HEAD request.
+        updated = None
+        last_modified = response.headers.get("last-modified")
+        if last_modified:
+            try:
+                updated = parsedate_to_datetime(last_modified)
+            except ValueError:
+                pass
 
-        Args:
-            uri: Full URL.
+        return HTTPResource(
+            url=url,
+            _content=response.text,
+            content_type=response.headers.get("content-type"),
+            _last_updated=updated,
+            _instance=self._instance,
+        )
 
-        Returns:
-            Last-Modified datetime, or None if not available.
-        """
+    async def get_last_updated(self, payload: dict[str, Any]) -> datetime | None:
+        """Get last modified time via HEAD request."""
+        url = payload["url"]
         try:
             client = self._require_client()
-            response = await client.head(uri)
+            response = await client.head(url)
 
             if response.status_code >= 400:
                 return None
@@ -122,7 +136,7 @@ class HTTPProvider(Provider):
             return None
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
-        return {"get": self._template_get}
+        return {"get": self.get}
 
     def _normalize_url(self, url: str) -> str:
         """Add https:// scheme if missing."""
@@ -130,33 +144,15 @@ class HTTPProvider(Provider):
             return f"https://{url}"
         return url
 
-    async def _template_get(self, ctx: ProviderContext, uri: str) -> HTTPResource:
-        """Template function for HTTP GET.
+    async def get(self, url: str) -> HTTPResource:
+        """Fetch URL and return HTTPResource.
+
+        Template usage: {{ http.get("example.com/data.json") }}
 
         Args:
-            ctx: Provider context.
-            uri: URL to fetch (scheme optional, defaults to https://).
+            url: URL to fetch (scheme optional, defaults to https://).
 
         Returns:
             HTTPResource with content and metadata.
         """
-        uri = self._normalize_url(uri)
-        client = self._require_client()
-        response = await client.get(uri)
-        response.raise_for_status()
-
-        # Parse Last-Modified if present
-        updated = None
-        last_modified = response.headers.get("last-modified")
-        if last_modified:
-            try:
-                updated = parsedate_to_datetime(last_modified)
-            except ValueError:
-                pass
-
-        return HTTPResource(
-            uri=uri,
-            content=response.text,
-            content_type=response.headers.get("content-type"),
-            updated=updated,
-        )
+        return await self._fetch(self._normalize_url(url))

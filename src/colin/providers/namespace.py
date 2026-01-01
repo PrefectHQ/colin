@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from colin.providers.context import ProviderContext
-
 if TYPE_CHECKING:
     from colin.providers.manager import ProviderInstanceEntry, ProviderRegistry
 
@@ -36,26 +34,24 @@ class Namespace:
         raise KeyError(f"No key '{name}'")
 
 
-def build_namespace(ctx: ProviderContext, registry: ProviderRegistry) -> Namespace:
-    """Build a provider namespace bound to a context."""
+def build_namespace(registry: ProviderRegistry) -> Namespace:
+    """Build a provider namespace for templates."""
     types: dict[str, object] = {}
     for provider_type, entry in registry.types.items():
         type_map: dict[str, object] = {}
         for name, instance in entry.instances.items():
-            type_map[name] = build_instance_namespace(instance, ctx)
+            type_map[name] = build_instance_namespace(instance)
         if entry.default:
-            type_map["__default__"] = build_instance_namespace(entry.default, ctx)
+            type_map["__default__"] = build_instance_namespace(entry.default)
         types[provider_type] = Namespace(type_map)
     return Namespace(types)
 
 
-def build_instance_namespace(instance: ProviderInstanceEntry, ctx: ProviderContext) -> Namespace:
+def build_instance_namespace(instance: ProviderInstanceEntry) -> Namespace:
     """Build a namespace for a single provider instance."""
     funcs: dict[str, object] = {}
     for name, func in instance.functions.items():
-
-        async def wrapper(*args: object, _func=func, _ctx=ctx, **kwargs: object) -> object:
-            return await _func(_ctx, *args, **kwargs)
-
-        funcs[name] = wrapper
+        # Functions are called directly - no ctx injection needed
+        # Functions that need context use get_compile_context()
+        funcs[name] = func
     return Namespace(funcs)

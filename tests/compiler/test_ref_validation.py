@@ -11,7 +11,6 @@ from colin.compiler import CompileContext
 from colin.exceptions import RefNotFoundError
 from colin.models import Manifest
 from colin.providers.project import ProjectProvider
-from colin.providers.storage.file import FileStorage
 
 
 class TestSchemalessRefValidation:
@@ -28,8 +27,7 @@ class TestSchemalessRefValidation:
         output_dir.mkdir()
 
         manifest = Manifest()
-        file_storage = FileStorage(base_path=output_dir)
-        project_provider = ProjectProvider(storage=file_storage)
+        project_provider = ProjectProvider(base_path=output_dir)
 
         context = CompileContext(
             manifest=manifest,
@@ -122,8 +120,7 @@ class TestPathTraversalPrevention:
         outside_file.write_text("---\nname: Secret\n---\nSecret content")
 
         manifest = Manifest()
-        file_storage = FileStorage(base_path=output_dir)
-        project_provider = ProjectProvider(storage=file_storage)
+        project_provider = ProjectProvider(base_path=output_dir)
 
         context = CompileContext(
             manifest=manifest,

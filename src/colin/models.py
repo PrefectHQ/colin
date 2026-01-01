@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, TypedDict
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -14,6 +14,31 @@ from colin.utilities.temporal import (  # noqa: F401
     Duration,
     parse_duration,
 )
+
+
+class Address(TypedDict):
+    """Structured address for re-fetching a resource.
+
+    Stored in manifest to track dependencies. Contains just enough
+    info to re-fetch the resource via provider.load_address(payload).
+
+    The payload is provider-specific and should contain a 'type' field
+    when the provider supports multiple addressable types.
+
+    Examples:
+        S3: {"provider": "s3", "instance": "", "payload": {"bucket": "b", "key": "k"}}
+        MCP: {"provider": "mcp", "instance": "github", "payload": {"type": "resource", "uri": "colin://hello"}}
+        HTTP: {"provider": "http", "instance": "", "payload": {"url": "https://..."}}
+    """
+
+    provider: str
+    """Provider type (e.g., 's3', 'mcp', 'http')."""
+
+    instance: str
+    """Provider instance name (e.g., 'dev', 'github'). Empty string for default."""
+
+    payload: dict[str, Any]
+    """Provider-specific data for re-fetching. Should include 'type' for discrimination."""
 
 
 class RefreshPolicy(str, Enum):
@@ -142,8 +167,8 @@ class DocumentMeta(BaseModel):
     compiled_at: datetime | None = None
     """When this document was last compiled."""
 
-    refs_evaluated: list[str] = Field(default_factory=list)
-    """URIs of refs that were resolved during compilation."""
+    refs_evaluated: list[Address] = Field(default_factory=list)
+    """Addresses of refs that were resolved during compilation."""
 
     llm_calls: dict[str, LLMCall] = Field(default_factory=dict)
     """LLM calls made during compilation, keyed by call_id."""
@@ -179,11 +204,20 @@ class Manifest(BaseModel):
         self.documents[uri] = meta
 
     def get_dependents(self, uri: str) -> list[str]:
-        """Find all documents that depend on the given URI."""
+        """Find all documents that depend on the given URI.
+
+        For project:// URIs, matches against Address payloads with matching path.
+        """
+        # Extract path from project:// URI
+        path = uri.split("://", 1)[1] if "://" in uri else uri
+
         dependents = []
         for doc_uri, doc in self.documents.items():
-            if uri in doc.refs_evaluated:
-                dependents.append(doc_uri)
+            for addr in doc.refs_evaluated:
+                # Match project refs by path
+                if addr["provider"] == "project" and addr["payload"].get("path") == path:
+                    dependents.append(doc_uri)
+                    break
         return dependents
 
     def get_llm_call(self, doc_uri: str, call_id: str) -> LLMCall | None:
@@ -192,40 +226,6 @@ class Manifest(BaseModel):
         if doc is None:
             return None
         return doc.llm_calls.get(call_id)
-
-
-class RefResult(BaseModel):
-    """Structured result from ref() calls.
-
-    This is what ref('some/uri') returns. The __str__ method returns
-    a placeholder to avoid accidentally dumping large content into templates.
-    Use .content to get the actual content.
-    """
-
-    name: str
-    """Document name (from frontmatter or derived from URI)."""
-
-    description: str | None = None
-    """Description from frontmatter."""
-
-    content: str
-    """The compiled output content."""
-
-    template: str
-    """The raw uncompiled template source."""
-
-    updated: datetime
-    """When the document was last compiled."""
-
-    uri: str
-    """The ref URI."""
-
-    source: object = None
-    """Original domain object (MCPResource, CompiledDocument, etc.)."""
-
-    def __str__(self) -> str:
-        """Return placeholder to avoid accidentally dumping large content."""
-        return f"Ref({self.uri!r})"
 
 
 class ColinDocument(BaseModel):
@@ -262,8 +262,8 @@ class CompiledDocument(BaseModel):
     output_hash: str
     """Hash of the compiled output."""
 
-    refs_evaluated: list[str] = Field(default_factory=list)
-    """URIs of refs that were resolved."""
+    refs_evaluated: list[Address] = Field(default_factory=list)
+    """Addresses of refs that were resolved."""
 
     llm_calls: dict[str, LLMCall] = Field(default_factory=dict)
     """LLM calls made during compilation."""

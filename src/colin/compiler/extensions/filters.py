@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from colin.models import RefResult
-
 
 def create_llm_extract_filter(llm_namespace: Any):
     """Create the llm_extract filter bound to the LLM provider.
@@ -18,7 +16,7 @@ def create_llm_extract_filter(llm_namespace: Any):
     """
 
     async def llm_extract_filter(
-        content: str | RefResult | object,
+        content: object,
         prompt: str,
         model: str | None = None,
         _cache_id: str | None = None,
@@ -33,7 +31,7 @@ def create_llm_extract_filter(llm_namespace: Any):
             {{ content | llm_extract('summary', _cache=False) }}
 
         Args:
-            content: The content to extract from (string or RefResult).
+            content: The content to extract from.
             prompt: What to extract.
             model: Optional model override.
             _cache_id: Optional custom cache ID.
@@ -60,7 +58,7 @@ def create_llm_classify_filter(llm_namespace: Any):
     """
 
     async def llm_classify_filter(
-        content: str | RefResult | object,
+        content: object,
         labels: list[str | bool],
         model: str | None = None,
         multi: bool = False,
@@ -76,7 +74,7 @@ def create_llm_classify_filter(llm_namespace: Any):
             {{ ref('doc') | llm_classify(labels=['tag1', 'tag2'], multi=True) }}
 
         Args:
-            content: The content to classify (string or RefResult).
+            content: The content to classify.
             labels: List of valid labels to choose from (strings or booleans).
             model: Optional model override.
             multi: Whether to allow multiple labels (multi-label classification).

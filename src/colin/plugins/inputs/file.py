@@ -9,7 +9,8 @@ from typing import Any, cast
 
 import frontmatter
 
-from colin.models import ColinConfig, Frontmatter, RefResult
+from colin.models import ColinConfig, Frontmatter
+from colin.providers.project import ProjectResource
 
 
 class FileInput:
@@ -134,14 +135,14 @@ class ProjectInput(FileInput):
         path_part = self._extract_path_from_uri(uri)
         return self.target_dir / path_part
 
-    async def fetch(self, uri: str) -> RefResult:
+    async def fetch(self, uri: str) -> ProjectResource:
         """Fetch content and metadata for a URI.
 
         Args:
             uri: The URI to fetch.
 
         Returns:
-            RefResult with content and metadata.
+            ProjectResource with content and metadata.
 
         Raises:
             FileNotFoundError: If the compiled output doesn't exist.
@@ -154,16 +155,12 @@ class ProjectInput(FileInput):
 
         content = target_path.read_text(encoding="utf-8")
 
-        # Get template source if available
-        template = ""
-        if model_path and model_path.exists():
-            template = model_path.read_text(encoding="utf-8")
-
         # Extract name and description from model frontmatter
         path_part = self._extract_path_from_uri(uri)
         name: str = Path(path_part).stem  # Get filename without extension
         description: str | None = None
         if model_path and model_path.exists():
+            template = model_path.read_text(encoding="utf-8")
             post = frontmatter.loads(template)
             metadata: dict[str, object] = {k: v for k, v in post.metadata.items() if k != "colin"}
             name_value = metadata.get("name")
@@ -177,13 +174,13 @@ class ProjectInput(FileInput):
         stat = target_path.stat()
         updated = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
 
-        return RefResult(
+        path = uri.split("://", 1)[1] if "://" in uri else uri
+        return ProjectResource(
+            path=path,
+            _content=content,
             name=name,
             description=description,
-            content=content,
-            template=template,
-            updated=updated,
-            uri=uri,
+            _last_updated=updated,
         )
 
     async def hash(self, uri: str) -> str:

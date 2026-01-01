@@ -50,7 +50,7 @@ class TestProjectInput:
         path = plugin.uri_to_target_path("project://sub/test.md")
         assert path == plugin.target_dir / "sub/test.md"
 
-    async def test_fetch_returns_ref_result(self, plugin: ProjectInput) -> None:
+    async def test_fetch_returns_project_resource(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "test.md"
         model_file.write_text("""\
 ---
@@ -68,8 +68,8 @@ Template content here.
         assert result.name == "Test Document"
         assert result.description == "A test"
         assert result.content == "Compiled output"
-        assert "Template content here." in result.template
-        assert result.uri == "project://test.md"
+        assert result.path == "test.md"
+        assert str(result) == "Compiled output"
 
     async def test_fetch_uses_uri_as_name_fallback(self, plugin: ProjectInput) -> None:
         model_file = plugin.model_dirs[0] / "my-doc.md"

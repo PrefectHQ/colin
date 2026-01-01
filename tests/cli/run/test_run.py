@@ -62,11 +62,9 @@ async def test_provider_llm_model_config(
     from colin.compiler.context import CompileContext
     from colin.models import Manifest
     from colin.providers.cache import set_compile_context
-    from colin.providers.context import ProviderContext
     from colin.providers.llm import LLMProvider
     from colin.providers.manager import create_provider
     from colin.providers.project import ProjectProvider
-    from colin.providers.storage.file import FileStorage
 
     # Initialize project
     cli("init", str(tmp_path))
@@ -95,34 +93,11 @@ async def test_provider_llm_model_config(
     assert provider.model == "openai:gpt-4o"
 
     # Verify the model is actually used when calling extract
-    storage = FileStorage(base_path=tmp_path)
-    project_provider = ProjectProvider(storage=storage)
+    project_provider = ProjectProvider(base_path=tmp_path)
     compile_ctx = CompileContext(
         manifest=Manifest(),
         document_uri="project://test.md",
         project_provider=project_provider,
-    )
-
-    async def fake_ref(target):
-        from datetime import datetime, timezone
-
-        from colin.models import RefResult
-
-        return RefResult(
-            name="test",
-            description=None,
-            content="test content",
-            template="",
-            updated=datetime.now(timezone.utc),
-            uri=str(target),
-        )
-
-    provider_ctx = ProviderContext(
-        manifest=Manifest(),
-        document_uri="project://test.md",
-        doc_state=None,
-        ref=fake_ref,
-        track_ref=lambda _: None,
     )
 
     # Mock Agent.run to avoid actual LLM call
@@ -132,7 +107,7 @@ async def test_provider_llm_model_config(
     set_compile_context(compile_ctx)
     try:
         with patch("colin.providers.llm.Agent.run", return_value=mock_result):
-            await provider._extract(provider_ctx, "test content", "extract this")
+            await provider._extract("test content", "extract this")
 
         # Verify the LLM call was recorded with the correct model
         # Note: infer_model strips the provider prefix, so "openai:gpt-4o" -> "gpt-4o"

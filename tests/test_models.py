@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from colin.models import (
     ColinConfig,
     ColinDocument,
@@ -14,7 +12,6 @@ from colin.models import (
     Manifest,
     RefreshConfig,
     RefreshPolicy,
-    RefResult,
 )
 
 
@@ -140,12 +137,16 @@ class TestManifest:
 
     def test_get_dependents(self) -> None:
         manifest = Manifest()
+        # Address dicts with project provider and path in payload
         manifest.set_document(
             "context/a",
             DocumentMeta(
                 uri="context/a",
                 source_hash="a",
-                refs_evaluated=["context/b", "context/c"],
+                refs_evaluated=[
+                    {"provider": "project", "instance": "", "payload": {"path": "context/b"}},
+                    {"provider": "project", "instance": "", "payload": {"path": "context/c"}},
+                ],
             ),
         )
         manifest.set_document(
@@ -153,11 +154,13 @@ class TestManifest:
             DocumentMeta(
                 uri="context/d",
                 source_hash="d",
-                refs_evaluated=["context/b"],
+                refs_evaluated=[
+                    {"provider": "project", "instance": "", "payload": {"path": "context/b"}},
+                ],
             ),
         )
 
-        dependents = manifest.get_dependents("context/b")
+        dependents = manifest.get_dependents("project://context/b")
         assert set(dependents) == {"context/a", "context/d"}
 
     def test_get_llm_call(self) -> None:
@@ -181,35 +184,6 @@ class TestManifest:
         assert manifest.get_llm_call("context/test", "call-1") == call
         assert manifest.get_llm_call("context/test", "nonexistent") is None
         assert manifest.get_llm_call("nonexistent", "call-1") is None
-
-
-class TestRefResult:
-    def test_creation(self) -> None:
-        now = datetime.now(timezone.utc)
-        result = RefResult(
-            name="test",
-            description="A test document",
-            content="Hello, world!",
-            template="# {{ name }}",
-            updated=now,
-            uri="context/test",
-        )
-        assert result.name == "test"
-        assert result.description == "A test document"
-        assert result.content == "Hello, world!"
-        assert result.template == "# {{ name }}"
-        assert result.updated == now
-        assert result.uri == "context/test"
-
-    def test_str_returns_placeholder(self) -> None:
-        result = RefResult(
-            name="test",
-            content="Hello, world!",
-            template="",
-            updated=datetime.now(timezone.utc),
-            uri="test",
-        )
-        assert str(result) == "Ref('test')"
 
 
 class TestColinDocument:
