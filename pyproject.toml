@@ -24,6 +24,7 @@ colin = "colin.cli:main"
 [dependency-groups]
 dev = [
     "ipython>=8.0.0",
+    "moto[s3]>=5.0.0",
     "pdbpp>=0.11.7",
     "prek>=0.0.25",
     "pytest>=8.0.0",

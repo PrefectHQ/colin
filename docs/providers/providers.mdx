@@ -1,0 +1,191 @@
+---
+title: Provider System
+sidebarTitle: Overview
+icon: puzzle-piece
+---
+
+Providers connect Colin to data sources. Each provider handles a specific type of integration—referencing other project documents, fetching resources from MCP servers, calling language models, reading from HTTP endpoints, or accessing S3 storage. Providers expose functions you call directly in templates and handle URI schemes for the `ref()` system.
+
+Colin includes five built-in providers:
+
+| Provider | Purpose | URI Schemes |
+| :------- | :------ | :---------- |
+| [Project](/providers/project) | Reference other project documents | `project://` |
+| [HTTP](/providers/http) | Fetch web content | `http://`, `https://` |
+| [MCP](/providers/mcp) | Connect to MCP servers | `mcp.<name>://` |
+| [LLM](/providers/llm) | Invoke language models | (functions only) |
+| [S3](/providers/s3) | Read from S3-compatible storage | `s3://` |
+
+## Configuration
+
+Providers are configured in `colin.toml` under `[[providers.<type>]]` sections. The double brackets indicate a TOML array—you can define multiple instances of the same provider type.
+
+```toml colin.toml
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-20250514"
+
+[[providers.mcp]]
+name = "github"
+command = "uvx"
+args = ["mcp-server-github"]
+
+[[providers.s3]]
+region = "us-west-2"
+```
+
+### Default vs Named Providers
+
+Providers can be configured with or without a `name` field, which determines how you access them in templates.
+
+A provider **without** a `name` becomes the default for that type. Its functions are available directly on the type namespace:
+
+```toml colin.toml
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-20250514"
+```
+
+```markdown
+{{ llm.extract(content, 'summary') }}
+{{ llm.classify(content, ['yes', 'no']) }}
+```
+
+A provider **with** a `name` becomes a named instance accessible under that name:
+
+```toml colin.toml
+[[providers.llm]]
+name = "fast"
+model = "anthropic:claude-haiku-3"
+```
+
+```markdown
+{{ llm.fast.extract(content, 'quick summary') }}
+```
+
+You can configure both—a default and one or more named instances:
+
+```toml colin.toml
+# Default LLM (no name)
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-20250514"
+
+# Fast model for simple tasks
+[[providers.llm]]
+name = "fast"
+model = "anthropic:claude-haiku-3"
+
+# Capable model for complex reasoning
+[[providers.llm]]
+name = "capable"
+model = "anthropic:claude-opus-4"
+```
+
+```markdown
+{# Uses the default model #}
+{{ llm.extract(content, 'summary') }}
+
+{# Uses the fast model #}
+{{ llm.fast.extract(content, 'word count') }}
+
+{# Uses the capable model #}
+{{ llm.capable.extract(content, 'detailed analysis') }}
+```
+
+Some providers require names and have no default. MCP providers always need a name because each instance represents a different server—there's no meaningful default.
+
+### Builtin Providers
+
+HTTP and LLM providers are registered automatically with sensible defaults. You only need to configure them if you want to customize behavior (like setting a specific model or timeout).
+
+MCP and S3 providers require explicit configuration before use.
+
+## Architecture
+
+Providers serve two roles in Colin. First, they implement URI scheme handlers for the `ref()` system. When you write `ref('s3://bucket/key')`, Colin routes the request to the S3 provider based on the `s3://` scheme. Second, providers contribute template functions accessible through namespaced globals like `http.get()` or `mcp.github.resource()`.
+
+### URI Handling
+
+Each provider declares the URI schemes it handles:
+
+```python
+class S3Provider(Provider):
+    schemes: list[str] = ["s3"]
+```
+
+When Colin encounters a URI, it extracts the scheme and routes the request to the matching provider's `read()` method. The provider returns raw content as a string, and Colin wraps it in a `RefResult` for dependency tracking.
+
+### Template Functions
+
+Providers expose functions through the `get_functions()` method. These functions return domain objects with `.content` and metadata properties:
+
+```python
+def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
+    return {"get": self._template_get}
+```
+
+A provider with `schemes = ["http", "https"]` that returns `{"get": self._get}` becomes accessible as `http.get()` in templates. The first scheme in the list determines the namespace.
+
+## Domain Objects
+
+Provider functions return domain objects rather than raw strings. These objects contain both content and metadata:
+
+```python
+@dataclass
+class HTTPResource:
+    uri: str
+    content: str
+    content_type: str | None = None
+    updated: datetime | None = None
+```
+
+Access properties directly in templates:
+
+```markdown
+{% set response = http.get('https://api.example.com/data') %}
+
+Content-Type: {{ response.content_type }}
+{{ response.content }}
+```
+
+Domain objects also provide a `to_ref_result()` method for converting to `RefResult` when dependency tracking is needed.
+
+## Dependency Tracking
+
+By default, provider function calls are ephemeral. To record a dependency in the manifest, wrap the result with `ref()`:
+
+```markdown
+{# Fetched but not tracked #}
+{{ http.get('https://api.example.com/data').content }}
+
+{# Tracked as a dependency #}
+{{ ref(http.get('https://api.example.com/data')).content }}
+```
+
+Tracked dependencies appear in `refs_evaluated` in the manifest. Changes to tracked resources trigger recompilation of dependent documents.
+
+## Lifecycle Management
+
+Providers that manage stateful resources implement the `lifespan()` async context manager. Colin enters this context when starting and exits when shutting down. Database connections, HTTP clients, and API sessions are set up before the `yield` and cleaned up automatically when the context exits.
+
+```python
+@asynccontextmanager
+async def lifespan(self) -> AsyncIterator[None]:
+    async with httpx.AsyncClient(timeout=self.timeout) as client:
+        self._client = client
+        yield
+    self._client = None
+```
+
+Resources are created eagerly when Colin starts, surfacing connection errors early rather than during template rendering.
+
+## Staleness Detection
+
+Providers can implement `get_last_updated()` to support efficient staleness checking. This method returns a timestamp without loading full content, enabling Colin to detect when sources have changed:
+
+```python
+async def get_last_updated(self, uri: str) -> datetime | None:
+    response = await self._client.head(uri)
+    last_modified = response.headers.get("last-modified")
+    return parsedate_to_datetime(last_modified) if last_modified else None
+```
+
+HTTP and S3 providers use HEAD requests for this check. Returning `None` means "treat as stale and reload."

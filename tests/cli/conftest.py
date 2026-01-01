@@ -6,9 +6,15 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
+from rich.text import Text
 
 from colin.cli import app as _app
 from colin.cli.run import init
+
+
+def strip_ansi(text: str) -> str:
+    """Strip ANSI escape codes from text using Rich."""
+    return Text.from_ansi(text).plain
 
 
 @pytest.fixture

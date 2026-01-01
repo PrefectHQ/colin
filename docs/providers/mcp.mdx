@@ -1,0 +1,267 @@
+---
+title: MCP Provider
+sidebarTitle: MCP
+icon: plug
+---
+
+The MCP provider connects Colin to Model Context Protocol servers. Through MCP, your documents can fetch live data from project trackers, databases, code repositories, and other systems. Colin acts as an MCP client, connecting to configured servers and fetching resources during compilation.
+
+Each configured MCP server becomes a separate provider instance with its own namespace. Configure a server named "github" and it becomes accessible as `mcp.github` in templates.
+
+## Configuration
+
+MCP providers **require** a `name` field—there is no default MCP provider. Each entry in `colin.toml` defines a named server instance:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "github"
+command = "uvx"
+args = ["mcp-server-github"]
+
+[[providers.mcp]]
+name = "linear"
+command = "npx"
+args = ["-y", "@linear/mcp-server"]
+```
+
+The `name` field determines the template namespace. A server named `github` becomes accessible as `mcp.github`, while `linear` becomes `mcp.linear`. The top-level `mcp` object provides access to all named servers.
+
+Colin starts server processes when entering the provider lifespan and terminates them on shutdown.
+
+| Field | Description |
+| :---- | :---------- |
+| `name` | Required. Identifier used in templates as `mcp.<name>` |
+| `command` | Executable to run for stdio servers |
+| `args` | Command-line arguments as an array |
+| `env` | Environment variables passed to the server |
+| `url` | Server endpoint URL for remote servers |
+| `headers` | HTTP headers for remote server authentication |
+
+### Stdio Servers
+
+Local process servers communicate via stdin/stdout. Specify the executable and arguments:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "filesystem"
+command = "npx"
+args = ["@anthropic/mcp-server-filesystem", "/path/to/data"]
+```
+
+Pass credentials and configuration through environment variables:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "postgres"
+command = "npx"
+args = ["@anthropic/mcp-server-postgres"]
+env = { DATABASE_URL = "postgres://user:pass@localhost/db" }
+```
+
+Reference shell environment variables with `${VAR}` syntax. Colin substitutes values from your environment when starting the server:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "github"
+command = "uvx"
+args = ["mcp-server-github"]
+env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+```
+
+### Remote Servers
+
+HTTP and SSE servers connect over the network instead of spawning a local process:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "remote-api"
+url = "https://api.example.com/mcp"
+```
+
+For servers requiring authentication:
+
+```toml colin.toml
+[[providers.mcp]]
+name = "authenticated"
+url = "https://api.example.com/mcp"
+headers = { Authorization = "Bearer ${API_TOKEN}" }
+```
+
+## Template Functions
+
+Each MCP server exposes two functions through its namespace:
+
+| Function | Purpose |
+| :------- | :------ |
+| `resource()` | Fetch a resource from the server |
+| `prompt()` | Retrieve a prompt template from the server |
+
+### Resource
+
+Use `mcp.<name>.resource()` to fetch content from a server:
+
+```markdown models/sources/readme.md
+---
+name: GitHub README
+---
+
+{{ mcp.github.resource('repo://owner/repo/contents/README.md') }}
+```
+
+The function returns an `MCPResource` object with content and metadata:
+
+| Property | Description |
+| :------- | :---------- |
+| `.content` | The resource content as a string |
+| `.name` | Resource name from the server |
+| `.uri` | Full MCP URI for tracking |
+| `.description` | Optional description from server |
+| `.updated` | Last update timestamp |
+
+Access properties directly:
+
+```markdown
+{% set readme = mcp.github.resource('repo://owner/repo/contents/README.md') %}
+
+# {{ readme.name }}
+
+{{ readme.content }}
+```
+
+Each MCP server defines its own URI scheme. Consult the server's documentation for available resources:
+
+```markdown
+{# GitHub server #}
+{{ mcp.github.resource('repo://owner/repo/contents/README.md') }}
+{{ mcp.github.resource('repo://owner/repo/issues') }}
+
+{# Linear server #}
+{{ mcp.linear.resource('projects') }}
+{{ mcp.linear.resource('issues?teamId=TEAM-123') }}
+
+{# Filesystem server #}
+{{ mcp.filesystem.resource('file:///data/config.json') }}
+
+{# Postgres server #}
+{{ mcp.postgres.resource('query://SELECT * FROM users LIMIT 10') }}
+```
+
+### Prompt
+
+Some MCP servers provide prompt templates. Use `mcp.<name>.prompt()` to retrieve them:
+
+```markdown models/analysis.md
+---
+name: Code Analysis
+---
+
+{% set review = mcp.github.prompt('code-review', repo='owner/repo') %}
+{{ review.content }}
+```
+
+The function returns an `MCPPrompt` object with similar properties to `MCPResource`. Prompt arguments are passed as keyword parameters after the prompt name.
+
+## Objects
+
+The MCP provider introduces two domain objects:
+
+**MCPResource** - Returned by `resource()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `uri` | `str` | Full MCP URI |
+| `content` | `str` | Resource content |
+| `name` | `str` | Resource name |
+| `description` | `str \| None` | Optional description |
+| `updated` | `datetime \| None` | Last update time |
+
+**MCPPrompt** - Returned by `prompt()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `uri` | `str` | Full MCP URI |
+| `content` | `str` | Prompt content |
+| `name` | `str` | Prompt name |
+| `description` | `str \| None` | Optional description |
+| `updated` | `datetime \| None` | Retrieval time |
+
+Both objects support conversion to `RefResult` via the `to_ref_result()` method.
+
+## Dependency Tracking
+
+MCP resources integrate with Colin's dependency system. Wrap results with `ref()` to record dependencies in the manifest:
+
+```markdown
+{# Fetched but not tracked #}
+{{ mcp.github.resource('repo://...').content }}
+
+{# Tracked as a dependency #}
+{{ ref(mcp.github.resource('repo://...')).content }}
+```
+
+The manifest records MCP resources as standard refs:
+
+```json
+{
+  "documents": {
+    "sources/readme": {
+      "refs_evaluated": ["mcp.github://?resource=repo%3A%2F%2Fowner%2Frepo%2Fcontents%2FREADME.md"]
+    }
+  }
+}
+```
+
+## CLI Commands
+
+The CLI provides commands for MCP server management:
+
+```bash
+# Add a server
+colin mcp add github uvx mcp-server-github
+
+# List configured servers
+colin mcp list
+
+# Test server connectivity
+colin mcp test github
+
+# Remove a server
+colin mcp remove github
+```
+
+The `test` command starts the server and lists available resources, helping discover the correct URIs for your documents.
+
+## Combining Sources
+
+MCP resources work alongside other providers and local documents:
+
+```markdown models/skills/engineering-status.md
+---
+name: Engineering Status
+---
+
+# Engineering Status
+
+## Active Projects
+
+{{ mcp.linear.resource('projects?team=engineering') }}
+
+## Repository Health
+
+{% set issues = mcp.github.resource('repo://acme/platform/issues?state=open') %}
+{{ issues.content }}
+
+## Analysis
+
+{% llm %}
+Based on the project data and open issues, assess team health:
+
+Projects:
+{{ mcp.linear.resource('projects?team=engineering') }}
+
+Issues:
+{{ issues.content }}
+
+Provide velocity assessment, blockers, and priorities.
+{% endllm %}
+```

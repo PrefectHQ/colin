@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from pathlib import Path
 
+from tests.cli.conftest import strip_ansi
+
 
 def test_run_creates_output(
     test_project: Path, target_dir: Path, mock_agent, cli: Callable[..., None]
@@ -41,6 +43,7 @@ def test_dry_run_shows_correct_uri(test_project: Path, capsys, cli: Callable[...
     cli("run", "--dry-run")
 
     captured = capsys.readouterr()
+    output = strip_ansi(captured.out)
     # Should show project://greeting.md, not project://greeting.md.md
-    assert "project://greeting.md.md" not in captured.out
-    assert "project://greeting.md" in captured.out
+    assert "project://greeting.md.md" not in output
+    assert "project://greeting.md" in output

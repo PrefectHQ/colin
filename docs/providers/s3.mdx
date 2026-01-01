@@ -1,0 +1,154 @@
+---
+title: S3 Provider
+sidebarTitle: S3
+icon: cloud
+---
+
+The S3 provider reads files from Amazon S3 and S3-compatible storage services. It handles `s3://` URIs and supports custom endpoints for services like MinIO and LocalStack.
+
+The S3 provider requires explicit configuration and the `boto3` dependency.
+
+## Configuration
+
+Configure the S3 provider in `colin.toml`:
+
+```toml colin.toml
+[[providers.s3]]
+region = "us-west-2"
+```
+
+| Field | Description | Default |
+| :---- | :---------- | :------ |
+| `region` | AWS region (e.g., `us-west-2`, `eu-west-1`) | From environment |
+| `profile` | AWS profile from `~/.aws/credentials` | Default profile |
+| `endpoint_url` | Custom endpoint for S3-compatible services | AWS S3 |
+
+### AWS Credentials
+
+The provider uses boto3's standard credential chain. Credentials are resolved from:
+
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+2. Shared credentials file (`~/.aws/credentials`)
+3. IAM role (when running on AWS infrastructure)
+
+Specify a named profile for non-default credentials:
+
+```toml colin.toml
+[[providers.s3]]
+region = "us-west-2"
+profile = "production"
+```
+
+### S3-Compatible Services
+
+Connect to MinIO, LocalStack, or other S3-compatible services by setting `endpoint_url`:
+
+```toml colin.toml
+[[providers.s3]]
+endpoint_url = "http://localhost:9000"
+```
+
+For LocalStack development:
+
+```toml colin.toml
+[[providers.s3]]
+endpoint_url = "http://localhost:4566"
+region = "us-east-1"
+```
+
+## URI Support
+
+The S3 provider handles `s3://` URIs directly with `ref()`:
+
+```markdown models/sources/config.md
+---
+name: Configuration
+---
+
+{{ ref('s3://my-bucket/config/settings.json') }}
+```
+
+S3 URIs follow the standard format:
+
+```
+s3://bucket-name/path/to/object
+```
+
+Examples:
+
+```markdown
+{{ ref('s3://data-bucket/reports/2024/q1.json') }}
+{{ ref('s3://config-bucket/app/settings.yaml') }}
+{{ ref('s3://docs-bucket/templates/email.html') }}
+```
+
+The provider reads object content as UTF-8 text. Binary content is decoded and may not render correctly.
+
+## Objects
+
+The S3 provider returns content directly as strings through `ref()`. It does not expose additional template functions.
+
+## Dependency Tracking
+
+S3 objects are tracked automatically when accessed via `ref()`:
+
+```markdown
+{{ ref('s3://bucket/data.json') }}
+```
+
+The manifest records the full S3 URI:
+
+```json
+{
+  "documents": {
+    "sources/data": {
+      "refs_evaluated": ["s3://bucket/data.json"]
+    }
+  }
+}
+```
+
+## Staleness Detection
+
+The S3 provider checks object freshness using HEAD requests. Colin compares the object's `LastModified` timestamp against cached values to determine if content needs reloading.
+
+This enables efficient incremental builds—documents only recompile when their S3 sources have actually changed.
+
+## Combining with LLM
+
+Process S3 content with LLM functions:
+
+```markdown models/context/report-summary.md
+---
+name: Report Summary
+---
+
+{{ ref('s3://reports-bucket/weekly/latest.md') | extract('key metrics and trends') }}
+```
+
+Or use LLM blocks for complex synthesis:
+
+```markdown
+{% llm %}
+Analyze this configuration and identify potential issues:
+
+{{ ref('s3://config-bucket/production/app.yaml') }}
+
+Check for:
+- Security misconfigurations
+- Performance bottlenecks
+- Missing required fields
+{% endllm %}
+```
+
+## Error Handling
+
+The provider raises exceptions for access errors:
+
+| Error | Cause |
+| :---- | :---- |
+| `ValueError` | Invalid URI format (missing bucket or key) |
+| `RuntimeError` | Provider not initialized (outside lifespan) |
+| boto3 exceptions | AWS access errors (permissions, missing object) |
+
+Ensure IAM policies grant `s3:GetObject` permission for the bucket and key paths you access.

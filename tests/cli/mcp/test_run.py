@@ -7,6 +7,7 @@ import pytest
 from fastmcp.mcp_config import StdioMCPServer
 
 from colin import api
+from tests.cli.conftest import strip_ansi
 
 
 @pytest.fixture
@@ -51,8 +52,9 @@ def test_mcp_access_shown_in_output(
     cli("run", "--target", str(target_dir))
 
     captured = capfd.readouterr()
+    output = strip_ansi(captured.out)
     # MCP access should be shown in output (mcp with server.resource(uri) detail)
-    assert "mcp greeter.resource" in captured.out
+    assert "mcp greeter.resource" in output
 
 
 def test_mcp_test_command(greeter_server: Path, cli: Callable[..., None], capfd):
@@ -60,8 +62,9 @@ def test_mcp_test_command(greeter_server: Path, cli: Callable[..., None], capfd)
     cli("mcp", "test", "greeter")
 
     captured = capfd.readouterr()
-    assert "Connected to greeter" in captured.out
-    assert "colin://hello" in captured.out
+    output = strip_ansi(captured.out)
+    assert "Connected to greeter" in output
+    assert "colin://hello" in output
 
 
 def test_mcp_prompt_basic(greeter_server: Path, target_dir: Path, cli: Callable[..., None]):
@@ -88,6 +91,7 @@ def test_mcp_prompt_shown_in_output(
     cli("run", "--target", str(target_dir))
 
     captured = capfd.readouterr()
+    output = strip_ansi(captured.out)
     # MCP prompt access should be shown in output (mcp with server.prompt(name) detail)
-    assert "mcp greeter.prompt" in captured.out
-    assert "greet" in captured.out  # Prompt name shown in detail
+    assert "mcp greeter.prompt" in output
+    assert "greet" in output  # Prompt name shown in detail
