@@ -38,7 +38,7 @@ class LLMProvider(Provider):
     schemes: list[str] = ["llm"]
 
     model: str | Model | None = None
-    """Default model for LLM calls. If None, uses settings.default_llm_model."""
+    """Model for LLM calls. Falls back to COLIN_DEFAULT_LLM_MODEL env var."""
 
     async def read(self, uri: str) -> str:
         raise ValueError("LLM provider does not support read()")

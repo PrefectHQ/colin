@@ -10,7 +10,6 @@ class ColinSettings(BaseSettings):
     """Global Colin settings.
 
     These can be overridden via environment variables (uppercase, prefixed with COLIN_).
-    For example: COLIN_DEFAULT_LLM_PROVIDER=openai
     """
 
     model_config = SettingsConfigDict(

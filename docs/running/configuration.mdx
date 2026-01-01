@@ -15,7 +15,6 @@ The `[project]` section contains core project configuration:
 name = "my-context"
 model-path = "models"
 target-path = "target"
-default-llm-model = "anthropic:claude-sonnet-4-5"
 ```
 
 | Setting | Description | Default |
@@ -23,7 +22,6 @@ default-llm-model = "anthropic:claude-sonnet-4-5"
 | `name` | Project name for display | Directory name |
 | `model-path` | Directory containing source documents | `models` |
 | `target-path` | Directory for compiled output | `target` |
-| `default-llm-model` | Default model for LLM operations | `anthropic:claude-sonnet-4-5` |
 
 ### Directory Paths
 
@@ -38,29 +36,31 @@ target-path = "dist"
 
 With this configuration, Colin reads from `src/context/` and writes to `dist/`.
 
-### LLM Model
+## LLM Provider
 
-The `default-llm-model` sets which model handles `{% llm %}` blocks and filters like `extract()`:
+Configure the default LLM model using `[[providers.llm]]`:
 
-```toml
-[project]
-default-llm-model = "anthropic:claude-haiku-3"
+```toml colin.toml
+[[providers.llm]]
+model = "anthropic:claude-haiku-4-5"
 ```
 
 Model identifiers follow the format `provider:model-name`. Currently supported providers:
 
 | Provider | Example Models |
 | :------- | :------------- |
-| `anthropic` | `claude-sonnet-4-5`, `claude-haiku-3` |
+| `anthropic` | `claude-sonnet-4-5`, `claude-haiku-4-5` |
 | `openai` | `gpt-4o`, `gpt-4o-mini` |
 
-Individual LLM blocks can override the default:
+Individual LLM blocks can override the project default:
 
 ```markdown
 {% llm model="anthropic:claude-sonnet-4-5" %}
 Complex analysis requiring a more capable model...
 {% endllm %}
 ```
+
+If no model is configured, Colin falls back to `COLIN_DEFAULT_LLM_MODEL` environment variable, then to `anthropic:claude-sonnet-4-5`.
 
 ## MCP Servers
 
@@ -154,13 +154,13 @@ The server name comes from the configured `name`, and the argument is the resour
 
 ## Environment Variables
 
-Colin settings can be overridden via environment variables. Prefix the setting name with `COLIN_` and use uppercase:
+Colin supports environment variables for global settings:
 
-| Environment Variable | Configuration Equivalent |
-| :------------------- | :----------------------- |
-| `COLIN_DEFAULT_LLM_MODEL` | `default-llm-model` in project |
+| Environment Variable | Description | Default |
+| :------------------- | :---------- | :------ |
+| `COLIN_DEFAULT_LLM_MODEL` | Fallback LLM model when not configured in project | `anthropic:claude-sonnet-4-5` |
 
-Environment variables take precedence over `colin.toml` values, and `colin.toml` values take precedence over built-in defaults.
+The precedence order is: `[[providers.llm]]` model → `COLIN_DEFAULT_LLM_MODEL` → built-in default.
 
 ## Complete Example
 
@@ -171,7 +171,9 @@ A full configuration demonstrating all options:
 name = "engineering-context"
 model-path = "context"
 target-path = "dist"
-default-llm-model = "anthropic:claude-sonnet-4-5"
+
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-5"
 
 [[providers.mcp]]
 name = "github"
@@ -200,5 +202,5 @@ headers = { Authorization = "Bearer ${INTERNAL_API_TOKEN}" }
 This project:
 - Reads source documents from `context/`
 - Writes compiled output to `dist/`
-- Uses Claude Sonnet for LLM operations by default
+- Uses Claude Sonnet for LLM operations
 - Connects to GitHub, Linear, a Postgres warehouse, and an internal API

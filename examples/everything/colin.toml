@@ -1,11 +1,13 @@
 [project]
 name = "everything"
 version = "0.1.0"
-default-llm-model = "anthropic:claude-haiku-4-5"
 
 [paths]
 models = "models"
 target = "target"
+
+[[providers.llm]]
+model = "anthropic:claude-haiku-4-5"
 
 [[providers.mcp]]
 name = "demo"
