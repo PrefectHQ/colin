@@ -35,35 +35,45 @@ project/
 
 **`target/`**: Configurable via `target-path`. Contains only published files. This is what users consume.
 
-### Visibility: publish vs internal
+### Visibility: public vs private
 
-Files can be marked as internal (compile but don't publish):
+Files can be marked as private (compile but don't copy to target).
 
-**Frontmatter:**
-```yaml
-colin:
-  publish: false
-```
+**Naming convention (preferred):** Files prefixed with `_` are private by default. This is the idiomatic way to mark internal/helper files:
 
-**Naming convention:** Files prefixed with `_` default to `publish: false`:
 ```
 models/
-├── greeting.md          # published (default)
-├── _helpers.md          # internal (name convention)
-└── data.md              # internal (frontmatter override)
+├── greeting.md          # public (copied to target/)
+├── _helpers.md          # private (stays in .colin/compiled/)
+├── _data.md             # private
+└── utils.md             # public
+```
+
+**Frontmatter override:** For edge cases where renaming isn't practical:
+
+```yaml
+colin:
+  private: true   # make a non-prefixed file private
+```
+
+Or to publish a `_`-prefixed file:
+
+```yaml
+colin:
+  private: false  # override the _ convention
 ```
 
 ### Ref resolution
 
 `ref()` reads content from `.colin/compiled/` (source of truth). Path accessors resolve to `target/` for linking:
 
-| Property | Published file | Internal file |
-|----------|---------------|---------------|
+| Property | Public file | Private file |
+|----------|-------------|--------------|
 | `.content` | `.colin/compiled/` | `.colin/compiled/` |
 | `.path` | `target/file.md` | **Error** |
 | `.relative_path` | `file.md` | **Error** |
 
-Accessing `.path` on internal files raises an error—linking to unpublished files is a bug.
+Accessing `.path` on private files raises an error—linking to files that won't exist in `target/` is a bug.
 
 ### Artifact storage model
 
@@ -72,7 +82,7 @@ class CompiledArtifact:
     uri: str                # project://greeting.md
     content: str            # compiled content
     output_hash: str        # content hash for cache invalidation
-    publish: bool           # if False, don't copy to target/
+    private: bool           # if True, don't copy to target/
     metadata: dict          # frontmatter, format, etc.
 ```
 
@@ -102,23 +112,26 @@ Storage plugins provide escape hatch for projects that want remote cache instead
 ## Rationale
 
 1. **Separation of concerns**: Cache is build machinery; target is user-facing output
-2. **Internal files**: Natural support for helper/data files that shouldn't pollute output
+2. **Private files**: Natural support for helper/data files that shouldn't pollute output
 3. **LLM reproducibility**: Committing cache ensures stable builds across machines
 4. **Clear ref semantics**: `.content` always works; `.path` is for published linking
 5. **Plugin-ready**: Storage abstraction enables future remote backends
+6. **Discoverable convention**: `_` prefix is visible in filesystem and familiar from Sass/Python
 
 ## Consequences
 
 - New `.colin/` directory in all projects
 - Manifest moves from `target/manifest.json` to `.colin/manifest.json`
-- Compiled artifacts write to `.colin/compiled/` first, then publish step copies to `target/`
-- `ref().path` errors on internal files
-- `_` prefix naming convention for internal files
+- Compiled artifacts write to `.colin/compiled/` first, then publish step copies public files to `target/`
+- `ref().path` errors on private files
+- `_` prefix naming convention marks files as private (idiomatic)
+- `colin.private: bool` frontmatter available as override
 - Projects should commit `.colin/` by default
 
 ## Alternatives Considered
 
 1. **Gitignore `.colin/` by default**: Simpler, but loses LLM reproducibility
 2. **Cache outside project (`~/.cache/colin/`)**: Cleaner separation, but loses portability
-3. **`colin.internal: true` frontmatter**: Less intuitive than `publish: false`
-4. **Naming convention only**: Magic, less explicit than frontmatter option
+3. **`colin.publish: false` frontmatter**: "Private" is clearer and more common terminology
+4. **Naming convention only (no frontmatter)**: Simpler but less flexible for edge cases
+5. **Frontmatter only (no naming convention)**: Less discoverable, hidden in file metadata
