@@ -218,18 +218,29 @@ def load_project(path: Path) -> ProjectConfig:
         raise ValueError("MCP servers must be configured under [[providers.mcp]]")
 
     project = data.get("project", {})
-    # Resolve paths relative to project root
+    # Resolve paths relative to project root (or use absolute if specified)
     project_root = path.parent.resolve()
     model_path_rel = project.get("model-path", "models")
     target_path_rel = project.get("target-path", "target")
     manifest_path_rel = project.get("manifest-path")
 
-    model_path = (project_root / model_path_rel).resolve()
-    target_path = (project_root / target_path_rel).resolve()
+    # Handle absolute paths
+    if Path(model_path_rel).is_absolute():
+        model_path = Path(model_path_rel).resolve()
+    else:
+        model_path = (project_root / model_path_rel).resolve()
+
+    if Path(target_path_rel).is_absolute():
+        target_path = Path(target_path_rel).resolve()
+    else:
+        target_path = (project_root / target_path_rel).resolve()
 
     # Manifest path: explicit config or default to {target}/manifest.json
     if manifest_path_rel:
-        manifest_path = (project_root / manifest_path_rel).resolve()
+        if Path(manifest_path_rel).is_absolute():
+            manifest_path = Path(manifest_path_rel).resolve()
+        else:
+            manifest_path = (project_root / manifest_path_rel).resolve()
     else:
         manifest_path = target_path / settings.manifest_file
 
@@ -336,15 +347,25 @@ def init_project(
 def save_project(path: Path, config: ProjectConfig) -> None:
     """Save project configuration to colin.toml.
 
-    Converts absolute paths back to relative paths for serialization.
+    Converts absolute paths back to relative paths for serialization when possible.
+    Preserves absolute paths if they're outside the project root.
 
     Args:
         path: Path to colin.toml file.
         config: Configuration to save.
     """
-    # Convert absolute paths to relative for TOML
-    model_path_rel = config.model_path.relative_to(config.project_root)
-    target_path_rel = config.target_path.relative_to(config.project_root)
+    # Convert absolute paths to relative for TOML (if possible)
+    try:
+        model_path_rel = config.model_path.relative_to(config.project_root)
+    except ValueError:
+        # Absolute path outside project root - keep as absolute
+        model_path_rel = str(config.model_path)
+
+    try:
+        target_path_rel = config.target_path.relative_to(config.project_root)
+    except ValueError:
+        # Absolute path outside project root - keep as absolute
+        target_path_rel = str(config.target_path)
 
     project_data: dict[str, Any] = {
         "name": config.name,

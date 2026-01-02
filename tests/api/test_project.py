@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from colin.api.project import _parse_providers, load_project
+from colin.api.project import ProjectConfig, _parse_providers, load_project, save_project
 
 
 class TestParseProviders:
@@ -301,3 +301,64 @@ name = "minimal"
         assert config.project_storage.provider == "file"
         assert config.artifacts_storage is None
         assert config.providers == {}
+
+    def test_load_project_with_absolute_target_path(self, tmp_path: Path) -> None:
+        """Load project with absolute target-path."""
+        absolute_target = tmp_path / "absolute_output"
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text(f"""\
+[project]
+name = "test-project"
+target-path = "{absolute_target}"
+""")
+
+        config = load_project(config_file)
+
+        assert config.name == "test-project"
+        assert config.project_root == tmp_path
+        assert config.target_path == absolute_target.resolve()
+        assert config.target_path.is_absolute()
+        assert config.manifest_path == absolute_target.resolve() / "manifest.json"
+
+    def test_save_project_preserves_absolute_target_path(self, tmp_path: Path) -> None:
+        """Saving project with absolute target-path preserves it."""
+        absolute_target = tmp_path / "absolute_output"
+        config_file = tmp_path / "colin.toml"
+
+        # Create config with absolute target path
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            target_path=absolute_target.resolve(),
+            manifest_path=absolute_target.resolve() / "manifest.json",
+        )
+
+        save_project(config_file, config)
+
+        # Reload and verify absolute path is preserved
+        reloaded = load_project(config_file)
+        assert reloaded.target_path == absolute_target.resolve()
+        assert reloaded.target_path.is_absolute()
+
+    def test_save_project_preserves_relative_target_path(self, tmp_path: Path) -> None:
+        """Saving project with relative target-path preserves it."""
+        config_file = tmp_path / "colin.toml"
+
+        # Create config with relative target path
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            target_path=tmp_path / "dist",
+            manifest_path=tmp_path / "dist" / "manifest.json",
+        )
+
+        save_project(config_file, config)
+
+        # Reload and verify relative path is preserved
+        reloaded = load_project(config_file)
+        assert reloaded.target_path == tmp_path / "dist"
+        # Verify it's saved as relative in TOML
+        content = config_file.read_text()
+        assert 'target-path = "dist"' in content
