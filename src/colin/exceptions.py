@@ -9,6 +9,10 @@ class RefNotFoundError(ColinError):
     """Referenced document does not exist."""
 
 
+class RefError(ColinError):
+    """Error loading or replaying a Ref."""
+
+
 class CyclicDependencyError(ColinError):
     """Dependency graph contains a cycle."""
 

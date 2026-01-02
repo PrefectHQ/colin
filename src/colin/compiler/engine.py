@@ -18,7 +18,6 @@ from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_e
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
-    Address,
     CalendarDuration,
     ColinConfig,
     ColinDocument,
@@ -149,51 +148,55 @@ class CompileEngine:
                     return (True, f"stale after {stale_duration}")
 
         # Upstream dependency recompiled this run
-        for ref_addr in doc_meta.refs_evaluated:
+        for ref in doc_meta.refs:
             # Check if this ref's path matches a recompiled URI
-            if ref_addr["provider"] == "project":
-                ref_uri = f"project://{ref_addr['payload'].get('path', '')}"
+            if ref.provider == "project":
+                ref_uri = f"project://{ref.args.get('path', '')}"
                 if ref_uri in recompiled_uris:
                     return (True, f"upstream recompiled: {ref_uri}")
 
-        # Check ref timestamps
-        for ref_addr in doc_meta.refs_evaluated:
-            ref_updated = await self._get_ref_last_updated(ref_addr, provider_manager)
-            ref_display = f"{ref_addr['provider']}://{ref_addr['payload']}"
-            if ref_updated is None:
-                return (True, f"ref timestamp unknown: {ref_display}")
-            if ref_updated > doc_meta.compiled_at:
-                return (True, f"ref updated: {ref_display}")
+        # Check ref versions
+        stale, reason = await self._check_ref_staleness(doc_meta, provider_manager)
+        if stale:
+            return (True, reason)
 
         return (False, "up to date")
 
-    async def _get_ref_last_updated(
-        self, addr: Address, provider_manager: ProviderManager
-    ) -> datetime | None:
-        """Get last update time for a referenced address.
-
-        Routes to appropriate provider based on address.
+    async def _check_ref_staleness(
+        self, doc_meta: DocumentMeta, provider_manager: ProviderManager
+    ) -> tuple[bool, str]:
+        """Check if any ref has changed version since compilation.
 
         Args:
-            addr: Structured address with provider, instance, payload.
-            provider_manager: For external provider lookups.
+            doc_meta: Document metadata with refs and ref_versions.
+            provider_manager: For looking up providers.
 
         Returns:
-            Last update time, or None if unknown.
+            Tuple of (is_stale, reason_string).
         """
-        provider_name = addr["provider"]
-        instance = addr["instance"]
-        payload = addr["payload"]
+        for ref in doc_meta.refs:
+            old_version = doc_meta.ref_versions.get(ref.key())
+            if old_version is None:
+                return (True, f"ref has no stored version: {ref.method}")
 
-        # Project refs use our project provider (which has manifest)
-        if provider_name == "project":
-            return await self._project_provider.get_last_updated(payload)
+            # Get provider
+            if ref.provider == "project":
+                provider = self._project_provider
+            else:
+                provider = provider_manager.get_provider(ref.provider, ref.connection or None)
 
-        # Other providers go through provider manager
-        provider = provider_manager.get_provider(provider_name, instance or None)
-        if provider is None:
-            return None
-        return await provider.get_last_updated(payload)
+            if provider is None:
+                return (True, f"provider not found: {ref.provider}")
+
+            try:
+                current_version = await provider.get_ref_version(ref)
+            except Exception as e:
+                return (True, f"ref check failed: {ref.method} ({e})")
+
+            if current_version != old_version:
+                return (True, f"ref version changed: {ref.method}")
+
+        return (False, "")
 
     async def compile_all(self) -> list[CompiledDocument]:
         """Discover and compile all documents.
@@ -536,7 +539,8 @@ class CompileEngine:
             output=output,
             source_hash=doc.source_hash,
             output_hash=output_hash,
-            refs_evaluated=context.refs_evaluated,
+            refs=context.refs,
+            ref_versions=context.ref_versions,
             llm_calls=context.llm_calls,
             total_cost_usd=context.total_cost,
         )
@@ -570,7 +574,8 @@ class CompileEngine:
             source_hash=doc.source_hash,
             output_hash=doc.output_hash,
             compiled_at=datetime.now(timezone.utc),
-            refs_evaluated=doc.refs_evaluated,
+            refs=doc.refs,
+            ref_versions=doc.ref_versions,
             llm_calls=doc.llm_calls,
             total_cost_usd=doc.total_cost_usd,
         )

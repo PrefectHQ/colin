@@ -10,6 +10,7 @@ from colin.models import (
     Frontmatter,
     LLMCall,
     Manifest,
+    Ref,
     RefreshConfig,
     RefreshPolicy,
 )
@@ -111,7 +112,8 @@ class TestDocumentMeta:
         assert meta.source_hash == "abc123"
         assert meta.output_hash is None
         assert meta.compiled_at is None
-        assert meta.refs_evaluated == []
+        assert meta.refs == []
+        assert meta.ref_versions == {}
         assert meta.llm_calls == {}
 
 
@@ -137,15 +139,19 @@ class TestManifest:
 
     def test_get_dependents(self) -> None:
         manifest = Manifest()
-        # Address dicts with project provider and path in payload
+        # Refs with project provider and path in args
         manifest.set_document(
             "context/a",
             DocumentMeta(
                 uri="context/a",
                 source_hash="a",
-                refs_evaluated=[
-                    {"provider": "project", "instance": "", "payload": {"path": "context/b"}},
-                    {"provider": "project", "instance": "", "payload": {"path": "context/c"}},
+                refs=[
+                    Ref(
+                        provider="project", connection="", method="get", args={"path": "context/b"}
+                    ),
+                    Ref(
+                        provider="project", connection="", method="get", args={"path": "context/c"}
+                    ),
                 ],
             ),
         )
@@ -154,8 +160,10 @@ class TestManifest:
             DocumentMeta(
                 uri="context/d",
                 source_hash="d",
-                refs_evaluated=[
-                    {"provider": "project", "instance": "", "payload": {"path": "context/b"}},
+                refs=[
+                    Ref(
+                        provider="project", connection="", method="get", args={"path": "context/b"}
+                    ),
                 ],
             ),
         )

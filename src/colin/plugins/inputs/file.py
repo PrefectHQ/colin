@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
 import frontmatter
 
-from colin.models import ColinConfig, Frontmatter
+from colin.models import ColinConfig, Frontmatter, Ref
 from colin.providers.project import ProjectResource
 
 
@@ -170,17 +169,22 @@ class ProjectInput(FileInput):
             if isinstance(desc_value, str):
                 description = desc_value
 
-        # Get modification time as updated timestamp
-        stat = target_path.stat()
-        updated = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-
         path = uri.split("://", 1)[1] if "://" in uri else uri
+
+        # Create a Ref for this resource
+        ref = Ref(
+            provider="project",
+            connection="",
+            method="get",
+            args={"path": path},
+        )
+
         return ProjectResource(
+            content=content,
+            ref=ref,
             path=path,
-            _content=content,
             name=name,
             description=description,
-            _last_updated=updated,
         )
 
     async def hash(self, uri: str) -> str:

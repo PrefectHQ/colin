@@ -1,7 +1,9 @@
 # ADR 016: Addressable and Structured Addresses
 
-**Status**: Accepted
-**Date**: 2025-12-31
+> **Superseded by [ADR 017](017-resource-and-ref-architecture.md)**
+
+**Status**: Superseded
+**Date**: 2026-01-01
 
 ## Context
 

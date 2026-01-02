@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from colin.models import CompiledDocument
-    from colin.providers.addressable import Addressable
+    from colin.providers.resource import Resource
 
 
 class InputPlugin(Protocol):
@@ -16,14 +16,14 @@ class InputPlugin(Protocol):
     scheme: str
     """URI scheme this plugin handles (e.g., 'file', 'mcp', 'colin')."""
 
-    async def fetch(self, uri: str) -> Addressable:
+    async def fetch(self, uri: str) -> Resource:
         """Fetch content and metadata for a URI.
 
         Args:
             uri: The URI to fetch.
 
         Returns:
-            Addressable object with content and metadata.
+            Resource object with content and metadata.
         """
         ...
 

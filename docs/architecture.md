@@ -1,17 +1,34 @@
 # Colin Architecture
 
 > **Status**: MVP in development
-> **Last Updated**: 2025-01-06
+> **Last Updated**: 2026-01-01
 
 Colin (**Co**ntext **Lin**eage) is a context engine for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and produces outputs your agents can use.
 
-## Core Insight
+## Core Insight: Refs as Replay Instructions
 
 Like dbt's `ref()`, Colin's `ref()` function does double duty:
 1. **Registers a dependency edge** in the graph
 2. **Returns content** for use in the template
 
 This enables automatic dependency tracking without explicit declarations.
+
+But tracking dependencies isn't just about recording "document A depends on resource B". Colin also needs to know *when B changes* so it can recompile A. This is why references carry replay instructions.
+
+A `Ref` contains everything needed to re-fetch the resource:
+
+```python
+Ref(
+    provider="s3",               # Which provider
+    connection="prod",           # Which instance (s3.prod)
+    method="get",                # Which method to call
+    args={"path": "bucket/key"}  # With what arguments
+)
+```
+
+When checking staleness, Colin replays each Ref to get the current version (an ETag, content hash, or mtime) and compares it to the version stored at compile time. If they differ, the document is stale and needs recompilation.
+
+Providers can implement efficient staleness checks. S3Provider uses HEAD requests for ETags. FileProvider uses stat() for mtimes. No need to fetch full content just to check if something changed.
 
 ## System Overview
 
@@ -33,9 +50,9 @@ This enables automatic dependency tracking without explicit declarations.
           ▼                      ▼                    ▼
 ┌────────────────────┐  ┌───────────────────┐  ┌──────────────────┐
 │ Providers          │  │ Storage           │  │ Manifest         │
-│ - project://       │  │ - artifacts       │  │ - refs_evaluated │
-│ - mcp.<name>://    │  │ - outputs         │  │ - llm_calls      │
-│ - custom schemes   │  │                   │  │ - costs          │
+│ - project://       │  │ - artifacts       │  │ - refs           │
+│ - mcp.<name>://    │  │ - outputs         │  │ - ref_versions   │
+│ - custom schemes   │  │                   │  │ - llm_calls      │
 └────────────────────┘  └───────────────────┘  └──────────────────┘
 ```
 
@@ -79,23 +96,29 @@ src/colin/
 
 ### ref() Call Flow
 
+The `ref()` function works uniformly on all Resource types:
+
 ```
-ref('context/foo')
+ref("context/foo")                              # Project ref (string path)
     │
     ├─ Normalizes to project://context/foo.md
-    ├─ Records dependency edge: current_doc → project://context/foo.md
-    ├─ Routes by scheme:
-    │   - project:// → artifact storage
-    │   - other://   → provider.read(path)
-    └─ Returns RefResult object:
-       - .name: "foo" (from frontmatter or URI)
-       - .description: "..." (from frontmatter)
-       - .content: "..." (compiled output)
-       - .template: "..." (raw source)
-       - .updated: datetime
-       - .uri: "project://context/foo.md"
+    ├─ Fetches via ProjectProvider
+    ├─ Tracks Ref + version for staleness
+    └─ Returns ProjectResource:
+       - .content: compiled output
+       - .ref(): Ref for re-fetching
+       - .version: content hash
+       - .path, .name, .description
        - __str__() → .content
+
+ref(colin.s3.prod.get("config.json"))           # Provider resource
+    │
+    ├─ Awaits the provider coroutine
+    ├─ Tracks resource.ref() + resource.version
+    └─ Returns the S3Resource unchanged
 ```
+
+Provider functions like `s3.get()` return Resource objects. Wrapping in `ref()` registers the dependency for staleness tracking. Without `ref()`, the resource is fetched but changes won't trigger recompilation.
 
 ### LLM Caching Flow
 
@@ -123,11 +146,12 @@ See `docs/decisions/` for detailed ADRs:
 - **002-frontmatter-namespacing**: Why `colin:` block in frontmatter
 - **003-async-first**: Why async throughout
 - **004-two-pass-discovery**: Why AST parsing for refs
-- **005-ref-returns-object**: Why RefResult, not string
+- **005-ref-returns-object**: Why Resource objects, not strings
 - **006-plugin-architecture**: Why plugins from day one
 - **007-implicit-previous**: Why no explicit `{{ previous }}` variable
 - **012-provider-architecture**: Providers and storage separation
 - **013-provider-template-functions**: Provider namespace + template functions
+- **017-resource-and-ref-architecture**: Refs as replay instructions, Resource/Ref split
 
 ## Frontmatter Structure
 
@@ -153,7 +177,7 @@ Providers can contribute template functions via `Provider.get_functions()`. Thes
 {{ extract(ref("context/summary").content, "summarize") }}
 ```
 
-Provider functions may return raw strings or referenceable values; referenceable returns are normalized into `RefResult` and tracked in `refs_evaluated`.
+Provider functions return `Resource` objects (content + ref + version). Resources are tracked via `ref_versions` for version-based staleness detection.
 
 ## MVP Limitations
 

@@ -8,7 +8,7 @@ import pytest
 
 from colin.compiler import CompileContext
 from colin.exceptions import RefNotFoundError
-from colin.models import Address, LLMCall, Manifest
+from colin.models import LLMCall, Manifest, Ref
 from colin.providers.project import ProjectProvider
 
 
@@ -37,13 +37,15 @@ class TestCompileContext:
 
         await context.ref("other")
 
-        # Check that an Address with the right payload was tracked
-        assert len(context.refs_evaluated) == 1
-        addr = context.refs_evaluated[0]
-        assert addr["provider"] == "project"
-        assert addr["payload"]["path"] == "other.md"
+        # Check that a Ref with the right args was tracked
+        assert len(context.refs) == 1
+        ref = context.refs[0]
+        assert ref.provider == "project"
+        assert ref.args["path"] == "other.md"
+        # Version should be tracked
+        assert ref.key() in context.ref_versions
 
-    async def test_ref_returns_addressable(self, context: CompileContext, tmp_path: Path) -> None:
+    async def test_ref_returns_resource(self, context: CompileContext, tmp_path: Path) -> None:
         source_file = tmp_path / "context" / "doc.md"
         source_file.write_text("---\nname: Doc\ndescription: A doc\n---\nTemplate")
         output_file = tmp_path / "target" / "doc.md"
@@ -51,12 +53,12 @@ class TestCompileContext:
 
         result = await context.ref("doc")
 
-        # Returns Addressable (ProjectResource) with content
+        # Returns Resource (ProjectResource) with content
         assert result.content == "Compiled content"
-        # Address has structured payload for re-fetching
-        addr = result.address()
-        assert addr["provider"] == "project"
-        assert addr["payload"]["path"] == "doc.md"
+        # ref() returns Ref for re-fetching
+        ref = result.ref()
+        assert ref.provider == "project"
+        assert ref.args["path"] == "doc.md"
         # __str__ returns content for template use
         assert str(result) == "Compiled content"
 
@@ -107,18 +109,21 @@ class TestCompileContext:
         assert len(context.llm_calls) == 2
         assert context.total_cost == pytest.approx(0.03)
 
-    async def test_track_ref_adds_to_refs_evaluated(self, context: CompileContext) -> None:
-        """Test that track_ref adds Address to refs_evaluated without fetching."""
-        addr = Address(provider="test", instance="", payload={"uri": "some://uri"})
-        context.track_ref(addr)
+    async def test_track_adds_ref_and_version(self, context: CompileContext) -> None:
+        """Test that track adds Ref and version to tracking lists."""
+        ref = Ref(provider="test", connection="", method="get", args={"uri": "some://uri"})
+        context.track(ref, "version-1")
 
-        assert len(context.refs_evaluated) == 1
-        assert context.refs_evaluated[0] == addr
+        assert len(context.refs) == 1
+        assert context.refs[0] == ref
+        assert context.ref_versions[ref.key()] == "version-1"
 
-    async def test_track_ref_deduplicates(self, context: CompileContext) -> None:
-        """Test that track_ref doesn't add duplicates."""
-        addr = Address(provider="test", instance="", payload={"uri": "some://uri"})
-        context.track_ref(addr)
-        context.track_ref(addr)
+    async def test_track_deduplicates(self, context: CompileContext) -> None:
+        """Test that track doesn't add duplicates."""
+        ref = Ref(provider="test", connection="", method="get", args={"uri": "some://uri"})
+        context.track(ref, "version-1")
+        context.track(ref, "version-2")  # Same ref, different version
 
-        assert len(context.refs_evaluated) == 1
+        assert len(context.refs) == 1
+        # First version wins (existing behavior)
+        assert context.ref_versions[ref.key()] == "version-1"
