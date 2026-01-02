@@ -1,0 +1,58 @@
+---
+title: Markdown Renderer
+sidebarTitle: Markdown
+icon: markdown
+---
+
+The Markdown renderer is Colin's default. It passes template output through unchanged, preserving all formatting, headers, and content structure.
+
+## Usage
+
+Markdown is the default, so no configuration is needed:
+
+```yaml
+---
+title: Weekly Report
+---
+
+# Summary
+
+{{ ref('data').content | llm_extract('executive summary') }}
+
+# Details
+
+{{ ref('analysis').content }}
+```
+
+You can also specify it explicitly:
+
+```yaml
+---
+colin:
+  output: markdown
+---
+```
+
+## Output
+
+The renderer preserves all content exactly as rendered. Jinja expressions are evaluated, but the resulting markdown is written as-is.
+
+**Input template:**
+```markdown
+## Status: {{ status }}
+
+Tasks completed:
+{% for task in tasks %}
+- {{ task.name }}
+{% endfor %}
+```
+
+**Output (after Jinja rendering):**
+```markdown
+## Status: Complete
+
+Tasks completed:
+- Review PR
+- Update docs
+- Deploy
+```

@@ -70,6 +70,14 @@
             ]
           },
           {
+            "group": "Renderers",
+            "pages": [
+              "renderers/renderers",
+              "renderers/markdown",
+              "renderers/json"
+            ]
+          },
+          {
             "group": "Running Colin",
             "pages": [
               "running/run",

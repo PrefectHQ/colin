@@ -1,0 +1,79 @@
+---
+title: Renderer System
+sidebarTitle: Overview
+icon: file-export
+---
+
+Renderers transform compiled document output into specific formats. While all Colin templates are written in Markdown with Jinja syntax, the final output can be JSON, YAML, or plain Markdown depending on the renderer specified.
+
+Colin includes three built-in renderers:
+
+| Renderer | Extension | Description |
+| :------- | :-------- | :---------- |
+| [Markdown](/renderers/markdown) | `.md` | Default passthrough renderer |
+| [JSON](/renderers/json) | `.json` | Parses markdown structure into JSON |
+| YAML | `.yaml` | Validates YAML output |
+
+## Configuration
+
+Specify the output format in document frontmatter using the `output` field:
+
+```yaml
+---
+colin:
+  output: json
+---
+
+## name
+John Doe
+
+## age
+```json
+30
+```
+```
+
+This produces `document.json` with content `{"name": "John Doe", "age": 30}`.
+
+## How Renderers Work
+
+Renderers operate after Jinja template rendering completes. The pipeline is:
+
+```
+Source (.md) → Jinja2 rendering → Raw output string → Renderer → Final file
+```
+
+Each renderer can:
+- **Transform content**: Convert between formats (e.g., markdown headers to JSON keys)
+- **Validate output**: Ensure content is valid for the target format
+- **Set file extension**: Determine the output filename extension
+
+## Default Behavior
+
+Without an `output` specification, Colin uses the Markdown renderer which passes content through unchanged. This is ideal for generating documentation or reports.
+
+```yaml
+---
+title: My Report
+---
+
+# Summary
+
+{{ ref('data').content | llm_extract('key findings') }}
+```
+
+## Choosing a Renderer
+
+Use **Markdown** (default) when:
+- Generating documentation or reports
+- The output is meant for human reading
+- You want to preserve formatting
+
+Use **JSON** when:
+- Building structured data for APIs or agents
+- Creating configuration files
+- Output will be consumed by programs
+
+Use **YAML** when:
+- Creating human-readable configuration
+- Output needs to preserve comments and structure

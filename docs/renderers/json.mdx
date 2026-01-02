@@ -1,0 +1,307 @@
+---
+title: JSON Renderer
+sidebarTitle: JSON
+icon: brackets-curly
+---
+
+The JSON renderer produces structured JSON output from your templates. Enable it by setting `output: json` in your document frontmatter:
+
+```yaml
+---
+colin:
+  output: json
+---
+```
+
+With this setting, Colin writes `document.json` instead of `document.md`.
+
+## Writing JSON Directly
+
+The simplest approach is writing JSON directly. If your entire document is valid JSON, Colin passes it through:
+
+<CodeGroup>
+```markdown Template
+---
+colin:
+  output: json
+---
+
+{"name": "Alice", "role": "admin"}
+```
+
+```json Output
+{"name": "Alice", "role": "admin"}
+```
+</CodeGroup>
+
+For dynamic values, use the `tojson` filter to ensure proper escaping:
+
+```markdown
+{"users": {{ users | tojson }}, "count": {{ users | length }}}
+```
+
+## JSON Fences
+
+The recommended approach is wrapping your JSON in a code fence. Colin validates the syntax and provides clear error messages if something is malformed:
+
+<CodeGroup>
+````markdown Template
+---
+colin:
+  output: json
+---
+
+```json
+{
+  "name": "Alice",
+  "role": "admin",
+  "active": true
+}
+```
+````
+
+```json Output
+{
+  "name": "Alice",
+  "role": "admin",
+  "active": true
+}
+```
+</CodeGroup>
+
+This is especially useful when generating JSON dynamically, since Colin will catch syntax errors like trailing commas or mismatched braces.
+
+## Markdown Structure
+
+Writing JSON in templates gets painful fast. Consider generating a list of users:
+
+```markdown
+[
+{% for user in users %}
+  {"name": "{{ user.name }}", "role": "{{ user.role }}"}{% if not loop.last %},{% endif %}
+{% endfor %}
+]
+```
+
+Trailing comma logic, brace matching, quote escaping, bracket balancing - it's error-prone and difficult to read. The template syntax fights against JSON syntax.
+
+Colin solves this by parsing markdown structure into JSON. You write readable markdown; Colin outputs structured JSON. Headers become keys, lists become arrays, and nesting follows header depth:
+
+<CodeGroup>
+```markdown Template
+---
+colin:
+  output: json
+---
+
+## name
+Alice
+
+## role
+admin
+
+## tags
+- python
+- data
+- ml
+```
+
+```json Output
+{
+  "name": "Alice",
+  "role": "admin",
+  "tags": ["python", "data", "ml"]
+}
+```
+</CodeGroup>
+
+### Headers as Keys
+
+Each header becomes an object key. Text content under the header becomes a string value:
+
+<CodeGroup>
+```markdown Template
+---
+colin:
+  output: json
+---
+
+## title
+Weekly Report
+
+## summary
+Everything looks good.
+```
+
+```json Output
+{
+  "title": "Weekly Report",
+  "summary": "Everything looks good."
+}
+```
+</CodeGroup>
+
+### Lists as Arrays
+
+Markdown lists under a header become JSON arrays:
+
+<CodeGroup>
+```markdown Template
+---
+colin:
+  output: json
+---
+
+## languages
+- Python
+- Rust
+- Go
+```
+
+```json Output
+{
+  "languages": ["Python", "Rust", "Go"]
+}
+```
+</CodeGroup>
+
+### Literal Values
+
+Text under headers is parsed as strings. For numbers, booleans, or complex objects, use a JSON fence. You can use JSON fences anywhere within a markdown-structured document to write literal JSON as a value:
+
+<CodeGroup>
+````markdown Template
+---
+colin:
+  output: json
+---
+
+## name
+Alice
+
+## age
+```json
+30
+```
+
+## active
+```json
+true
+```
+
+## metadata
+```json
+{"department": "Engineering", "level": 3}
+```
+````
+
+```json Output
+{
+  "name": "Alice",
+  "age": 30,
+  "active": true,
+  "metadata": {"department": "Engineering", "level": 3}
+}
+```
+</CodeGroup>
+
+### Nested Objects
+
+Deeper header levels create nested objects. An `##` header containing `###` headers becomes a nested structure:
+
+<CodeGroup>
+```markdown Template
+---
+colin:
+  output: json
+---
+
+## user
+### name
+Alice
+
+### contact
+#### email
+alice@example.com
+
+#### phone
+555-1234
+```
+
+```json Output
+{
+  "user": {
+    "name": "Alice",
+    "contact": {
+      "email": "alice@example.com",
+      "phone": "555-1234"
+    }
+  }
+}
+```
+</CodeGroup>
+
+When a header has both text content and child headers, the text goes into a `_content` key:
+
+<CodeGroup>
+```markdown Template
+## user
+Some introductory text about the user.
+
+### name
+Alice
+```
+
+```json Output
+{
+  "user": {
+    "_content": "Some introductory text about the user.",
+    "name": "Alice"
+  }
+}
+```
+</CodeGroup>
+
+### Array Elements
+
+Colin provides a custom `{% item %}...{% enditem %}` block for creating array elements. Combined with loops, this generates arrays of objects:
+
+<CodeGroup>
+```markdown Template
+---
+colin:
+  output: json
+---
+
+{% for user in users %}
+{% item %}
+## name
+{{ user.name }}
+
+## role
+{{ user.role }}
+{% enditem %}
+{% endfor %}
+```
+
+```json Output
+[
+  {"name": "Alice", "role": "admin"},
+  {"name": "Bob", "role": "user"}
+]
+```
+</CodeGroup>
+
+Each `{% item %}` block becomes one element in the output array. Items can contain full markdown structure including nested headers and lists.
+
+## Validation
+
+The renderer enforces several rules:
+
+| Rule | Behavior |
+| :--- | :------- |
+| Duplicate keys at same level | Error |
+| Content before first header | Error |
+| `{% item %}` before headers at root | Error |
+| Invalid JSON in fence | Error with location |
+| No structure detected | Warning, returns string |
