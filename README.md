@@ -1,184 +1,232 @@
-
 <div align="center">
 
 <picture>
   <img width="550" alt="Colin Logo" src="docs/assets/logos/c-watercolor-waves.jpeg">
 </picture>
 
-</div>
-
 # Colin
 
-***Context as code.***
+**The context engine that keeps agent knowledge fresh.**
 
-Colin is a context engine for building context pipelines—extract from sources, transform with LLMs, load to outputs. Write templates that reference other documents, pull from GitHub, Linear, Slack, databases via MCP. When sources change, Colin recompiles. Your context and skills stay fresh automatically.
+</div>
 
-```bash
-pip install colin
-colin run
+---
+
+Context goes stale. Colin keeps it fresh.
+
+Write context files that reference each other, pull from MCP servers, fetch data from APIs, and extract insights with LLMs. Colin's context engine resolves dependencies and only recompiles affected documents whenever sources change.
+
+```markdown
+---
+name: Deployment Guide
+---
+
+# How to Deploy
+
+{{ ref('infrastructure/environments').content }}
+
+## Current Process
+
+{{ colin.mcp.github.resource('repo://acme/platform/docs/DEPLOYING.md').content }}
+
+## Recent Issues
+
+{{ colin.mcp.pagerduty.resource('incidents/last-30-days') | extract('deployment-related incidents and their resolutions') }}
 ```
+
+Run `colin run`. Colin fetches your infrastructure doc, pulls the latest deployment guide from GitHub, queries PagerDuty for recent incidents, uses an LLM to extract the deployment-related ones, and compiles it all into a single document.
+
+Tomorrow, someone updates the GitHub deployment guide. Next time you run `colin run`, Colin knows—and recompiles. The PagerDuty incidents from last month expire; Colin fetches fresh ones. Your infrastructure doc changes; everything that references it recompiles too.
+
+You write templates. Colin keeps them true.
 
 *Colin stands for **Co**ntext **Lin**eage — and also happens to be that perpetually helpful robot from The Hitchhiker's Guide to the Galaxy.*
 
 ---
 
-## The Problem
+## Install
 
-Your agent's context is scattered everywhere—project trackers, customer calls, documentation, databases. Someone writes it up as a skill or prompt. A month later:
-
-- The deployment process changed
-- Staging got renamed
-- The API added new endpoints
-- Q3 priorities are now Q4 priorities
-
-The context is stale. The agent is wrong. Nobody noticed.
-
-Manual maintenance doesn't scale. There's no dependency tracking, no way to know what depends on what, no alert when upstream sources change.
-
-## How Colin Works
-
-Write markdown templates that reference live data. Colin builds the dependency graph and compiles in order:
-
-```markdown
----
-name: Project Status
----
-
-# Current Sprint
-
-{{ colin.mcp.linear.resource('projects/current-sprint').content }}
-
-## Key Risks
-
-{{ ref('team/capacity') | extract('blockers and concerns') }}
-
-## Customer Context
-
-{% llm %}
-Summarize recent customer feedback relevant to this sprint:
-
-{{ colin.mcp.intercom.resource('conversations/last-7-days').content }}
-{% endllm %}
+```bash
+pip install colin
 ```
+
+---
+
+## The Idea
+
+Every piece of context has sources. A deployment guide references infrastructure docs, GitHub repos, incident history. A sales pitch references product docs, pricing, customer testimonials. These sources change constantly.
+
+Static files drift. Templates stay true.
+
+Colin templates are Jinja2 markdown. A few things they can do:
+
+- **Reference other templates** — `ref('infrastructure/envs')` creates a dependency. When `envs` changes, everything referencing it recompiles.
+
+- **Pull from MCP servers** — `colin.mcp.github.resource('repo://...')` fetches live data. Any MCP server works: Linear, Slack, databases, your internal tools.
+
+- **Fetch from HTTP** — `colin.http.get('https://...')` pulls from APIs.
+
+- **Extract with LLMs** — `content | extract('the key points')` uses an LLM to pull specific information from any content.
+
+- **Synthesize with LLMs** — `{% llm %}...{% endllm %}` sends content to an LLM for freeform processing.
 
 When you run `colin run`:
 
-1. Colin resolves dependencies in topological order
-2. Checks if sources changed (documents, MCP resources, etc.)
-3. Recompiles only what's affected
-4. Runs LLM calls to synthesize and extract (cached by input)
-5. Outputs compiled context to `target/`
+1. Colin parses your templates and discovers dependencies—no declarations needed
+2. Sorts the dependency graph and compiles in order
+3. Checks which sources changed since last run
+4. Recompiles only affected documents
+5. Caches LLM calls by input hash—same input, no redundant API calls
 
-When any source updates, everything that depends on it recompiles automatically. Like dbt's `ref()`, but for context.
-
----
-
-## Core Primitives
-
-### ref() — Connect Documents
-
-Reference other documents. Colin builds the graph and compiles in order:
-
-```jinja
-{{ ref('company/overview').content }}
-```
-
-When `company/overview` changes, everything that references it recompiles.
-
-### extract() — Pull What Matters
-
-LLM extracts specific information from content:
-
-```jinja
-{{ ref('meeting-notes') | extract('action items and owners') }}
-{{ ref('customer-calls') | extract('feature requests mentioned') }}
-```
-
-### http.get() — Fetch Web Content
-
-Pull content directly from URLs:
-
-```jinja
-{{ colin.http.get('https://api.example.com/data.json') }}
-{{ colin.http.get('example.com/api/users') }}  {# https:// added automatically #}
-```
-
-### mcp.server.resource() — Fetch Live Data
-
-Pull from external sources via MCP:
-
-```jinja
-{{ colin.mcp.linear.resource('projects/engineering').content }}
-{{ colin.mcp.github.resource('repo://org/repo/README.md').content }}
-```
-
-### {% llm %} — Synthesize Across Sources
-
-Freeform LLM synthesis:
-
-```jinja
-{% llm %}
-Compare these two analyses and identify trends:
-
-{{ ref('q3-report').content }}
-{{ ref('q4-report').content }}
-{% endllm %}
-```
+The result: context that's always fresh, compiled from your actual sources of truth.
 
 ---
 
 ## Quick Start
 
 ```bash
-colin init my-project
-cd my-project
+colin init my-context
+cd my-context
 ```
 
-Create `models/company.md`:
+Create `models/team.md`:
 
 ```markdown
 ---
-name: Company Overview
+name: Team Overview
 ---
 
-We build developer tools for CI/CD pipelines.
+# Engineering Team
+
+We're a team of 12 engineers working on developer tools.
+
+## Current Focus
+- API v2 migration
+- Performance improvements
+- Customer onboarding flow
 ```
 
-Create `models/pitch.md`:
+Create `models/standup.md`:
 
 ```markdown
 ---
-name: Sales Pitch
+name: Standup Context
 ---
 
-# About Us
+# Daily Standup
 
-{{ ref('company').content }}
+## Team
+{{ ref('team').content }}
 
-# Why Choose Us
+## Active Sprint
+{{ colin.mcp.linear.resource('projects/current-sprint').content }}
 
-{{ ref('company') | extract('key selling points') }}
+## Blockers
+{{ colin.mcp.linear.resource('projects/current-sprint') | extract('blocked tickets and why') }}
+
+## Yesterday's Deploys
+{{ colin.mcp.github.resource('repo://acme/api/deployments/yesterday') | extract('what shipped and any issues') }}
 ```
-
-Compile:
 
 ```bash
 colin run
 ```
 
-Colin compiles `company` first (no dependencies), then `pitch` (depends on `company`). Output lands in `target/compiled/`. Change `company.md` and `pitch.md` recompiles automatically.
+Colin compiles `team` first (no dependencies), then `standup` (depends on `team` plus Linear and GitHub data). Output lands in `target/`.
+
+Update `team.md`—add a new engineer, change the focus areas. Run `colin run` again. Both documents recompile because `standup` depends on `team`.
+
+Sprint changes in Linear? Those sections recompile. Yesterday's deploys update in GitHub? That section recompiles. Team doc stays the same? It's skipped entirely.
 
 ---
 
-## Use Cases
+## Templates
 
-**Agent Skills**: Context your agent loads on-demand—stays current as sources change.
+### ref() — Reference Other Documents
 
-**System Prompts**: Dynamic prompts that update automatically when team info, processes, or priorities shift.
+```jinja
+{{ ref('company/overview').content }}
 
-**Team Briefings**: Status reports assembled from project trackers, synthesized by LLMs.
+{{ ref('company/overview').name }}
 
-**Documentation**: Internal docs that pull from multiple sources and never go stale.
+{{ ref('company/overview').description }}
+```
+
+Creates a dependency edge. When the referenced document changes, this one recompiles. Access `.content` for the compiled output, or `.name` and `.description` from frontmatter.
+
+Without `.content`, resources render as their content automatically:
+
+```jinja
+{{ ref('company/overview') }}
+```
+
+### extract() — LLM Extraction
+
+```jinja
+{{ ref('meeting-notes') | extract('action items with owners') }}
+
+{{ colin.mcp.slack.resource('channels/support/today') | extract('urgent customer issues') }}
+
+{{ colin.http.get('https://api.example.com/logs') | extract('errors in the last hour') }}
+```
+
+Pipe any content to `extract()` with a prompt. The LLM pulls out exactly what you asked for. Results are cached—same input and prompt means no redundant API calls.
+
+### mcp — Live Data from MCP Servers
+
+```jinja
+{{ colin.mcp.linear.resource('projects/engineering').content }}
+
+{{ colin.mcp.github.resource('repo://acme/api/README.md').content }}
+
+{{ colin.mcp.slack.resource('channels/engineering/recent').content }}
+
+{{ colin.mcp.postgres.resource('query/active-users').content }}
+```
+
+Any MCP server you configure becomes a source. Colin tracks versions—when upstream data changes, affected documents recompile.
+
+### http.get() — Fetch URLs
+
+```jinja
+{{ colin.http.get('https://api.example.com/status.json') }}
+
+{{ colin.http.get('internal.company.com/config') }}
+```
+
+### {% llm %} — Freeform LLM Processing
+
+```jinja
+{% llm %}
+You have two quarterly reports. Identify trends, concerns, and recommendations.
+
+## Q3
+{{ ref('reports/q3').content }}
+
+## Q4
+{{ ref('reports/q4').content }}
+{% endllm %}
+```
+
+Everything inside the block goes to the LLM. The block renders as the response. Cached by input hash.
+
+---
+
+## Dependency Tracking
+
+Colin discovers dependencies by parsing your templates. Write `ref('thing')` and the dependency exists—no config file, no declarations.
+
+```
+models/
+  team.md
+  sprint.md        ← refs team
+  standup.md       ← refs team, sprint
+  weekly-report.md ← refs standup, sprint
+```
+
+Change `team.md` and everything above it in the graph recompiles. Change `weekly-report.md` and only it recompiles—nothing depends on it.
+
+For external resources (MCP, HTTP), Colin tracks versions automatically. When you fetch from Linear or GitHub, Colin remembers the version. Next run, it checks if the version changed. If so, documents using that resource recompile.
 
 ---
 
@@ -198,27 +246,93 @@ model = "anthropic:claude-sonnet-4-5"
 [[providers.mcp]]
 name = "linear"
 command = "npx"
-args = ["@anthropic/mcp-server-linear"]
+args = ["@linear/mcp-server"]
 
 [[providers.mcp]]
 name = "github"
 command = "uvx"
 args = ["mcp-server-github"]
+
+[[providers.mcp]]
+name = "slack"
+command = "npx"
+args = ["@anthropic/mcp-server-slack"]
 ```
+
+MCP servers are configured once, then available as `colin.mcp.<name>` in all templates.
+
+---
+
+## Frontmatter
+
+```yaml
+---
+name: My Document
+description: What this document provides
+
+colin:
+  output: markdown   # markdown, json, yaml
+  cache:
+    policy: auto     # auto, always, never
+    expires: 1d      # optional time-based expiration
+---
+```
+
+**Cache policies:**
+
+- `auto` — Rebuild when any source changes (default)
+- `always` — Only rebuild with `--no-cache`
+- `never` — Always rebuild
+
+**Expiration:** Force rebuild after a duration regardless of source changes. Useful for content that should refresh periodically.
+
+---
 
 ## CLI
 
 ```bash
-colin init [name]      # Create new project
+colin init [name]      # Create a new project
 colin run              # Compile all documents
-colin run --no-cache   # Recompile everything
-colin status           # Show project status
+colin run --no-cache   # Force full recompile
+colin status           # Show dependency graph
 colin clean            # Remove outputs and cache
-colin mcp              # Manage MCP servers
 ```
+
+---
+
+## Agent Skills
+
+Agent skills are instruction manuals for agents—markdown files that teach them how to do things like deploy code, integrate with APIs, or follow your team's workflows. Tools like Claude Code, Cursor, and Codex can dynamically load skills to understand your specific context.
+
+A skill needs a `name` and `description` in its frontmatter. The description tells the agent when to use the skill.
+
+Skills have the same problem as any documentation: they go stale. Someone writes a skill describing your deployment process, then six months later you've migrated CI systems and renamed environments. The skill is wrong. The agent gives bad advice.
+
+Colin compiles skills from live sources. Instead of a static file, you write a template that pulls from your actual infrastructure docs, your GitHub repos, your incident history. The skill stays fresh because it's compiled from fresh sources.
+
+```markdown
+---
+name: deployment-process
+description: How to deploy code to staging and production environments
+---
+
+# Deployment
+
+{{ ref('infrastructure/environments').content }}
+
+## Steps
+
+{{ colin.mcp.github.resource('repo://acme/platform/docs/DEPLOY.md').content }}
+
+## Recent Issues
+
+{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | extract('what went wrong and how it was fixed') }}
+```
+
+Run `colin run` and drop the compiled output into your skills directory. Your agent always has current knowledge.
 
 ---
 
 ## Part of Prefect's Context Layer
 
-Colin is built by [Prefect](https://prefect.io) as part of our mission to deliver the right context at the right time.
+Colin is built with 💙 by [Prefect](https://prefect.io) as part of our mission to deliver the right context at the right time.
