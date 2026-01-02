@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import gc
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
@@ -142,6 +143,7 @@ class MCPProvider(Provider):
         # Force cleanup while loop is still open to avoid BaseSubprocessTransport.__del__ warnings
         if isinstance(self._server, StdioMCPServer):
             del client
+            await asyncio.sleep(0)  # Let pending subprocess callbacks run
             gc.collect()
 
     def _require_client(self) -> Client:
