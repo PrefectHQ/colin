@@ -326,6 +326,92 @@ class TestLiteralJsonWithoutFence:
         assert result == [1, 2, 3]
 
 
+class TestYamlFencePassthrough:
+    """Tests for YAML fence passthrough."""
+
+    def test_yaml_object_passthrough(self):
+        content = """```yaml
+name: John
+age: 30
+```"""
+        result = parse_markdown_to_structure(content)
+        assert result == {"name": "John", "age": 30}
+
+    def test_yaml_array_passthrough(self):
+        content = """```yaml
+- python
+- rust
+- go
+```"""
+        result = parse_markdown_to_structure(content)
+        assert result == ["python", "rust", "go"]
+
+    def test_yaml_nested_structure(self):
+        content = """```yaml
+user:
+  name: Alice
+  roles:
+    - admin
+    - user
+```"""
+        result = parse_markdown_to_structure(content)
+        assert result == {"user": {"name": "Alice", "roles": ["admin", "user"]}}
+
+    def test_yaml_fence_in_header(self):
+        content = """## config
+```yaml
+debug: true
+level: 3
+```"""
+        result = parse_markdown_to_structure(content)
+        assert result == {"config": {"debug": True, "level": 3}}
+
+    def test_yaml_number_in_header(self):
+        content = """## port
+```yaml
+8080
+```"""
+        result = parse_markdown_to_structure(content)
+        assert result == {"port": 8080}
+
+    def test_yaml_boolean_in_header(self):
+        content = """## enabled
+```yaml
+true
+```"""
+        result = parse_markdown_to_structure(content)
+        assert result == {"enabled": True}
+
+
+class TestLiteralYamlWithoutFence:
+    """Tests for raw YAML (without fence) being parsed."""
+
+    def test_raw_yaml_object(self):
+        content = "name: John\nage: 30"
+        result = parse_markdown_to_structure(content)
+        assert result == {"name": "John", "age": 30}
+
+    def test_raw_yaml_array(self):
+        content = "- python\n- rust\n- go"
+        result = parse_markdown_to_structure(content)
+        assert result == ["python", "rust", "go"]
+
+    def test_raw_yaml_nested(self):
+        content = "user:\n  name: Alice\n  role: admin"
+        result = parse_markdown_to_structure(content)
+        assert result == {"user": {"name": "Alice", "role": "admin"}}
+
+    def test_raw_yaml_number(self):
+        content = "42"
+        result = parse_markdown_to_structure(content)
+        assert result == 42
+
+    def test_raw_yaml_boolean(self):
+        content = "true"
+        result = parse_markdown_to_structure(content)
+        assert result is True
+
+
 class TestPlainTextFallback:
     """Tests for plain text fallback to string literal."""
 

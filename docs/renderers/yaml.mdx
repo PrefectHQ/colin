@@ -1,0 +1,90 @@
+---
+title: YAML Renderer
+sidebarTitle: YAML
+icon: file-code
+---
+
+The YAML renderer produces structured YAML output from your templates. Enable it by setting `output: yaml` in your document frontmatter:
+
+```yaml
+---
+colin:
+  output: yaml
+---
+```
+
+With this setting, Colin writes `document.yaml` instead of `document.md`.
+
+## Same Parsing, Different Output
+
+The YAML renderer uses the same parsing logic as the [JSON renderer](/renderers/json). All the same markdown structures work:
+
+- Headers become keys
+- Lists become sequences
+- Nested headers create nested mappings
+- `{% item %}` blocks create sequence elements
+
+The only difference is the output format. This makes switching between JSON and YAML trivial—just change the `output` setting.
+
+<CodeGroup>
+```markdown Template
+---
+colin:
+  output: yaml
+---
+
+## name
+Alice
+
+## role
+admin
+
+## tags
+- python
+- data
+- ml
+```
+
+```yaml Output
+name: Alice
+role: admin
+tags:
+- python
+- data
+- ml
+```
+</CodeGroup>
+
+## Data Fences
+
+Both `json` and `yaml` fences work in either renderer. This means you can write literal values in whichever format you prefer:
+
+<CodeGroup>
+````markdown Template
+---
+colin:
+  output: yaml
+---
+
+## config
+```yaml
+debug: true
+level: 3
+```
+
+## metadata
+```json
+{"department": "Engineering"}
+```
+````
+
+```yaml Output
+config:
+  debug: true
+  level: 3
+metadata:
+  department: Engineering
+```
+</CodeGroup>
+
+For the full guide on markdown structure parsing, see the [JSON renderer documentation](/renderers/json).
