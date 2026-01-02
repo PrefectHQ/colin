@@ -14,7 +14,7 @@ def test_ref_content_propagates(
     """Content from referenced doc appears in output."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    welcome = (target_dir / "compiled" / "welcome.md").read_text()
+    welcome = (target_dir / "welcome.md").read_text()
     assert "Hello from greeting!" in welcome
 
 
@@ -24,7 +24,7 @@ def test_dependency_order(
     """Documents compile in dependency order."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    summary = (target_dir / "compiled" / "summary.md").read_text()
+    summary = (target_dir / "summary.md").read_text()
     assert "Hello from greeting!" in summary
     assert "Welcome to Colin" in summary
 
@@ -35,9 +35,9 @@ def test_all_outputs_created(
     """All documents are compiled to output."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    assert (target_dir / "compiled" / "greeting.md").exists()
-    assert (target_dir / "compiled" / "welcome.md").exists()
-    assert (target_dir / "compiled" / "summary.md").exists()
+    assert (target_dir / "greeting.md").exists()
+    assert (target_dir / "welcome.md").exists()
+    assert (target_dir / "summary.md").exists()
 
 
 def test_missing_ref_fails(test_project: Path, target_dir: Path, mock_agent):

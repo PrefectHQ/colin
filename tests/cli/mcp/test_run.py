@@ -31,7 +31,7 @@ def test_mcp_resource_direct(greeter_server: Path, target_dir: Path, cli: Callab
     """MCP resource content appears in compiled output."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    output = (target_dir / "compiled" / "direct.md").read_text()
+    output = (target_dir / "direct.md").read_text()
     assert "Hello, world!" in output
 
 
@@ -41,7 +41,7 @@ def test_mcp_resource_with_parameter(
     """MCP resource with URI parameter works."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    output = (target_dir / "compiled" / "with_param.md").read_text()
+    output = (target_dir / "with_param.md").read_text()
     assert "Goodbye, Alice!" in output
 
 
@@ -71,7 +71,7 @@ def test_mcp_prompt_basic(greeter_server: Path, target_dir: Path, cli: Callable[
     """MCP prompt content appears in compiled output."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    output = (target_dir / "compiled" / "prompt_basic.md").read_text()
+    output = (target_dir / "prompt_basic.md").read_text()
     assert "greet the user warmly" in output
 
 
@@ -79,7 +79,7 @@ def test_mcp_prompt_with_args(greeter_server: Path, target_dir: Path, cli: Calla
     """MCP prompt with arguments works."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    output = (target_dir / "compiled" / "prompt_with_args.md").read_text()
+    output = (target_dir / "prompt_with_args.md").read_text()
     assert "Spanish" in output
     assert "formal" in output
 

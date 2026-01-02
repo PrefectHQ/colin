@@ -25,7 +25,7 @@ class TestCompileIntegration:
         # Set up directories
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target" / "compiled"
+        output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
 
         # Create fixture files (same as examples/hello_world)
@@ -126,7 +126,7 @@ Write a haiku about being welcomed.
         """Test diamond dependency pattern (A depends on B and C, both depend on D)."""
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target" / "compiled"
+        output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
 
         # D is the base (no deps)
@@ -193,7 +193,7 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
         source_dir = tmp_path / "models"
         source_dir.mkdir()
         (source_dir / "reports").mkdir()
-        output_dir = tmp_path / "target" / "compiled"
+        output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
 
         (source_dir / "base.md").write_text("""\
