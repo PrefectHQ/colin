@@ -4,19 +4,17 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, validate_call
 from typing_extensions import Self
 
-from colin.models import Address
-from colin.providers.addressable import Addressable
+from colin.models import Ref
 from colin.providers.base import Provider
 from colin.providers.cache import get_compile_context
+from colin.providers.resource import Resource
 
 # TypeAdapter for parsing MCP server config from TOML
 MCPServerAdapter: TypeAdapter[StdioMCPServer | RemoteMCPServer] = TypeAdapter(
@@ -24,80 +22,56 @@ MCPServerAdapter: TypeAdapter[StdioMCPServer | RemoteMCPServer] = TypeAdapter(
 )
 
 
-@dataclass
-class MCPResource(Addressable):
-    """Domain object returned by colin.mcp.<name>.resource(). Inherits from Addressable."""
+class MCPResource(Resource):
+    """Resource returned by MCPProvider.resource()."""
 
-    resource_uri: str
-    """The MCP resource URI that was fetched."""
+    def __init__(
+        self,
+        content: str,
+        ref: Ref,
+        resource_uri: str,
+        name: str,
+        description: str | None = None,
+    ) -> None:
+        """Initialize an MCP resource.
 
-    _content: str
-    """The resource content."""
-
-    name: str
-    """Resource name (extracted from URI)."""
-
-    description: str | None = None
-    """Resource description."""
-
-    _last_updated: datetime | None = None
-    """When this resource was last modified."""
-
-    _instance: str = field(default="", repr=False)
-    """Provider instance name."""
-
-    @property
-    def content(self) -> str:
-        return self._content
-
-    @property
-    def last_updated(self) -> datetime:
-        return self._last_updated or datetime.now(timezone.utc)
-
-    def address(self) -> Address:
-        return Address(
-            provider="mcp",
-            instance=self._instance,
-            payload={"type": "resource", "uri": self.resource_uri},
-        )
+        Args:
+            content: The resource content.
+            ref: The Ref for this resource.
+            resource_uri: The MCP resource URI that was fetched.
+            name: Resource name (extracted from URI).
+            description: Resource description.
+        """
+        super().__init__(content, ref)
+        self.resource_uri = resource_uri
+        self.name = name
+        self.description = description
 
 
-@dataclass
-class MCPPrompt(Addressable):
-    """Domain object returned by colin.mcp.<name>.prompt(). Inherits from Addressable."""
+class MCPPrompt(Resource):
+    """Resource returned by MCPProvider.prompt()."""
 
-    name: str
-    """The prompt name."""
+    def __init__(
+        self,
+        content: str,
+        ref: Ref,
+        name: str,
+        arguments: dict[str, str],
+        description: str | None = None,
+    ) -> None:
+        """Initialize an MCP prompt.
 
-    arguments: dict[str, str]
-    """Arguments passed to the prompt."""
-
-    _content: str
-    """The prompt content."""
-
-    description: str | None = None
-    """Prompt description."""
-
-    _last_updated: datetime | None = None
-    """When this prompt was last retrieved."""
-
-    _instance: str = field(default="", repr=False)
-    """Provider instance name."""
-
-    @property
-    def content(self) -> str:
-        return self._content
-
-    @property
-    def last_updated(self) -> datetime:
-        return self._last_updated or datetime.now(timezone.utc)
-
-    def address(self) -> Address:
-        return Address(
-            provider="mcp",
-            instance=self._instance,
-            payload={"type": "prompt", "name": self.name, "arguments": self.arguments},
-        )
+        Args:
+            content: The prompt content.
+            ref: The Ref for this resource.
+            name: The prompt name.
+            arguments: Arguments passed to the prompt.
+            description: Prompt description.
+        """
+        super().__init__(content, ref)
+        self.name = name
+        self.arguments = arguments
+        self.description = description
 
 
 class MCPProvider(Provider):
@@ -106,10 +80,6 @@ class MCPProvider(Provider):
     Template usage:
         {{ colin.mcp.github.resource("colin://issues/123") }}
         {{ colin.mcp.github.prompt("summarize", url="...") }}
-
-    Payload format for load_address:
-    - Resource: {"type": "resource", "uri": "colin://hello"}
-    - Prompt: {"type": "prompt", "name": "greet", "arguments": {"name": "Alice"}}
     """
 
     namespace: ClassVar[str] = "mcp"
@@ -125,7 +95,7 @@ class MCPProvider(Provider):
             raise ValueError("MCP provider requires an instance name")
 
         super().__init__()
-        self._instance = name
+        self._connection = name
         self._server = server
         self._client = None
 
@@ -150,7 +120,7 @@ class MCPProvider(Provider):
         """Manage MCP client lifecycle."""
         if self._server is None:
             raise RuntimeError("MCPProvider not configured - use from_config()")
-        mcp_config = MCPConfig(mcpServers={self._instance: self._server})
+        mcp_config = MCPConfig(mcpServers={self._connection: self._server})
         async with Client(mcp_config) as client:
             self._client = client
             yield
@@ -162,85 +132,109 @@ class MCPProvider(Provider):
             raise RuntimeError("MCPProvider not initialized - use within lifespan context")
         return self._client
 
-    async def load_address(self, payload: dict[str, Any]) -> MCPResource | MCPPrompt:
-        """Load content from address payload.
+    async def _load_ref(self, ref: Ref) -> Resource:
+        """Load resource from a Ref by dispatching on method type.
+
+        MCP provider has special handling because 'prompt' method uses **kwargs.
+        """
+        if ref.method == "resource":
+            return await self.resource(uri=ref.args["uri"], watch=False)
+        elif ref.method == "prompt":
+            name = ref.args["name"]
+            arguments = ref.args.get("arguments", {})
+            return await self.prompt(name=name, watch=False, **arguments)
+        else:
+            raise ValueError(f"Unknown MCP method: {ref.method}")
+
+    @validate_call
+    async def resource(self, uri: str, watch: bool = True) -> MCPResource:
+        """Fetch MCP resource and return MCPResource.
 
         Args:
-            payload: Dict with 'type' and type-specific fields.
-                - Resource: {"type": "resource", "uri": "colin://hello"}
-                - Prompt: {"type": "prompt", "name": "greet", "arguments": {...}}
+            uri: The MCP resource URI to fetch.
+            watch: Whether to track this ref for staleness (default True).
 
         Returns:
-            MCPResource or MCPPrompt.
-
-        Raises:
-            ValueError: If payload type is invalid.
+            MCPResource with content and metadata.
         """
-        payload_type: Literal["resource", "prompt"] = payload["type"]
+        compile_ctx = get_compile_context()
+        doc_state = compile_ctx.doc_state if compile_ctx else None
+        op = doc_state.child("mcp", detail=f"{self._connection}.resource") if doc_state else None
 
-        if payload_type == "resource":
-            resource_uri = payload["uri"]
-            return await self._fetch_resource(resource_uri)
+        with op if op else nullcontext():
+            client = self._require_client()
+            contents = await client.read_resource(uri)
+            content = contents[0].text if contents else ""
 
-        if payload_type == "prompt":
-            prompt_name = payload["name"]
-            arguments = payload.get("arguments", {})
-            return await self._fetch_prompt(prompt_name, arguments)
+            ref = Ref(
+                provider=self.namespace,
+                connection=self._connection,
+                method="resource",
+                args={"uri": uri},
+            )
 
-        raise ValueError(f"Invalid MCP payload type: {payload_type}")
+            resource = MCPResource(
+                content=content or "",
+                ref=ref,
+                resource_uri=uri,
+                name=uri.split("/")[-1],
+            )
 
-    async def _fetch_resource(self, resource_uri: str) -> MCPResource:
-        """Fetch MCP resource."""
-        client = self._require_client()
-        contents = await client.read_resource(resource_uri)
-        content = contents[0].text if contents else ""
+            if watch and compile_ctx:
+                compile_ctx.track(ref, resource.version)
 
-        return MCPResource(
-            resource_uri=resource_uri,
-            _content=content or "",
-            name=resource_uri.split("/")[-1],
-            _last_updated=datetime.now(timezone.utc),
-            _instance=self._instance,
+            return resource
+
+    @validate_call
+    async def prompt(self, name: str, watch: bool = True, **arguments: str) -> MCPPrompt:
+        """Fetch MCP prompt and return MCPPrompt.
+
+        Args:
+            name: The prompt name.
+            watch: Whether to track this ref for staleness (default True).
+            **arguments: Arguments to pass to the prompt.
+
+        Returns:
+            MCPPrompt with content and metadata.
+        """
+        compile_ctx = get_compile_context()
+        doc_state = compile_ctx.doc_state if compile_ctx else None
+        op = (
+            doc_state.child("mcp", detail=f"{self._connection}.prompt({name})")
+            if doc_state
+            else None
         )
 
-    async def _fetch_prompt(self, name: str, arguments: dict[str, str]) -> MCPPrompt:
-        """Fetch MCP prompt."""
-        client = self._require_client()
-        result = await client.get_prompt(name, arguments)
-        parts = []
-        for msg in result.messages:
-            if hasattr(msg.content, "text"):
-                parts.append(msg.content.text)
-        content = "\n".join(parts)
+        with op if op else nullcontext():
+            client = self._require_client()
+            result = await client.get_prompt(name, arguments)
+            parts = []
+            for msg in result.messages:
+                if hasattr(msg.content, "text"):
+                    parts.append(msg.content.text)
+            content = "\n".join(parts)
 
-        return MCPPrompt(
-            name=name,
-            arguments=arguments,
-            _content=content,
-            _last_updated=datetime.now(timezone.utc),
-            _instance=self._instance,
-        )
+            ref = Ref(
+                provider=self.namespace,
+                connection=self._connection,
+                method="prompt",
+                args={"name": name, "arguments": arguments},
+            )
+
+            prompt_resource = MCPPrompt(
+                content=content,
+                ref=ref,
+                name=name,
+                arguments=arguments,
+            )
+
+            if watch and compile_ctx:
+                compile_ctx.track(ref, prompt_resource.version)
+
+            return prompt_resource
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         return {
             "resource": self.resource,
             "prompt": self.prompt,
         }
-
-    async def resource(self, uri: str) -> MCPResource:
-        """Fetch MCP resource and return MCPResource."""
-        compile_ctx = get_compile_context()
-        doc_state = compile_ctx.doc_state if compile_ctx else None
-        op = doc_state.child("mcp", detail=f"{self._instance}.resource") if doc_state else None
-        with op if op else nullcontext():
-            return await self._fetch_resource(uri)
-
-    async def prompt(self, name: str, **arguments: str) -> MCPPrompt:
-        """Fetch MCP prompt and return MCPPrompt."""
-        compile_ctx = get_compile_context()
-        doc_state = compile_ctx.doc_state if compile_ctx else None
-        op = (
-            doc_state.child("mcp", detail=f"{self._instance}.prompt({name})") if doc_state else None
-        )
-        with op if op else nullcontext():
-            return await self._fetch_prompt(name, arguments)

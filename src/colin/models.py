@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any
 
+import pydantic_core
 from pydantic import BaseModel, Field, StringConstraints
 
 # Re-export duration utilities for backwards compatibility
@@ -16,29 +18,47 @@ from colin.utilities.temporal import (  # noqa: F401
 )
 
 
-class Address(TypedDict):
-    """Structured address for re-fetching a resource.
+class Ref(BaseModel):
+    """Replay instructions for re-fetching a resource.
 
-    Stored in manifest to track dependencies. Contains just enough
-    info to re-fetch the resource via provider.load_address(payload).
-
-    The payload is provider-specific and should contain a 'type' field
-    when the provider supports multiple addressable types.
+    Contains everything needed to re-execute the provider method
+    that originally fetched this resource. Stored in manifest to
+    track dependencies.
 
     Examples:
-        S3: {"provider": "s3", "instance": "", "payload": {"bucket": "b", "key": "k"}}
-        MCP: {"provider": "mcp", "instance": "github", "payload": {"type": "resource", "uri": "colin://hello"}}
-        HTTP: {"provider": "http", "instance": "", "payload": {"url": "https://..."}}
+        S3: Ref(provider="s3", connection="", method="get", args={"path": "bucket/key"})
+        MCP: Ref(provider="mcp", connection="github", method="resource", args={"uri": "..."})
+        Project: Ref(provider="project", connection="", method="get", args={"path": "docs/intro"})
     """
 
     provider: str
-    """Provider type (e.g., 's3', 'mcp', 'http')."""
+    """Provider type (e.g., 's3', 'mcp', 'http', 'project')."""
 
-    instance: str
-    """Provider instance name (e.g., 'dev', 'github'). Empty string for default."""
+    connection: str
+    """Provider connection/instance name (e.g., 'prod', 'github'). Empty string for default."""
 
-    payload: dict[str, Any]
-    """Provider-specific data for re-fetching. Should include 'type' for discrimination."""
+    method: str
+    """The provider method name to call."""
+
+    args: dict[str, Any]
+    """Arguments to pass to the method (must be JSON-serializable)."""
+
+    def key(self) -> str:
+        """Canonical key for manifest lookup.
+
+        Returns a deterministic JSON string for use as a dict key.
+        Uses pydantic_core.to_jsonable_python() to handle complex types
+        (datetime, Pydantic models, etc.) in args.
+        """
+        return json.dumps(
+            {
+                "provider": self.provider,
+                "connection": self.connection,
+                "method": self.method,
+                "args": pydantic_core.to_jsonable_python(self.args),
+            },
+            sort_keys=True,
+        )
 
 
 class RefreshPolicy(str, Enum):
@@ -167,8 +187,11 @@ class DocumentMeta(BaseModel):
     compiled_at: datetime | None = None
     """When this document was last compiled."""
 
-    refs_evaluated: list[Address] = Field(default_factory=list)
-    """Addresses of refs that were resolved during compilation."""
+    refs: list[Ref] = Field(default_factory=list)
+    """Refs that were tracked during compilation."""
+
+    ref_versions: dict[str, str] = Field(default_factory=dict)
+    """Version of each ref at compile time (ref.key() -> version)."""
 
     llm_calls: dict[str, LLMCall] = Field(default_factory=dict)
     """LLM calls made during compilation, keyed by call_id."""
@@ -206,16 +229,16 @@ class Manifest(BaseModel):
     def get_dependents(self, uri: str) -> list[str]:
         """Find all documents that depend on the given URI.
 
-        For project:// URIs, matches against Address payloads with matching path.
+        For project:// URIs, matches against Refs with matching path.
         """
         # Extract path from project:// URI
         path = uri.split("://", 1)[1] if "://" in uri else uri
 
         dependents = []
         for doc_uri, doc in self.documents.items():
-            for addr in doc.refs_evaluated:
+            for ref in doc.refs:
                 # Match project refs by path
-                if addr["provider"] == "project" and addr["payload"].get("path") == path:
+                if ref.provider == "project" and ref.args.get("path") == path:
                     dependents.append(doc_uri)
                     break
         return dependents
@@ -262,8 +285,11 @@ class CompiledDocument(BaseModel):
     output_hash: str
     """Hash of the compiled output."""
 
-    refs_evaluated: list[Address] = Field(default_factory=list)
-    """Addresses of refs that were resolved."""
+    refs: list[Ref] = Field(default_factory=list)
+    """Refs that were tracked during compilation."""
+
+    ref_versions: dict[str, str] = Field(default_factory=dict)
+    """Version of each ref at compile time (ref.key() -> version)."""
 
     llm_calls: dict[str, LLMCall] = Field(default_factory=dict)
     """LLM calls made during compilation."""

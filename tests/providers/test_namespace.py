@@ -1,33 +1,20 @@
 """Tests for provider template namespaces."""
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, ClassVar
 
-from colin.models import Address
-from colin.providers.addressable import Addressable
+from colin.models import Ref
 from colin.providers.base import Provider
 from colin.providers.manager import ProviderManager
+from colin.providers.resource import Resource
 
 
-@dataclass
-class DummyResource(Addressable):
-    """Simple Addressable for testing."""
+class DummyResource(Resource):
+    """Simple Resource for testing."""
 
-    path: str
-    _content: str
-
-    @property
-    def content(self) -> str:
-        return self._content
-
-    @property
-    def last_updated(self) -> datetime:
-        return datetime.now(timezone.utc)
-
-    def address(self) -> Address:
-        return Address(provider="dummy", instance="", payload={"path": self.path})
+    def __init__(self, content: str, ref: Ref, path: str) -> None:
+        super().__init__(content, ref)
+        self.path = path
 
 
 class DummyProvider(Provider):
@@ -35,8 +22,9 @@ class DummyProvider(Provider):
 
     namespace: ClassVar[str] = "dummy"
     _label: str = ""
+    _connection: str = ""
 
-    def __init__(self, namespace_name: str, label: str, **kwargs: object) -> None:
+    def __init__(self, namespace_name: str, label: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._label = label
         # Override the class-level namespace for this instance
@@ -47,9 +35,18 @@ class DummyProvider(Provider):
             {"namespace": namespace_name},
         )
 
-    async def load_address(self, payload: dict[str, Any]) -> DummyResource:
-        path = payload["path"]
-        return DummyResource(path=path, _content=f"{self._label}:{path}")
+    async def get(self, path: str, watch: bool = True) -> DummyResource:
+        ref = Ref(
+            provider=self.namespace,
+            connection=self._connection,
+            method="get",
+            args={"path": path},
+        )
+        return DummyResource(
+            content=f"{self._label}:{path}",
+            ref=ref,
+            path=path,
+        )
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         label = self._label

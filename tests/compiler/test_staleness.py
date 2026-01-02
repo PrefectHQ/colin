@@ -340,51 +340,62 @@ Modified content
         assert "Modified content" in result3[0].output
 
 
-class TestProjectProviderGetLastUpdated:
-    """Tests for ProjectProvider.get_last_updated()."""
+class TestProjectProviderGetRefVersion:
+    """Tests for ProjectProvider.get_ref_version()."""
 
-    async def test_returns_compiled_at_from_manifest(self, tmp_path: Path) -> None:
-        """get_last_updated() returns compiled_at from manifest."""
+    async def test_returns_output_hash_from_manifest(self, tmp_path: Path) -> None:
+        """get_ref_version() returns output_hash from manifest."""
+        from colin.models import Ref
         from colin.providers.project import ProjectProvider
 
         manifest = Manifest()
-        compiled_time = datetime.now(timezone.utc) - timedelta(hours=1)
         manifest.set_document(
             "project://test.md",
             DocumentMeta(
                 uri="project://test.md",
                 source_hash="abc123",
-                compiled_at=compiled_time,
+                output_hash="def456",
             ),
         )
 
         provider = ProjectProvider(base_path=tmp_path, manifest=manifest)
+        ref = Ref(provider="project", connection="", method="get", args={"path": "test.md"})
 
-        result = await provider.get_last_updated({"path": "test.md"})
+        result = await provider.get_ref_version(ref)
 
-        assert result == compiled_time
+        assert result == "def456"
 
-    async def test_returns_none_when_not_in_manifest(self, tmp_path: Path) -> None:
-        """get_last_updated() returns None if document not in manifest."""
+    async def test_falls_back_to_content_hash_when_not_in_manifest(self, tmp_path: Path) -> None:
+        """get_ref_version() falls back to content hash if not in manifest."""
+        from colin.models import Ref
         from colin.providers.project import ProjectProvider
 
         manifest = Manifest()
+        (tmp_path / "unknown.md").write_text("Some content")
 
         provider = ProjectProvider(base_path=tmp_path, manifest=manifest)
+        ref = Ref(provider="project", connection="", method="get", args={"path": "unknown.md"})
 
-        result = await provider.get_last_updated({"path": "unknown.md"})
+        result = await provider.get_ref_version(ref)
 
-        assert result is None
+        # Should be a 16-char hash
+        assert len(result) == 16
+        assert all(c in "0123456789abcdef" for c in result)
 
-    async def test_returns_none_without_manifest(self, tmp_path: Path) -> None:
-        """get_last_updated() returns None if no manifest provided."""
+    async def test_falls_back_to_content_hash_without_manifest(self, tmp_path: Path) -> None:
+        """get_ref_version() falls back to content hash if no manifest."""
+        from colin.models import Ref
         from colin.providers.project import ProjectProvider
 
+        (tmp_path / "test.md").write_text("Test content")
         provider = ProjectProvider(base_path=tmp_path)  # No manifest
 
-        result = await provider.get_last_updated({"path": "test.md"})
+        ref = Ref(provider="project", connection="", method="get", args={"path": "test.md"})
+        result = await provider.get_ref_version(ref)
 
-        assert result is None
+        # Should be a 16-char hash
+        assert len(result) == 16
+        assert all(c in "0123456789abcdef" for c in result)
 
 
 class TestParseDuration:

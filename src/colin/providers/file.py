@@ -5,46 +5,46 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
-from colin.models import Address
-from colin.providers.addressable import Addressable
+from pydantic import validate_call
+
+from colin.models import Ref
 from colin.providers.base import Provider
+from colin.providers.cache import get_compile_context
+from colin.providers.resource import Resource
 
 
-@dataclass
-class FileResource(Addressable):
-    """Domain object returned by FileProvider. Inherits from Addressable."""
+class FileResource(Resource):
+    """Resource returned by FileProvider."""
 
-    path: str
-    """Absolute path to the file."""
+    def __init__(
+        self,
+        content: str,
+        ref: Ref,
+        path: str,
+        mtime: datetime | None = None,
+    ) -> None:
+        """Initialize a file resource.
 
-    _content: str
-    """File content."""
-
-    _last_updated: datetime | None = None
-    """File modification time."""
-
-    _instance: str = field(default="", repr=False)
-    """Provider instance name."""
+        Args:
+            content: File content.
+            ref: The Ref for this resource.
+            path: Absolute path to the file.
+            mtime: File modification time (used as version).
+        """
+        super().__init__(content, ref)
+        self.path = path
+        self._mtime = mtime
 
     @property
-    def content(self) -> str:
-        return self._content
-
-    @property
-    def last_updated(self) -> datetime:
-        return self._last_updated or datetime.now(timezone.utc)
-
-    def address(self) -> Address:
-        return Address(
-            provider="file",
-            instance=self._instance,
-            payload={"path": self.path},
-        )
+    def version(self) -> str:
+        """Use mtime as version if available, else content hash."""
+        if self._mtime is not None:
+            return self._mtime.isoformat()
+        return super().version
 
 
 class FileProvider(Provider):
@@ -55,26 +55,25 @@ class FileProvider(Provider):
 
     namespace: ClassVar[str] = "file"
 
-    _instance: str = ""
+    _connection: str = ""
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         yield
 
-    async def load_address(self, payload: dict[str, Any]) -> FileResource:
-        """Load file from address payload.
+    @validate_call
+    async def get(self, path: str, watch: bool = True) -> FileResource:
+        """Read a file from the filesystem.
+
+        Template usage: {{ file.get("/path/to/file.txt") }}
 
         Args:
-            payload: Dict with 'path' key (absolute path).
+            path: Absolute or ~ path to the file.
+            watch: Whether to track this ref for staleness (default True).
 
         Returns:
             FileResource with content and metadata.
         """
-        path = payload["path"]
-        return await self._fetch(path)
-
-    async def _fetch(self, path: str) -> FileResource:
-        """Fetch file content."""
         expanded = os.path.expanduser(path)
         resolved = Path(expanded).resolve()
 
@@ -85,44 +84,45 @@ class FileProvider(Provider):
         mtime = resolved.stat().st_mtime
         last_updated = datetime.fromtimestamp(mtime, tz=timezone.utc)
 
-        return FileResource(
-            path=str(resolved),
-            _content=content,
-            _last_updated=last_updated,
-            _instance=self._instance,
+        ref = Ref(
+            provider=self.namespace,
+            connection=self._connection,
+            method="get",
+            args={"path": path},
         )
 
-    async def get_last_updated(self, payload: dict[str, Any]) -> datetime | None:
-        """Get file modification time.
+        resource = FileResource(
+            content=content,
+            ref=ref,
+            path=str(resolved),
+            mtime=last_updated,
+        )
+
+        if watch:
+            ctx = get_compile_context()
+            if ctx:
+                ctx.track(ref, resource.version)
+
+        return resource
+
+    async def get_ref_version(self, ref: Ref) -> str:
+        """Get file version using mtime (no content fetch).
 
         Args:
-            payload: Dict with 'path' key.
+            ref: The Ref to check.
 
         Returns:
-            File mtime as datetime, or None if file doesn't exist.
+            File mtime as ISO string.
         """
-        path = payload["path"]
+        path = ref.args["path"]
         expanded = os.path.expanduser(path)
         resolved = Path(expanded).resolve()
 
         if not resolved.exists():
-            return None
+            raise FileNotFoundError(f"File not found: {path}")
 
         mtime = resolved.stat().st_mtime
-        return datetime.fromtimestamp(mtime, tz=timezone.utc)
+        return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         return {"get": self.get}
-
-    async def get(self, path: str) -> FileResource:
-        """Read a file from the filesystem.
-
-        Template usage: {{ file.get("/path/to/file.txt") }}
-
-        Args:
-            path: Absolute or ~ path to the file.
-
-        Returns:
-            FileResource with content and metadata.
-        """
-        return await self._fetch(path)

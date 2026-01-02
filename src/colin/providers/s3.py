@@ -10,51 +10,49 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from functools import partial
 from typing import Any, ClassVar
 
 import boto3
+from pydantic import validate_call
 
-from colin.models import Address
-from colin.providers.addressable import Addressable
+from colin.models import Ref
 from colin.providers.base import Provider
+from colin.providers.cache import get_compile_context
+from colin.providers.resource import Resource
 
 
-@dataclass
-class S3Resource(Addressable):
-    """Domain object returned by S3Provider. Inherits from Addressable."""
+class S3Resource(Resource):
+    """Resource returned by S3Provider."""
 
-    bucket: str
-    """S3 bucket name."""
+    def __init__(
+        self,
+        content: str,
+        ref: Ref,
+        bucket: str,
+        key: str,
+        etag: str | None = None,
+    ) -> None:
+        """Initialize an S3 resource.
 
-    key: str
-    """S3 object key."""
-
-    _content: str
-    """Object content."""
-
-    _last_updated: datetime | None = None
-    """LastModified from S3 metadata."""
-
-    _instance: str = field(default="", repr=False)
-    """Provider instance name."""
+        Args:
+            content: Object content.
+            ref: The Ref for this resource.
+            bucket: S3 bucket name.
+            key: S3 object key.
+            etag: ETag from S3 metadata (used as version).
+        """
+        super().__init__(content, ref)
+        self.bucket = bucket
+        self.key = key
+        self._etag = etag
 
     @property
-    def content(self) -> str:
-        return self._content
-
-    @property
-    def last_updated(self) -> datetime:
-        return self._last_updated or datetime.now(timezone.utc)
-
-    def address(self) -> Address:
-        return Address(
-            provider="s3",
-            instance=self._instance,
-            payload={"bucket": self.bucket, "key": self.key},
-        )
+    def version(self) -> str:
+        """Use ETag if available, else content hash."""
+        if self._etag is not None:
+            return self._etag
+        return super().version
 
 
 class S3Provider(Provider):
@@ -75,7 +73,7 @@ class S3Provider(Provider):
     """Custom endpoint for S3-compatible services (MinIO, LocalStack, etc.)."""
 
     _client: Any = None
-    _instance: str = ""
+    _connection: str = ""
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
@@ -96,72 +94,15 @@ class S3Provider(Provider):
             raise RuntimeError("S3Provider not initialized - use within lifespan context")
         return self._client
 
-    async def load_address(self, payload: dict[str, Any]) -> S3Resource:
-        """Load content from address payload.
-
-        Args:
-            payload: Dict with 'bucket' and 'key'.
-
-        Returns:
-            S3Resource with content and metadata.
-        """
-        bucket = payload["bucket"]
-        key = payload["key"]
-        return await self._fetch(bucket, key)
-
-    async def _fetch(self, bucket: str, key: str) -> S3Resource:
-        """Fetch S3 object and return S3Resource."""
-        client = self._require_client()
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, partial(client.get_object, Bucket=bucket, Key=key)
-        )
-        body = response["Body"].read()
-        content = body.decode("utf-8")
-        last_modified = response.get("LastModified")
-
-        return S3Resource(
-            bucket=bucket,
-            key=key,
-            _content=content,
-            _last_updated=last_modified,
-            _instance=self._instance,
-        )
-
-    async def get_last_updated(self, payload: dict[str, Any]) -> datetime | None:
-        """Get last modified time for S3 object.
-
-        Args:
-            payload: Dict with 'bucket' and 'key'.
-
-        Returns:
-            LastModified datetime, or None if not available.
-
-        Raises:
-            RuntimeError: If called outside lifespan context.
-        """
-        bucket = payload["bucket"]
-        key = payload["key"]
-        client = self._require_client()
-        loop = asyncio.get_event_loop()
-        try:
-            response = await loop.run_in_executor(
-                None, partial(client.head_object, Bucket=bucket, Key=key)
-            )
-            return response.get("LastModified")
-        except Exception:
-            return None
-
-    def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
-        return {"get": self.get}
-
-    async def get(self, path: str) -> S3Resource:
+    @validate_call
+    async def get(self, path: str, watch: bool = True) -> S3Resource:
         """Fetch S3 object and return S3Resource.
 
         Template usage: {{ s3.get("bucket/key") }}
 
         Args:
             path: S3 path in format "bucket/key" or "bucket/path/to/key".
+            watch: Whether to track this ref for staleness (default True).
 
         Returns:
             S3Resource with content and metadata.
@@ -176,4 +117,64 @@ class S3Provider(Provider):
         if not bucket:
             raise ValueError(f"Invalid S3 path: {path}. Bucket name cannot be empty")
 
-        return await self._fetch(bucket, key)
+        client = self._require_client()
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, partial(client.get_object, Bucket=bucket, Key=key)
+        )
+        body = response["Body"].read()
+        content = body.decode("utf-8")
+        etag = response.get("ETag", "").strip('"')
+
+        ref = Ref(
+            provider=self.namespace,
+            connection=self._connection,
+            method="get",
+            args={"path": path},
+        )
+
+        resource = S3Resource(
+            content=content,
+            ref=ref,
+            bucket=bucket,
+            key=key,
+            etag=etag or None,
+        )
+
+        if watch:
+            ctx = get_compile_context()
+            if ctx:
+                ctx.track(ref, resource.version)
+
+        return resource
+
+    async def get_ref_version(self, ref: Ref) -> str:
+        """Get version via HEAD request (no content fetch).
+
+        Args:
+            ref: The Ref to check.
+
+        Returns:
+            ETag from S3, or content hash if unavailable.
+        """
+        path = ref.args["path"]
+        bucket, key = path.split("/", 1)
+        client = self._require_client()
+        loop = asyncio.get_event_loop()
+
+        try:
+            response = await loop.run_in_executor(
+                None, partial(client.head_object, Bucket=bucket, Key=key)
+            )
+            etag = response.get("ETag", "").strip('"')
+            if etag:
+                return etag
+        except Exception:
+            pass
+
+        # Fall back to full fetch
+        resource = await self._load_ref(ref)
+        return resource.version
+
+    def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
+        return {"get": self.get}

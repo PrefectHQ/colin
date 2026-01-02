@@ -3,23 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Coroutine
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from colin.compiler.state import OperationState, Status
 from colin.exceptions import RefNotFoundError
-from colin.models import Address, CompiledDocument, LLMCall
-from colin.providers.addressable import Addressable
-from colin.providers.file import FileResource
-from colin.providers.project import ProjectResource
+from colin.models import CompiledDocument, LLMCall, Ref
+from colin.providers.resource import Resource
 
 if TYPE_CHECKING:
     from colin.models import Manifest
-    from colin.providers.project import ProjectProvider
+    from colin.providers.project import ProjectProvider, ProjectResource
 
-T = TypeVar("T", bound=Addressable)
+T = TypeVar("T", bound=Resource)
 
 
 class CompileContext:
@@ -52,12 +48,13 @@ class CompileContext:
         self.doc_state = doc_state
 
         # Tracking during render
-        self.refs_evaluated: list[Address] = []
+        self.refs: list[Ref] = []
+        self.ref_versions: dict[str, str] = {}  # ref.key() -> version
         self.llm_calls: dict[str, LLMCall] = {}
         self.total_cost: float = 0.0
 
     @overload
-    async def ref(self, target: str) -> FileResource: ...
+    async def ref(self, target: str) -> ProjectResource: ...
 
     @overload
     async def ref(self, target: T) -> T: ...
@@ -65,8 +62,8 @@ class CompileContext:
     @overload
     async def ref(self, target: Coroutine[Any, Any, T]) -> T: ...
 
-    async def ref(self, target: str | T | Coroutine[Any, Any, T]) -> FileResource | T:
-        """Track a dependency and return the addressable resource.
+    async def ref(self, target: str | T | Coroutine[Any, Any, T]) -> ProjectResource | T:
+        """Track a dependency and return the resource.
 
         Usage in templates:
             {{ ref("other-doc") }}                    # Project ref
@@ -81,21 +78,24 @@ class CompileContext:
             target: One of:
                 - String path: relative path for project refs (e.g., "other-doc")
                 - Coroutine: async provider call (e.g., s3.get("..."))
-                - Addressable: already-fetched resource to track
+                - Resource: already-fetched resource to track
 
         Returns:
-            The same type passed in: ProjectResource for strings, T for Addressable/Coroutine[T].
+            The same type passed in: ProjectResource for strings, T for Resource/Coroutine[T].
 
         Raises:
             RefNotFoundError: If the referenced document doesn't exist.
         """
+        # Import here to avoid circular imports
+        from colin.providers.project import ProjectResource
+
         # Handle coroutines from provider calls (e.g., ref(s3.get("...")))
         if asyncio.iscoroutine(target):
             target = await target
 
-        # Handle addressable objects (e.g., MCPResource, HTTPResource, S3Resource)
-        if isinstance(target, Addressable):
-            self._track_address(target.address())
+        # Handle Resource objects (e.g., MCPResource, HTTPResource, S3Resource)
+        if isinstance(target, Resource):
+            self.track(target.ref(), target.version)
             return cast(T, target)
 
         # String path → project ref
@@ -107,14 +107,21 @@ class CompileContext:
             compiled = self.compiled_outputs[uri]
             name_val = compiled.frontmatter.metadata.get("name")
             desc_val = compiled.frontmatter.metadata.get("description")
+
+            project_ref = Ref(
+                provider="project",
+                connection="",
+                method="get",
+                args={"path": path},
+            )
             resource = ProjectResource(
+                content=compiled.output,
+                ref=project_ref,
                 path=path,
-                _content=compiled.output,
                 name=name_val if isinstance(name_val, str) else path.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,
-                _last_updated=datetime.now(timezone.utc),
             )
-            is_first = self._track_address(resource.address())
+            is_first = self.track(resource.ref(), resource.version)
             if is_first and self.doc_state is not None:
                 op = self.doc_state.child("ref", detail=path)
                 op.status = Status.DONE
@@ -123,18 +130,27 @@ class CompileContext:
         # Fetch from storage via project provider
         async def fetch_from_provider() -> ProjectResource:
             try:
-                result = await self.project_provider.load_uri(uri)
+                result = await self.project_provider.get(path)
             except FileNotFoundError as e:
                 raise RefNotFoundError(f"Referenced document not found: {path}") from e
             return result
 
-        is_first = self._track_address(
-            Address(provider="project", instance="", payload={"path": path})
+        project_ref = Ref(
+            provider="project",
+            connection="",
+            method="get",
+            args={"path": path},
         )
+        # Check if this is a new ref so we can show progress indicator
+        is_first = project_ref.key() not in self.ref_versions
         if is_first and self.doc_state is not None:
             with self.doc_state.child("ref", detail=path):
-                return await fetch_from_provider()
-        return await fetch_from_provider()
+                result = await fetch_from_provider()
+                self.track(result.ref(), result.version)
+                return result
+        result = await fetch_from_provider()
+        self.track(result.ref(), result.version)
+        return result
 
     def _normalize_path(self, path: str) -> str:
         """Normalize a path for project refs.
@@ -145,19 +161,22 @@ class CompileContext:
             path = f"{path}.md"
         return path
 
-    def _track_address(self, addr: Address) -> bool:
-        """Record an address as a dependency. Returns True if first time seen."""
-        # Use JSON serialization for deduplication
-        addr_key = json.dumps(addr, sort_keys=True)
-        for existing in self.refs_evaluated:
-            if json.dumps(existing, sort_keys=True) == addr_key:
-                return False
-        self.refs_evaluated.append(addr)
-        return True
+    def track(self, ref: Ref, version: str) -> bool:
+        """Record a ref and its version as a dependency.
 
-    def track_ref(self, addr: Address) -> None:
-        """Record a ref dependency without fetching content."""
-        self._track_address(addr)
+        Args:
+            ref: The Ref to track.
+            version: The current version of the resource.
+
+        Returns:
+            True if this is the first time seeing this ref.
+        """
+        key = ref.key()
+        if key in self.ref_versions:
+            return False
+        self.refs.append(ref)
+        self.ref_versions[key] = version
+        return True
 
     def add_llm_call(self, call: LLMCall) -> None:
         """Record an LLM call made during compilation.

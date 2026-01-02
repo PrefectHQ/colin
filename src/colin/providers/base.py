@@ -1,32 +1,31 @@
 """Provider base class."""
 
-from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import Self
 
+from colin.exceptions import RefError
+
 if TYPE_CHECKING:
-    from colin.providers.addressable import Addressable
+    from colin.models import Ref
+    from colin.providers.resource import Resource
 
 
 class Provider(BaseModel):
     """Base class for all providers.
 
     Providers expose template functions (via get_functions()) and support
-    re-fetching from structured addresses (via load_address()).
+    re-fetching from Refs (via _load_ref()).
 
     The `namespace` determines the template namespace (e.g., `s3`, `mcp.github`).
 
-    Subclasses must:
+    Subclasses should:
     - Set `namespace` (class variable)
-    - Implement `load_address()` for re-fetching from structured payloads
-
-    The payload should include a 'type' field when the provider supports
-    multiple addressable types, enabling TypeAdapter-based discrimination.
+    - Implement template functions that return Resource objects
+    - Optionally override `get_ref_version()` for efficient staleness checks
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -34,44 +33,47 @@ class Provider(BaseModel):
     namespace: ClassVar[str | None] = None
     """Template namespace for this provider (e.g., 's3', 'mcp')."""
 
-    @abstractmethod
-    async def load_address(self, payload: dict[str, Any]) -> "Addressable":
-        """Load a resource from structured payload.
-
-        Used for re-fetching resources from stored addresses and for
-        staleness checking. The payload format is provider-specific.
-
-        Args:
-            payload: Provider-specific data for fetching the resource.
-                     Should include 'type' field for discrimination when
-                     provider has multiple addressable types.
-
-        Returns:
-            Addressable object with content and metadata.
-
-        Raises:
-            FileNotFoundError: If resource doesn't exist.
-        """
-        ...
+    _connection: str = ""
+    """Instance/connection name (e.g., 'prod' for s3.prod). Set by from_config()."""
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         """Return template functions this provider contributes."""
         return {}
 
-    async def get_last_updated(self, payload: dict[str, Any]) -> datetime | None:
-        """Get last update time without loading full content.
+    async def _load_ref(self, ref: "Ref") -> "Resource":
+        """Load a resource from a Ref by calling the method with stored args.
 
-        Override for efficient staleness detection (e.g., HEAD request,
-        S3 metadata). Default loads the full resource.
+        Default implementation uses getattr to find the method and calls it
+        with watch=False (to avoid re-tracking during staleness check).
 
         Args:
-            payload: Provider-specific address payload.
+            ref: The Ref containing method name and args.
 
         Returns:
-            Last modification time, or None if unknown.
+            Resource object with content and version.
+
+        Raises:
+            RefError: If the method doesn't exist on this provider.
         """
-        result = await self.load_address(payload)
-        return result.last_updated
+        if not hasattr(self, ref.method):
+            raise RefError(f"Unknown method on {self.namespace} provider: {ref.method}")
+        method = getattr(self, ref.method)
+        return await method(**ref.args, watch=False)
+
+    async def get_ref_version(self, ref: "Ref") -> str:
+        """Get current version for a ref.
+
+        Override for efficiency (e.g., HEAD request for ETag, stat for mtime).
+        Default loads the full resource via _load_ref().
+
+        Args:
+            ref: The Ref to check.
+
+        Returns:
+            Current version string for comparison.
+        """
+        resource = await self._load_ref(ref)
+        return resource.version
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
@@ -80,5 +82,15 @@ class Provider(BaseModel):
 
     @classmethod
     def from_config(cls, name: str | None, config: dict[str, Any]) -> Self:
-        """Create provider instance from configuration."""
-        return cls(**config)
+        """Create provider instance from configuration.
+
+        Args:
+            name: Instance name (e.g., 'prod' for s3.prod). Stored in _connection.
+            config: Provider-specific configuration.
+
+        Returns:
+            Configured provider instance.
+        """
+        instance = cls(**config)
+        instance._connection = name or ""
+        return instance

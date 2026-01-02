@@ -99,7 +99,7 @@ class TestSchemalessRefValidation:
             await context.ref("nonexistent")
 
         # Dependency should NOT be recorded since validation failed
-        assert "nonexistent" not in context.refs_evaluated
+        assert len(context.refs) == 0
 
 
 class TestPathTraversalPrevention:
