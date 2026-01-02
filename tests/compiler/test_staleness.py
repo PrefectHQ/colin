@@ -188,8 +188,8 @@ class TestFileStorageGetLastUpdated:
         assert result is None
 
 
-class TestRefreshPolicies:
-    """Tests for refresh policy handling."""
+class TestCachePolicies:
+    """Tests for cache policy handling."""
 
     @pytest.fixture
     def engine_setup(
@@ -215,17 +215,17 @@ class TestRefreshPolicies:
         )
         return engine, source_dir, output_dir
 
-    async def test_refresh_always_rebuilds(
+    async def test_cache_never_always_rebuilds(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
-        """Documents with refresh.policy=always are always recompiled."""
+        """Documents with cache=never are always recompiled."""
         engine, source_dir, _ = engine_setup
 
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
-    policy: always
+  cache:
+    policy: never
 ---
 
 Content
@@ -239,17 +239,17 @@ Content
         result2 = await engine.compile_all()
         assert len(result2) == 1
 
-    async def test_refresh_once_uses_cache(
+    async def test_cache_always_uses_cache(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
-        """Documents with refresh.policy=once only compile once."""
+        """Documents with cache=always only compile once."""
         engine, source_dir, _ = engine_setup
 
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
-    policy: once
+  cache:
+    policy: always
 ---
 
 Content
@@ -263,17 +263,17 @@ Content
         result2 = await engine.compile_all()
         assert len(result2) == 0
 
-    async def test_refresh_once_ignores_source_changes(
+    async def test_cache_always_ignores_source_changes(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
-        """Documents with refresh.policy=once don't recompile even if source changes."""
+        """Documents with cache=always don't recompile even if source changes."""
         engine, source_dir, _ = engine_setup
 
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
-    policy: once
+  cache:
+    policy: always
 ---
 
 Original content
@@ -288,8 +288,8 @@ Original content
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
-    policy: once
+  cache:
+    policy: always
 ---
 
 Modified content
@@ -299,16 +299,16 @@ Modified content
         result2 = await engine.compile_all()
         assert len(result2) == 0
 
-    async def test_refresh_auto_checks_staleness(
+    async def test_cache_auto_checks_staleness(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
-        """Documents with refresh.policy=auto check staleness conditions."""
+        """Documents with cache=auto check staleness conditions."""
         engine, source_dir, _ = engine_setup
 
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
+  cache:
     policy: auto
 ---
 
@@ -327,7 +327,7 @@ Content
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
+  cache:
     policy: auto
 ---
 
@@ -724,8 +724,8 @@ class TestCalendarDuration:
         assert cd.is_stale(jan, jul) is True
 
 
-class TestTimeBasedStaleness:
-    """Tests for time-based staleness using stale field."""
+class TestTimeBasedExpiration:
+    """Tests for time-based expiration using expires field."""
 
     @pytest.fixture
     def engine_setup(
@@ -751,7 +751,7 @@ class TestTimeBasedStaleness:
         )
         return engine, source_dir, output_dir
 
-    async def test_stale_after_time_expires(
+    async def test_expired_after_time_threshold(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
         """Document is stale when time threshold is exceeded."""
@@ -760,8 +760,8 @@ class TestTimeBasedStaleness:
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
-    stale: 1h
+  cache:
+    expires: 1h
 ---
 
 Content
@@ -780,7 +780,7 @@ Content
         result2 = await engine.compile_all()
         assert len(result2) == 1
 
-    async def test_fresh_before_time_expires(
+    async def test_fresh_before_time_threshold(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
         """Document is fresh when within time threshold."""
@@ -789,8 +789,8 @@ Content
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
-    stale: 1d
+  cache:
+    expires: 1d
 ---
 
 Content
@@ -804,18 +804,18 @@ Content
         result2 = await engine.compile_all()
         assert len(result2) == 0
 
-    async def test_stale_overrides_ref_freshness(
+    async def test_expiration_overrides_ref_freshness(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
-        """Time-based staleness triggers rebuild even if refs unchanged."""
+        """Time-based expiration triggers rebuild even if refs unchanged."""
         engine, source_dir, _ = engine_setup
 
-        # Create a document with short stale threshold
+        # Create a document with short expiration threshold
         (source_dir / "test.md").write_text("""\
 ---
 colin:
-  refresh:
-    stale: 1h
+  cache:
+    expires: 1h
 ---
 
 Content
