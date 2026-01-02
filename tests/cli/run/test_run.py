@@ -12,7 +12,7 @@ def test_run_creates_output(
     """colin run creates compiled output files."""
     cli("run", "--target", str(target_dir), "--quiet")
 
-    assert (target_dir / "compiled" / "greeting.md").exists()
+    assert (target_dir / "greeting.md").exists()
 
 
 def test_clean_removes_target(test_project: Path, mock_agent, cli: Callable[..., None]):
@@ -21,11 +21,11 @@ def test_clean_removes_target(test_project: Path, mock_agent, cli: Callable[...,
 
     # Run to create output
     cli("run", "--quiet")
-    assert (project_target / "compiled").exists()
+    assert (project_target).exists()
 
     # Clean
     cli("clean", "--yes")
-    assert not (project_target / "compiled").exists()
+    assert not (project_target).exists()
 
 
 def test_clean_does_nothing_if_no_target(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
