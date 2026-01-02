@@ -53,38 +53,44 @@ The `colin:` block in frontmatter controls document-specific compilation behavio
 ---
 name: Market Analysis
 colin:
-  refresh:
+  cache:
     policy: auto
-    stale: 1M
+    expires: 1M
 ---
 ```
 
-### Refresh Policy
+### Cache Policy
 
-The `refresh.policy` setting controls when a document gets recompiled:
+The cache policy controls when a document gets recompiled:
 
-| Policy | Behavior |
-| :----- | :------- |
-| `auto` | Rebuild if stale (default) |
-| `always` | Always rebuild on every compile |
-| `once` | Only build if no cached output exists |
+| Policy | Behavior | Rebuilds when |
+| :----- | :------- | :------------ |
+| `auto` | Smart caching (default) | Refs change or time expires |
+| `always` | Aggressive caching | `--no-cache` only |
+| `never` | No caching | Every run |
 
 ```yaml
 colin:
-  refresh:
-    policy: always  # Force rebuild every time
+  cache: never  # Always rebuild
 ```
 
-Use `always` for documents that incorporate live data or timestamps. Use `once` for expensive operations where the output doesn't change.
+Use `never` for documents that incorporate live data or timestamps. Use `always` for expensive operations where the output doesn't change.
 
-### Staleness Threshold
-
-The `refresh.stale` setting defines when a document becomes stale based on time elapsed since last compilation:
+For shorthand, you can specify just the policy value:
 
 ```yaml
 colin:
-  refresh:
-    stale: 1d  # Rebuild after 1 day
+  cache: always
+```
+
+### Expiration Threshold
+
+The `expires` setting defines when a document becomes stale based on time elapsed since last compilation:
+
+```yaml
+colin:
+  cache:
+    expires: 1d  # Rebuild after 1 day
 ```
 
 Supported duration formats:
@@ -100,14 +106,14 @@ Supported duration formats:
 
 Months and quarters use calendar-aware arithmetic. For example, `1M` after January 31st is February 28th (or 29th), not "30 days later."
 
-### Calendar-Aligned Staleness
+### Calendar-Aligned Expiration
 
-For staleness based on calendar boundaries rather than elapsed time, use the `c` prefix:
+For expiration based on calendar boundaries rather than elapsed time, use the `c` prefix:
 
 ```yaml
 colin:
-  refresh:
-    stale: 1cM  # Rebuild when calendar month changes
+  cache:
+    expires: 1cM  # Rebuild when calendar month changes
 ```
 
 | Format | Meaning | Boundary | Valid N |
@@ -121,14 +127,14 @@ colin:
 
 Calendar-aligned values must divide evenly into their containing period. For example, `30cm` creates boundaries at :00 and :30, while `15cm` creates boundaries at :00, :15, :30, and :45. Use `2cM` for bimonthly updates or `2cQ` for semiannual updates.
 
-A document compiled on January 31st with `stale: 1cM` becomes stale on February 1st at midnight—when the calendar month changes—regardless of how much time has passed. With `stale: 1cQ`, a document compiled any time in Q1 (Jan-Mar) becomes stale at the start of April 1st.
+A document compiled on January 31st with `expires: 1cM` expires on February 1st at midnight—when the calendar month changes—regardless of how much time has passed. With `expires: 1cQ`, a document compiled any time in Q1 (Jan-Mar) expires at the start of April 1st.
 
-### Staleness Logic
+### Cache Invalidation
 
-A document is considered stale if **any** of these conditions are true:
+A document is considered stale and recompiles if **any** of these conditions are true:
 - The source file changed
 - Any referenced document was updated more recently
-- The staleness threshold (if set) has been exceeded
+- The expiration threshold (if set) has been exceeded
 
 When a document recompiles, all documents that reference it also recompile to pick up the changes.
 

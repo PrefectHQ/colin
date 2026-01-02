@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from colin.models import (
+    CacheConfig,
     ColinConfig,
     ColinDocument,
     CompiledDocument,
@@ -11,8 +12,6 @@ from colin.models import (
     LLMCall,
     Manifest,
     Ref,
-    RefreshConfig,
-    RefreshPolicy,
 )
 
 
@@ -49,42 +48,55 @@ class TestColinConfig:
     def test_defaults(self) -> None:
         config = ColinConfig()
         assert config.output == "markdown"
-        assert config.refresh.policy == RefreshPolicy.AUTO
-        assert config.refresh.stale is None
+        assert config.cache.policy == "auto"
+        assert config.cache.expires is None
         assert config.storage is None
 
-    def test_custom_refresh_policy(self) -> None:
-        config = ColinConfig(refresh=RefreshConfig(policy=RefreshPolicy.ALWAYS))
-        assert config.refresh.policy == RefreshPolicy.ALWAYS
+    def test_custom_cache_policy(self) -> None:
+        config = ColinConfig(cache=CacheConfig(policy="always"))
+        assert config.cache.policy == "always"
 
-    def test_custom_refresh_stale(self) -> None:
-        config = ColinConfig(refresh=RefreshConfig(stale="1h"))
-        assert config.refresh.policy == RefreshPolicy.AUTO
-        assert config.refresh.stale == "1h"
+    def test_custom_cache_expires(self) -> None:
+        config = ColinConfig(cache=CacheConfig(expires="1h"))
+        assert config.cache.policy == "auto"
+        assert config.cache.expires == "1h"
 
-    def test_refresh_stale_calendar_aligned(self) -> None:
-        config = ColinConfig(refresh=RefreshConfig(stale="1cM"))
-        assert config.refresh.stale == "1cM"
+    def test_cache_expires_calendar_aligned(self) -> None:
+        config = ColinConfig(cache=CacheConfig(expires="1cM"))
+        assert config.cache.expires == "1cM"
 
-    def test_refresh_stale_validation(self) -> None:
+    def test_cache_expires_validation(self) -> None:
         import pytest
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            RefreshConfig(stale="invalid")
+            CacheConfig(expires="invalid")
 
         with pytest.raises(ValidationError):
-            RefreshConfig(stale="1x")  # Invalid unit
+            CacheConfig(expires="1x")  # Invalid unit
 
         with pytest.raises(ValidationError):
-            RefreshConfig(stale="h1")  # Wrong order
+            CacheConfig(expires="h1")  # Wrong order
 
         with pytest.raises(ValidationError):
-            RefreshConfig(stale="")  # Empty string
+            CacheConfig(expires="")  # Empty string
 
     def test_custom_values(self) -> None:
         config = ColinConfig(output="skill")
         assert config.output == "skill"
+
+    def test_cache_shorthand_syntax(self) -> None:
+        """Accept 'cache: never' as shorthand for 'cache: {policy: never}'."""
+        # Use model_validate to test the YAML shorthand syntax (cache: never)
+        config = ColinConfig.model_validate({"cache": "never"})
+        assert config.cache.policy == "never"
+        assert config.cache.expires is None
+
+        config = ColinConfig.model_validate({"cache": "always"})
+        assert config.cache.policy == "always"
+
+        config = ColinConfig.model_validate({"cache": "auto"})
+        assert config.cache.policy == "auto"
 
 
 class TestFrontmatter:

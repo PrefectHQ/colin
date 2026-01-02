@@ -25,7 +25,6 @@ from colin.models import (
     DocumentMeta,
     Frontmatter,
     Manifest,
-    RefreshPolicy,
     parse_duration,
 )
 from colin.providers.cache import set_compile_context
@@ -95,10 +94,10 @@ class CompileEngine:
     ) -> tuple[bool, str]:
         """Check if a document needs recompilation.
 
-        Respects the document's refresh policy:
-        - ALWAYS: Always rebuild
-        - ONCE: Only build if no cached output exists
-        - AUTO: Rebuild if stale (source changed, refs updated, time expired)
+        Respects the document's cache policy:
+        - NEVER: Never cache, always rebuild
+        - ALWAYS: Always cache, only rebuild with --no-cache
+        - AUTO: Auto-invalidate on ref changes or time expiration
 
         Args:
             doc: The document to check.
@@ -108,44 +107,38 @@ class CompileEngine:
         Returns:
             Tuple of (is_stale, reason_string).
         """
-        policy = doc.frontmatter.colin.refresh.policy
+        policy = doc.frontmatter.colin.cache.policy
         doc_meta = self.manifest.get_document(doc.uri)
 
-        # Policy: always rebuild
-        if policy == RefreshPolicy.ALWAYS:
-            return (True, "refresh=always")
+        # Policy: never cache (always rebuild)
+        if policy == "never":
+            return (True, "cache=never")
 
-        # Policy: once (only build if no cache)
-        if policy == RefreshPolicy.ONCE:
-            if doc_meta is None or doc_meta.compiled_at is None:
-                return (True, "no cached output")
-            # Check if output file exists
-            return (False, "refresh=once (cached)")
-
-        # Policy: auto - check staleness conditions
-        # Never compiled
+        # Never compiled - rebuild regardless of policy
         if doc_meta is None or doc_meta.compiled_at is None:
             return (True, "never compiled")
 
-        # Source changed
-        if doc_meta.source_hash != doc.source_hash:
-            return (True, "source changed")
-
-        # Time-based expiration
-        stale_duration = doc.frontmatter.colin.refresh.stale
-        if stale_duration is not None:
-            threshold = parse_duration(stale_duration)
+        # Time-based expiration (applies to both 'always' and 'auto')
+        expires_duration = doc.frontmatter.colin.cache.expires
+        if expires_duration is not None:
+            threshold = parse_duration(expires_duration)
             now = datetime.now(timezone.utc)
 
             if isinstance(threshold, CalendarDuration):
-                # Calendar-aligned: check if enough calendar periods have passed
                 if threshold.is_stale(doc_meta.compiled_at, now):
-                    return (True, f"stale after {stale_duration}")
+                    return (True, f"expired after {expires_duration}")
             else:
-                # Elapsed duration (timedelta or relativedelta)
-                # For relativedelta, we add it to compiled_at and compare
                 if doc_meta.compiled_at + threshold < now:
-                    return (True, f"stale after {stale_duration}")
+                    return (True, f"expired after {expires_duration}")
+
+        # Policy: always cache (only --no-cache or expiration rebuilds)
+        if policy == "always":
+            return (False, "cache=always (cached)")
+
+        # Policy: auto - check staleness conditions
+        # Source changed
+        if doc_meta.source_hash != doc.source_hash:
+            return (True, "source changed")
 
         # Upstream dependency recompiled this run
         for ref in doc_meta.refs:

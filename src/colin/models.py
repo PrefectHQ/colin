@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pydantic_core
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 # Re-export duration utilities for backwards compatibility
 from colin.utilities.temporal import (  # noqa: F401
@@ -73,32 +72,25 @@ class Ref(BaseModel):
         )
 
 
-class RefreshPolicy(str, Enum):
-    """Refresh policy for document rebuilding."""
-
-    ALWAYS = "always"
-    """Always rebuild the document."""
-
-    AUTO = "auto"
-    """Rebuild only if stale (source changed, refs updated, or time expired)."""
-
-    ONCE = "once"
-    """Only build if no cached output exists."""
-
+# Cache policy: controls when documents rebuild
+# - "auto": rebuild when refs change or time expires (default)
+# - "always": aggressive caching, only --no-cache rebuilds
+# - "never": no caching, always rebuild
+CachePolicy = Literal["auto", "always", "never"]
 
 # Duration pattern: number + optional 'c' prefix + unit (m, h, d, w, M, Q)
 # Examples: 30m, 1h, 7d, 2w, 1M, 1Q, 15cm, 1cd, 1cw, 3cM, 1cQ
-StaleDuration = Annotated[str, StringConstraints(pattern=r"^\d+c?[mhdwMQ]$")]
+ExpiresDuration = Annotated[str, StringConstraints(pattern=r"^\d+c?[mhdwMQ]$")]
 
 
-class RefreshConfig(BaseModel):
-    """Configuration for document refresh behavior."""
+class CacheConfig(BaseModel):
+    """Configuration for document caching behavior."""
 
-    policy: RefreshPolicy = RefreshPolicy.AUTO
-    """Refresh policy (always, auto, once)."""
+    policy: CachePolicy = "auto"
+    """Cache policy (always, auto, never)."""
 
-    stale: StaleDuration | None = None
-    """Time-based staleness threshold (e.g., '1h', '1d', '1w')."""
+    expires: ExpiresDuration | None = None
+    """Time-based expiration threshold (e.g., '1h', '1d', '7d')."""
 
 
 class LLMCall(BaseModel):
@@ -151,11 +143,19 @@ class ColinConfig(BaseModel):
     output: str = "markdown"
     """Output format (e.g., 'markdown', 'skill')."""
 
-    refresh: RefreshConfig = Field(default_factory=RefreshConfig)
-    """Refresh configuration (policy and time-based staleness)."""
+    cache: CacheConfig = Field(default_factory=CacheConfig)
+    """Cache configuration (policy and expiration). Accepts shorthand: 'auto', 'always', 'never'."""
 
     storage: str | None = None
     """Storage backend (future feature)."""
+
+    @field_validator("cache", mode="before")
+    @classmethod
+    def _normalize_cache(cls, v: Any) -> CacheConfig | dict[str, Any]:
+        """Accept shorthand 'cache: auto' as 'cache: {policy: auto}'."""
+        if isinstance(v, str):
+            return {"policy": v}
+        return v
 
 
 class Frontmatter(BaseModel):
