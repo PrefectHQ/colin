@@ -23,7 +23,7 @@ class TestStalenessDetection:
     ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target" / "compiled"
+        output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
 
         config = ProjectConfig(
@@ -197,7 +197,7 @@ class TestCachePolicies:
     ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target" / "compiled"
+        output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
 
         config = ProjectConfig(
@@ -822,7 +822,7 @@ class TestTimeBasedExpiration:
     ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target" / "compiled"
+        output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
 
         config = ProjectConfig(

@@ -103,9 +103,6 @@ async def compile_project(
             providers=config.providers,
         )
 
-    # Compiled outputs go in target/compiled
-    compiled_dir = config.target_path / "compiled"
-
     # Handle dry run - discover models directly
     if dry_run:
         uris: list[tuple[str, Path]] = []
@@ -113,11 +110,11 @@ async def compile_project(
             for path in config.model_path.rglob("*.md"):
                 relative = path.relative_to(config.model_path)
                 uri = f"project://{relative}"
-                uris.append((uri, compiled_dir / str(relative)))
+                uris.append((uri, config.target_path / str(relative)))
         return sorted(uris, key=lambda x: x[0])
 
-    # Create artifact storage (FileStorage with base at compiled_dir)
-    artifact_storage = FileStorage(base_path=compiled_dir)
+    # Create artifact storage (FileStorage with base at target_path)
+    artifact_storage = FileStorage(base_path=config.target_path)
 
     # Create and run compiler (engine loads manifest from config)
     engine = CompileEngine(
