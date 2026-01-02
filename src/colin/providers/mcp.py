@@ -139,8 +139,9 @@ class MCPProvider(Provider):
             finally:
                 self._client = None
 
-        # Force GC while loop is still open to avoid BaseSubprocessTransport.__del__ warnings
+        # Force cleanup while loop is still open to avoid BaseSubprocessTransport.__del__ warnings
         if isinstance(self._server, StdioMCPServer):
+            del client
             gc.collect()
 
     def _require_client(self) -> Client:
