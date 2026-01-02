@@ -1,4 +1,4 @@
-"""Parse markdown structure into Python data structures for JSON conversion."""
+"""Parse markdown structure into Python data structures for structured output."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+import yaml
 
 from colin.compiler.extensions.item_block import ITEM_END_MARKER, ITEM_START_MARKER
 
@@ -84,10 +86,13 @@ def parse_markdown_to_structure(content: str) -> dict[str, Any] | list[Any] | st
     if has_items:
         return _parse_items(content)
 
-    # Rule 3: Check for JSON fence only (no headers)
-    json_fence_content = _extract_sole_json_fence(content)
-    if json_fence_content is not None:
-        return json.loads(json_fence_content)
+    # Rule 3: Check for data fence only (json or yaml, no headers)
+    data_fence = _extract_sole_data_fence(content)
+    if data_fence is not None:
+        lang, fence_content = data_fence
+        if lang == "yaml":
+            return yaml.safe_load(fence_content)
+        return json.loads(fence_content)
 
     # Rule 4: Try to parse as literal JSON (if it looks like JSON)
     # Note: content is already stripped at function start
@@ -95,11 +100,20 @@ def parse_markdown_to_structure(content: str) -> dict[str, Any] | list[Any] | st
         # Looks like JSON - parse it and let errors propagate
         return json.loads(content)
 
-    # Rule 5: Return as string with warning
+    # Rule 5: Try to parse as YAML
+    try:
+        parsed = yaml.safe_load(content)
+        if parsed is not None and not isinstance(parsed, str):
+            # Successfully parsed as structured YAML (dict, list, number, bool)
+            return parsed
+    except yaml.YAMLError:
+        pass
+
+    # Rule 6: Return as string with warning
     logger.warning(
-        "No markdown structure detected for JSON output. "
+        "No markdown structure detected for structured output. "
         "Content will be returned as a string literal. "
-        "Consider using headers (## key) or a json fence."
+        "Consider using headers (## key) or a data fence."
     )
     return content
 
@@ -146,25 +160,25 @@ def _parse_items(content: str) -> list[Any]:
     return items
 
 
-def _extract_sole_json_fence(content: str) -> str | None:
-    """Extract content from a lone JSON fence (no headers).
+def _extract_sole_data_fence(content: str) -> tuple[str, str] | None:
+    """Extract content from a lone data fence (json or yaml, no headers).
 
     Returns None if:
-    - No json fence exists
+    - No data fence exists
     - Headers exist alongside the fence
-    - Multiple json fences exist
+    - Multiple data fences exist
 
     Args:
         content: The content to check.
 
     Returns:
-        The fence content, or None if not a sole json fence.
+        Tuple of (language, fence_content), or None if not a sole data fence.
     """
     if _has_headers(content):
         return None
 
-    # Find all json fences
-    pattern = r"```json\s*\n(.*?)\n\s*```"
+    # Find all json/yaml fences
+    pattern = r"```(json|yaml)\s*\n(.*?)\n\s*```"
     matches = list(re.finditer(pattern, content, re.DOTALL))
 
     if len(matches) != 1:
@@ -178,7 +192,7 @@ def _extract_sole_json_fence(content: str) -> str | None:
     if before or after:
         return None
 
-    return matches[0].group(1)
+    return (matches[0].group(1), matches[0].group(2))
 
 
 def _has_headers(content: str) -> bool:
@@ -355,21 +369,25 @@ def _parse_content(content: str) -> Any:
         content: The content to parse.
 
     Returns:
-        Parsed value (list, JSON literal, or string).
+        Parsed value (list, data literal, or string).
     """
     content = content.strip()
 
     if not content:
         return ""
 
-    # Check for JSON fence
-    fence_match = re.search(r"```json\s*\n(.*?)\n\s*```", content, re.DOTALL)
+    # Check for data fence (json or yaml)
+    fence_match = re.search(r"```(json|yaml)\s*\n(.*?)\n\s*```", content, re.DOTALL)
     if fence_match:
-        # If fence is the only content, parse as JSON
+        # If fence is the only content, parse as data
         before = content[: fence_match.start()].strip()
         after = content[fence_match.end() :].strip()
         if not before and not after:
-            return json.loads(fence_match.group(1))
+            lang = fence_match.group(1)
+            fence_content = fence_match.group(2)
+            if lang == "yaml":
+                return yaml.safe_load(fence_content)
+            return json.loads(fence_content)
 
     # Check for markdown list
     if _is_markdown_list(content):

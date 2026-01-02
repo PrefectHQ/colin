@@ -74,7 +74,8 @@
             "pages": [
               "renderers/renderers",
               "renderers/markdown",
-              "renderers/json"
+              "renderers/json",
+              "renderers/yaml"
             ]
           },
           {
