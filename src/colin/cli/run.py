@@ -144,7 +144,7 @@ async def run(
 
         config = load_project(project_file)
         project_name = config.name
-        target_dir = target or (project_file.parent / config.target_path).resolve()
+        target_dir = target or config.target_path
 
         # Handle dry run
         if dry_run:
