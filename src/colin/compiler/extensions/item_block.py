@@ -67,7 +67,7 @@ class ItemBlockExtension(Extension):
             The rendered content wrapped in item markers.
         """
         if caller is None:
-            return "[ERROR: No caller provided to item block]"
+            raise RuntimeError("No caller provided to item block")
 
         # Render the block body
         body_content = await caller()  # type: ignore[misc]

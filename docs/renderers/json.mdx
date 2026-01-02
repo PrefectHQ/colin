@@ -241,6 +241,27 @@ alice@example.com
 ```
 </CodeGroup>
 
+When a header has both text content and child headers, the text goes into a `_content` key:
+
+<CodeGroup>
+```markdown Template
+## user
+Some introductory text about the user.
+
+### name
+Alice
+```
+
+```json Output
+{
+  "user": {
+    "_content": "Some introductory text about the user.",
+    "name": "Alice"
+  }
+}
+```
+</CodeGroup>
+
 ### Array Elements
 
 Colin provides a custom `{% item %}...{% enditem %}` block for creating array elements. Combined with loops, this generates arrays of objects:

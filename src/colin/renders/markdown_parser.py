@@ -90,8 +90,8 @@ def parse_markdown_to_structure(content: str) -> dict[str, Any] | list[Any] | st
         return json.loads(json_fence_content)
 
     # Rule 4: Try to parse as literal JSON (if it looks like JSON)
-    stripped = content.strip()
-    if stripped.startswith(("{", "[")):
+    # Note: content is already stripped at function start
+    if content.startswith(("{", "[")):
         # Looks like JSON - parse it and let errors propagate
         return json.loads(content)
 
