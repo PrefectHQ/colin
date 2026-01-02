@@ -120,8 +120,22 @@ class MCPProvider(Provider):
         """Manage MCP client lifecycle."""
         if self._server is None:
             raise RuntimeError("MCPProvider not configured - use from_config()")
-        mcp_config = MCPConfig(mcpServers={self._connection: self._server})
-        async with Client(mcp_config) as client:
+
+        # For stdio servers, use to_transport() and set keep_alive=False to ensure
+        # subprocesses are cleaned up when context manager exits, preventing cleanup warnings
+        # Workaround: StdioMCPServer.to_transport() doesn't pass through keep_alive parameter
+        # (bug confirmed, will be fixed in fastmcp > 3.0)
+        # TODO: Remove keep_alive assignment once fastmcp > 3.0 fixes passthrough
+        if isinstance(self._server, StdioMCPServer):
+            transport = self._server.to_transport()
+            transport.keep_alive = False  # Workaround for fastmcp bug
+            client_config = transport
+        else:
+            # For remote servers, use MCPConfig as usual
+            mcp_config = MCPConfig(mcpServers={self._connection: self._server})
+            client_config = mcp_config
+
+        async with Client(client_config) as client:
             self._client = client
             yield
         self._client = None

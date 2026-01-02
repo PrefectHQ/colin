@@ -41,6 +41,9 @@ env = [
     "FASTMCP_SHOW_BANNER=false",
     "COLIN_DEFAULT_LLM_MODEL=test",
 ]
+filterwarnings = [
+    "ignore::pytest.PytestUnraisableExceptionWarning:.*Event loop is closed.*",
+]
 
 [tool.ruff]
 line-length = 100
