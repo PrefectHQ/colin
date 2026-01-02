@@ -39,7 +39,10 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 env = [
     "FASTMCP_SHOW_BANNER=false",
-    "COLIN_DEFAULT_LLM_MODEL=anthropic:claude-haiku-4-5",
+    "COLIN_DEFAULT_LLM_MODEL=test",
+]
+filterwarnings = [
+    "ignore::pytest.PytestUnraisableExceptionWarning:.*Event loop is closed.*",
 ]
 
 [tool.ruff]

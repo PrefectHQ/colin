@@ -100,13 +100,46 @@ async def test_provider_llm_model_config(
         project_provider=project_provider,
     )
 
-    # Mock Agent.run to avoid actual LLM call
+    # Mock infer_model to return test model for "openai:gpt-4o" to avoid API key requirement
+    # but with model_name set to "gpt-4o" so the test assertion passes
+    from pydantic_ai.models import Model
+    from pydantic_ai.models import infer_model as original_infer_model
+
+    def mock_infer_model(model: str | object) -> Model:
+        if model == "openai:gpt-4o":
+            # Return test model wrapped with correct model_name
+            # This ensures the model config is actually used (not just stored)
+            test_model = original_infer_model("test")
+
+            # Create a wrapper class that delegates to test_model but has correct model_name
+            class ModelWrapper:
+                """Wrapper that uses test model but reports correct model_name."""
+
+                def __init__(self, wrapped: Model, name: str) -> None:
+                    self._wrapped = wrapped
+                    self._model_name = name
+
+                @property
+                def model_name(self) -> str:
+                    return self._model_name
+
+                def __getattr__(self, name: str) -> object:
+                    # Delegate all other attributes/methods to wrapped test model
+                    return getattr(self._wrapped, name)
+
+            return ModelWrapper(test_model, "gpt-4o")  # type: ignore[return-value]
+        # Type cast needed because model could be object, but we know it's valid for infer_model
+        return original_infer_model(model)  # type: ignore[arg-type]
+
     mock_result = AsyncMock()
     mock_result.output = "extracted content"
 
     set_compile_context(compile_ctx)
     try:
-        with patch("colin.providers.llm.Agent.run", return_value=mock_result):
+        with (
+            patch("colin.providers.llm.infer_model", side_effect=mock_infer_model),
+            patch("colin.providers.llm.Agent.run", return_value=mock_result),
+        ):
             await provider._extract("test content", "extract this")
 
         # Verify the LLM call was recorded with the correct model
