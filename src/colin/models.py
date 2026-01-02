@@ -19,26 +19,38 @@ from colin.utilities.temporal import (  # noqa: F401
 
 
 class Ref(BaseModel):
-    """Replay instructions for re-fetching a resource.
+    """A reference to an external dependency.
 
-    Contains everything needed to re-execute the provider method
-    that originally fetched this resource. Stored in manifest to
-    track dependencies.
+    In Colin's compilation model, documents can depend on external resources
+    (S3 objects, files, MCP resources, other compiled documents). To track
+    these dependencies for staleness detection, we need more than just "this
+    document depends on X" - we need a way to check whether X has changed.
+
+    A Ref solves this by storing replay instructions: everything needed to
+    re-fetch or query the resource. When checking staleness, Colin replays
+    each Ref to get the current version and compares it to the version
+    stored at compile time.
+
+    Attributes:
+        provider: Provider type (e.g., 's3', 'mcp', 'http', 'project').
+        connection: Provider instance name (e.g., 'prod' for s3.prod). Empty for default.
+        method: The provider method to call (e.g., 'get', 'resource').
+        args: Arguments to pass to the method (must be JSON-serializable).
 
     Examples:
-        S3: Ref(provider="s3", connection="", method="get", args={"path": "bucket/key"})
+        S3: Ref(provider="s3", connection="prod", method="get", args={"path": "bucket/key"})
         MCP: Ref(provider="mcp", connection="github", method="resource", args={"uri": "..."})
-        Project: Ref(provider="project", connection="", method="get", args={"path": "docs/intro"})
+        Project: Ref(provider="project", connection="", method="get", args={"path": "greeting.md"})
     """
 
     provider: str
     """Provider type (e.g., 's3', 'mcp', 'http', 'project')."""
 
     connection: str
-    """Provider connection/instance name (e.g., 'prod', 'github'). Empty string for default."""
+    """Provider instance name (e.g., 'prod' for s3.prod). Empty string for default."""
 
     method: str
-    """The provider method name to call."""
+    """The provider method to call."""
 
     args: dict[str, Any]
     """Arguments to pass to the method (must be JSON-serializable)."""

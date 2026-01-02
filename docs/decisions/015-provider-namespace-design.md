@@ -1,7 +1,7 @@
 # ADR 015: Provider Namespace Design
 
 **Status**: Accepted
-**Date**: 2025-12-31
+**Date**: 2026-01-01
 
 ## Context
 

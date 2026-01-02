@@ -1,8 +1,8 @@
 # ADR 012: Provider Architecture
 
-**Status**: Accepted
+**Status**: Accepted (staleness model superseded by [ADR 017](017-resource-and-ref-architecture.md))
 **Date**: 2025-12-29
-**Updated**: 2025-12-30
+**Updated**: 2026-01-01
 
 ## Context
 
@@ -22,20 +22,22 @@ We want Colin to support scenarios like:
 
 ## Key Insight: Provider = Low-Level I/O
 
-A provider is fundamentally a low-level I/O handler. The base capability is reading content from a path; storage providers extend this with writing.
+A provider is fundamentally a low-level I/O handler. The base capability is fetching content; storage providers extend this with writing.
 
-**Provider** - Reads content from a path, returns raw string. Examples: MCP servers, HTTP APIs.
+**Provider** - Fetches content, returns Resource objects. Examples: MCP servers, HTTP APIs, S3.
 
 **Storage** - Provider that can also write. Used for project/artifact storage. Examples: filesystem, S3.
 
-**ref()** - User-facing function that routes to a provider, creates RefResult, and tracks dependencies. Separate from Provider.
+**ref()** - User-facing function that tracks dependencies. Accepts string paths (project refs) or Resource objects (provider refs).
 
 **Renderer** - Separate from providers entirely. Pure content transformation (not URI-based). Lives in `renders/` alongside `providers/`.
 
 This separation is critical:
-- `Provider.read()` returns `str` (raw content)
-- `ref()` calls provider, wraps result in `RefResult`, tracks dependency
-- This allows reading without dependency tracking when needed
+- Provider template functions return `Resource` objects (content + ref + version)
+- `ref()` tracks the resource's Ref for staleness checking
+- This allows reading without dependency tracking when needed (skip `ref()` wrapper)
+
+> **Note:** The staleness/tracking model has evolved. See [ADR 017](017-resource-and-ref-architecture.md) for the current Resource/Ref architecture.
 
 The directory structure:
 ```
