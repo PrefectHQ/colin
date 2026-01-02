@@ -389,6 +389,17 @@ John"""
         with pytest.raises(json.JSONDecodeError):
             parse_markdown_to_structure(content)
 
+    def test_malformed_raw_json_error(self):
+        # Trailing comma makes this invalid JSON
+        content = '{"foo": "bar",}'
+        with pytest.raises(json.JSONDecodeError):
+            parse_markdown_to_structure(content)
+
+    def test_malformed_raw_json_array_error(self):
+        content = "[1, 2, 3,]"
+        with pytest.raises(json.JSONDecodeError):
+            parse_markdown_to_structure(content)
+
 
 class TestEdgeCases:
     """Tests for edge cases."""

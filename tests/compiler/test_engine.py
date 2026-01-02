@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -163,3 +164,23 @@ Just this one.
 
         assert uris.index("project://a.md") < uris.index("project://b.md")
         assert uris.index("project://b.md") < uris.index("project://c.md")
+
+    async def test_malformed_json_raises_error(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """Malformed JSON output raises JSONDecodeError during compilation."""
+        engine, source_dir, _ = engine_setup
+
+        # Malformed JSON - trailing comma
+        (source_dir / "bad.md").write_text("""\
+---
+name: Bad
+colin:
+  output: json
+---
+
+{"foo": "bar",}
+""")
+
+        with pytest.raises(json.JSONDecodeError):
+            await engine.compile_all()
