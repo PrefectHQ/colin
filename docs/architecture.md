@@ -33,9 +33,9 @@ This enables automatic dependency tracking without explicit declarations.
           ▼                      ▼                    ▼
 ┌────────────────────┐  ┌───────────────────┐  ┌──────────────────┐
 │ Providers          │  │ Storage           │  │ Manifest         │
-│ - project://       │  │ - artifacts       │  │ - refs_evaluated │
-│ - mcp.<name>://    │  │ - outputs         │  │ - llm_calls      │
-│ - custom schemes   │  │                   │  │ - costs          │
+│ - project://       │  │ - artifacts       │  │ - refs           │
+│ - mcp.<name>://    │  │ - outputs         │  │ - ref_versions   │
+│ - custom schemes   │  │                   │  │ - llm_calls      │
 └────────────────────┘  └───────────────────┘  └──────────────────┘
 ```
 
@@ -153,7 +153,7 @@ Providers can contribute template functions via `Provider.get_functions()`. Thes
 {{ extract(ref("context/summary").content, "summarize") }}
 ```
 
-Provider functions may return raw strings or referenceable values; referenceable returns are normalized into `RefResult` and tracked in `refs_evaluated`.
+Provider functions return `Resource` objects (content + ref + version). Resources are tracked via `ref_versions` for version-based staleness detection.
 
 ## MVP Limitations
 
