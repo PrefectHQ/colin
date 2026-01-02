@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import gc
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from typing import Any, ClassVar
@@ -122,29 +120,11 @@ class MCPProvider(Provider):
         """Manage MCP client lifecycle."""
         if self._server is None:
             raise RuntimeError("MCPProvider not configured - use from_config()")
-
-        # Build client config:
-        # - stdio: use transport directly with keep_alive=False workaround (fixed in fastmcp > 3.0)
-        # - remote: use MCPConfig
-        if isinstance(self._server, StdioMCPServer):
-            transport = self._server.to_transport()
-            transport.keep_alive = False  # Workaround: to_transport() bug (fixed in fastmcp > 3.0)
-            client_config = transport
-        else:
-            client_config = MCPConfig(mcpServers={self._connection: self._server})
-
-        async with Client(client_config) as client:
+        mcp_config = MCPConfig(mcpServers={self._connection: self._server})
+        async with Client(mcp_config) as client:
             self._client = client
-            try:
-                yield
-            finally:
-                self._client = None
-
-        # Force cleanup while loop is still open to avoid BaseSubprocessTransport.__del__ warnings
-        if isinstance(self._server, StdioMCPServer):
-            del client, client_config, transport
-            await asyncio.sleep(0)  # Let pending subprocess callbacks run
-            gc.collect()
+            yield
+        self._client = None
 
     def _require_client(self) -> Client:
         """Get client, raising if not initialized."""
