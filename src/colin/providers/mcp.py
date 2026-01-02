@@ -142,7 +142,7 @@ class MCPProvider(Provider):
 
         # Force cleanup while loop is still open to avoid BaseSubprocessTransport.__del__ warnings
         if isinstance(self._server, StdioMCPServer):
-            del client
+            del client, client_config, transport
             await asyncio.sleep(0)  # Let pending subprocess callbacks run
             gc.collect()
 
