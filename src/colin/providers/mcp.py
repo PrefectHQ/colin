@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from typing import Any, ClassVar
@@ -137,6 +138,10 @@ class MCPProvider(Provider):
                 yield
             finally:
                 self._client = None
+
+        # Force GC while loop is still open to avoid BaseSubprocessTransport.__del__ warnings
+        if isinstance(self._server, StdioMCPServer):
+            gc.collect()
 
     def _require_client(self) -> Client:
         """Get client, raising if not initialized."""
