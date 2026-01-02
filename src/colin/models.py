@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pydantic_core
 from pydantic import BaseModel, Field, StringConstraints, field_validator
@@ -73,18 +72,11 @@ class Ref(BaseModel):
         )
 
 
-class CachePolicy(str, Enum):
-    """Cache policy for document rebuilding."""
-
-    ALWAYS = "always"
-    """Always cache: only rebuild with --no-cache."""
-
-    AUTO = "auto"
-    """Auto-invalidate: rebuild when refs change or time expires."""
-
-    NEVER = "never"
-    """Never cache: always rebuild."""
-
+# Cache policy: controls when documents rebuild
+# - "auto": rebuild when refs change or time expires (default)
+# - "always": aggressive caching, only --no-cache rebuilds
+# - "never": no caching, always rebuild
+CachePolicy = Literal["auto", "always", "never"]
 
 # Duration pattern: number + optional 'c' prefix + unit (m, h, d, w, M, Q)
 # Examples: 30m, 1h, 7d, 2w, 1M, 1Q, 15cm, 1cd, 1cw, 3cM, 1cQ
@@ -94,7 +86,7 @@ ExpiresDuration = Annotated[str, StringConstraints(pattern=r"^\d+c?[mhdwMQ]$")]
 class CacheConfig(BaseModel):
     """Configuration for document caching behavior."""
 
-    policy: CachePolicy = CachePolicy.AUTO
+    policy: CachePolicy = "auto"
     """Cache policy (always, auto, never)."""
 
     expires: ExpiresDuration | None = None

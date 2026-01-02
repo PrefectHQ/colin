@@ -339,6 +339,95 @@ Modified content
         assert len(result3) == 1
         assert "Modified content" in result3[0].output
 
+    async def test_cache_always_rebuilds_with_force(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """Documents with cache=always rebuild when force=True (--no-cache)."""
+        engine, source_dir, _ = engine_setup
+
+        (source_dir / "test.md").write_text("""\
+---
+colin:
+  cache: always
+---
+
+Content
+""")
+
+        # First compile
+        result1 = await engine.compile_all()
+        assert len(result1) == 1
+
+        # Second compile without force - should skip (same engine, manifest in memory)
+        result2 = await engine.compile_all()
+        assert len(result2) == 0
+
+        # Third compile with force=True - create new engine with force
+        forced_engine = CompileEngine(
+            config=engine.config,
+            artifact_storage=engine.artifact_storage,
+            force=True,
+        )
+        result3 = await forced_engine.compile_all()
+        assert len(result3) == 1
+
+    async def test_cache_always_respects_expiration(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """Documents with cache=always still expire based on time threshold."""
+        engine, source_dir, _ = engine_setup
+
+        (source_dir / "test.md").write_text("""\
+---
+colin:
+  cache:
+    policy: always
+    expires: 1h
+---
+
+Content
+""")
+
+        # First compile
+        result1 = await engine.compile_all()
+        assert len(result1) == 1
+
+        # Second compile - should skip (within expiration)
+        result2 = await engine.compile_all()
+        assert len(result2) == 0
+
+        # Backdate compiled_at to simulate expiration
+        doc_meta = engine.manifest.get_document("project://test.md")
+        assert doc_meta is not None
+        doc_meta.compiled_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+        # Third compile - should rebuild because expired
+        result3 = await engine.compile_all()
+        assert len(result3) == 1
+
+    async def test_cache_shorthand_syntax_in_document(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """Shorthand 'cache: never' works in actual document compilation."""
+        engine, source_dir, _ = engine_setup
+
+        (source_dir / "test.md").write_text("""\
+---
+colin:
+  cache: never
+---
+
+Content
+""")
+
+        # First compile
+        result1 = await engine.compile_all()
+        assert len(result1) == 1
+
+        # Second compile - should rebuild (cache: never)
+        result2 = await engine.compile_all()
+        assert len(result2) == 1
+
 
 class TestProjectProviderGetRefVersion:
     """Tests for ProjectProvider.get_ref_version()."""

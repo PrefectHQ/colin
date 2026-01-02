@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from colin.models import (
     CacheConfig,
-    CachePolicy,
     ColinConfig,
     ColinDocument,
     CompiledDocument,
@@ -49,17 +48,17 @@ class TestColinConfig:
     def test_defaults(self) -> None:
         config = ColinConfig()
         assert config.output == "markdown"
-        assert config.cache.policy == CachePolicy.AUTO
+        assert config.cache.policy == "auto"
         assert config.cache.expires is None
         assert config.storage is None
 
     def test_custom_cache_policy(self) -> None:
-        config = ColinConfig(cache=CacheConfig(policy=CachePolicy.ALWAYS))
-        assert config.cache.policy == CachePolicy.ALWAYS
+        config = ColinConfig(cache=CacheConfig(policy="always"))
+        assert config.cache.policy == "always"
 
     def test_custom_cache_expires(self) -> None:
         config = ColinConfig(cache=CacheConfig(expires="1h"))
-        assert config.cache.policy == CachePolicy.AUTO
+        assert config.cache.policy == "auto"
         assert config.cache.expires == "1h"
 
     def test_cache_expires_calendar_aligned(self) -> None:
@@ -90,14 +89,14 @@ class TestColinConfig:
         """Accept 'cache: never' as shorthand for 'cache: {policy: never}'."""
         # Use model_validate to test the YAML shorthand syntax (cache: never)
         config = ColinConfig.model_validate({"cache": "never"})
-        assert config.cache.policy == CachePolicy.NEVER
+        assert config.cache.policy == "never"
         assert config.cache.expires is None
 
         config = ColinConfig.model_validate({"cache": "always"})
-        assert config.cache.policy == CachePolicy.ALWAYS
+        assert config.cache.policy == "always"
 
         config = ColinConfig.model_validate({"cache": "auto"})
-        assert config.cache.policy == CachePolicy.AUTO
+        assert config.cache.policy == "auto"
 
 
 class TestFrontmatter:

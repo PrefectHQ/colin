@@ -160,7 +160,7 @@ Content here.
         fm, content = plugin.parse_frontmatter(model_file)
 
         assert fm.colin.output == "skill"
-        assert fm.colin.cache.policy.value == "never"
+        assert fm.colin.cache.policy == "never"
         assert fm.colin.cache.expires == "1h"
         assert fm.metadata["name"] == "Test"
         assert "Content here." in content

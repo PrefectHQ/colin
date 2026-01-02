@@ -18,7 +18,6 @@ from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_e
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
-    CachePolicy,
     CalendarDuration,
     ColinConfig,
     ColinDocument,
@@ -112,39 +111,34 @@ class CompileEngine:
         doc_meta = self.manifest.get_document(doc.uri)
 
         # Policy: never cache (always rebuild)
-        if policy == CachePolicy.NEVER:
+        if policy == "never":
             return (True, "cache=never")
 
-        # Policy: always cache (only build if no cache)
-        if policy == CachePolicy.ALWAYS:
-            if doc_meta is None or doc_meta.compiled_at is None:
-                return (True, "no cached output")
-            return (False, "cache=always (cached)")
-
-        # Policy: auto - check staleness conditions
-        # Never compiled
+        # Never compiled - rebuild regardless of policy
         if doc_meta is None or doc_meta.compiled_at is None:
             return (True, "never compiled")
 
-        # Source changed
-        if doc_meta.source_hash != doc.source_hash:
-            return (True, "source changed")
-
-        # Time-based expiration
+        # Time-based expiration (applies to both 'always' and 'auto')
         expires_duration = doc.frontmatter.colin.cache.expires
         if expires_duration is not None:
             threshold = parse_duration(expires_duration)
             now = datetime.now(timezone.utc)
 
             if isinstance(threshold, CalendarDuration):
-                # Calendar-aligned: check if enough calendar periods have passed
                 if threshold.is_stale(doc_meta.compiled_at, now):
                     return (True, f"expired after {expires_duration}")
             else:
-                # Elapsed duration (timedelta or relativedelta)
-                # For relativedelta, we add it to compiled_at and compare
                 if doc_meta.compiled_at + threshold < now:
                     return (True, f"expired after {expires_duration}")
+
+        # Policy: always cache (only --no-cache or expiration rebuilds)
+        if policy == "always":
+            return (False, "cache=always (cached)")
+
+        # Policy: auto - check staleness conditions
+        # Source changed
+        if doc_meta.source_hash != doc.source_hash:
+            return (True, "source changed")
 
         # Upstream dependency recompiled this run
         for ref in doc_meta.refs:
