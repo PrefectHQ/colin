@@ -297,6 +297,221 @@ Accessing `ref('config.json.md').sections.database` returns:
 - **Empty sections**: Sections can be empty (useful for placeholders)
 - **Special characters**: Use quoted strings for names with spaces, hyphens, or other characters
 
+## Defer Blocks
+
+Defer blocks solve a fundamental problem: how can a document reference its own rendered output? Use `{% defer %}` when you need to generate content based on the complete rendered document—table of contents, metadata, summaries, or change tracking.
+
+```markdown models/guide.md
+---
+name: Developer Guide
+---
+
+{% defer %}
+## Table of Contents
+{% for name in rendered.sections.keys() %}
+- [{{ name | title }}](#{{ name | replace(' ', '-') }})
+{% endfor %}
+{% enddefer %}
+
+{% section introduction %}
+## Introduction
+Welcome to the developer guide.
+{% endsection %}
+
+{% section setup %}
+## Setup
+Installation and configuration steps.
+{% endsection %}
+```
+
+The TOC generates from the sections that were just rendered. Without defer blocks, this would be impossible—you can't reference what doesn't exist yet.
+
+### How It Works
+
+Defer blocks use two-pass rendering:
+
+1. **First pass**: Render the document normally. Defer blocks emit placeholders and store themselves for later.
+2. **Second pass**: Render defer blocks with access to `rendered` (first pass output) and `previous_rendered` (cached output from last compile).
+
+This creates a powerful primitive: documents that reason about themselves.
+
+### Accessing Rendered Output
+
+Inside a defer block, two variables are available:
+
+**`rendered`** - The document's output from the first pass:
+- `rendered.content` - Full rendered text as string
+- `rendered.sections` - Format-aware accessor for sections
+
+**`previous_rendered`** - The cached output from last compile (or `None` on first compile):
+- `previous_rendered.content` - Previous version's full text
+- `previous_rendered.sections` - Previous version's sections
+
+```markdown
+{% defer %}
+## Document Stats
+- {{ rendered.content.split() | length }} words
+- {{ rendered.sections.keys() | list | length }} sections
+
+{% if previous_rendered %}
+**Changes**: {{ rendered.content | length - previous_rendered.content | length }} characters
+{% else %}
+**First version**
+{% endif %}
+{% enddefer %}
+```
+
+### Variables from First Pass
+
+Defer blocks capture the lexical environment—variables defined outside the defer block are accessible inside:
+
+```markdown
+{% set title = "Strategic Plan" %}
+{% set version = "2.0" %}
+
+# {{ title }}
+
+{% defer %}
+## Metadata
+- **Title**: {{ title }}
+- **Version**: {{ version }}
+- **Word count**: {{ rendered.content.split() | length }}
+{% enddefer %}
+```
+
+### Common Patterns
+
+**Auto-generate title and metadata** from document content:
+
+```yaml
+---
+name: {% defer %}{{ rendered.content | llm_extract("A concise title for this document") }}{% enddefer %}
+description: {% defer %}{{ rendered.content | llm_extract("A one-sentence description") }}{% enddefer %}
+tags: {% defer %}{% llm %}Read this document and suggest 3-5 relevant tags:
+
+{{ rendered.content }}
+
+Return only the tags as comma-separated list.
+{% endllm %}{% enddefer %}
+---
+```
+
+Frontmatter values are template strings, so defer blocks work there too. The document writes itself—content first, metadata derived from it.
+
+**Table of contents from sections**:
+
+```markdown
+{% defer %}
+## Contents
+{% for section_name in rendered.sections.keys() %}
+- [{{ section_name | title }}](#{{ section_name | replace(' ', '-') }})
+{% endfor %}
+{% enddefer %}
+```
+
+**Executive summary with LLM**:
+
+```markdown
+{% defer %}
+## Executive Summary
+{% llm model="opus" %}
+Provide a 2-3 sentence executive summary of this document:
+
+{{ rendered.content }}
+{% endllm %}
+{% enddefer %}
+```
+
+**Change tracking**:
+
+```markdown
+{% defer %}
+{% if previous_rendered %}
+## Changelog
+- Content changed: {{ rendered.content | length - previous_rendered.content | length }} chars
+- Sections added/removed: {{ rendered.sections.keys() | list | length - previous_rendered.sections.keys() | list | length }}
+{% else %}
+## New Document
+First version compiled.
+{% endif %}
+{% enddefer %}
+```
+
+**Conditional metadata**:
+
+```markdown
+---
+difficulty: {% defer %}{{ "```python" in rendered.content and "intermediate" or "beginner" }}{% enddefer %}
+estimated_reading_time: {% defer %}{{ (rendered.content.split() | length / 200) | round }} min{% enddefer %}
+---
+```
+
+### Format-Aware Sections
+
+When accessing `rendered.sections` in a defer block, sections automatically adapt to your output format:
+
+- **Markdown**: Returns raw string content
+- **JSON/YAML**: Parses markdown structure into data
+
+For JSON output with sections:
+
+```markdown models/config.json.md
+---
+colin:
+  output: json
+---
+
+{% section database %}
+## host
+localhost
+
+## port
+5432
+{% endsection %}
+
+{% defer %}
+{% section metadata %}
+## sections_count
+{{ rendered.sections.keys() | list | length }}
+{% endsection %}
+{% enddefer %}
+```
+
+Accessing `rendered.sections.database` in the defer block returns a parsed dict with `host` and `port` keys, not markdown text.
+
+### Multiple Defer Blocks
+
+You can have multiple defer blocks in a document. Each sees the same first-pass output:
+
+```markdown
+{% defer %}
+**Word count**: {{ rendered.content.split() | length }}
+{% enddefer %}
+
+More content here.
+
+{% defer %}
+**Character count**: {{ rendered.content | length }}
+{% enddefer %}
+```
+
+Both defer blocks see the complete first-pass output, including content between them. But they don't see each other's output—defer blocks execute in parallel during the second pass.
+
+### Sections in Defer Blocks
+
+Defer blocks can define sections:
+
+```markdown
+{% defer %}
+{% section summary %}
+## Summary
+This document has {{ rendered.sections.keys() | list | length }} sections.
+{% endsection %}
+{% enddefer %}
+```
+
+The `summary` section is captured in document metadata and available via `ref('doc').sections.summary`.
+
 ## Naming
 
 Document URIs derive from their file paths relative to the models directory. Subdirectories become part of the URI:
