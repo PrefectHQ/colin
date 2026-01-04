@@ -14,7 +14,7 @@ Add variables to the `[vars]` section of your `colin.toml`. Colin supports two s
 
 ### Simple Syntax
 
-For variables with defaults, assign values directly. Colin infers the type from the value:
+As a shorthand for variables with defaults, assign values directly. Colin infers the type from the value:
 
 ```toml colin.toml
 [vars]
@@ -59,7 +59,7 @@ TOML has no `null` value, so Colin uses `optional = true` to indicate a variable
 
 Colin converts variable values to appropriate Python types at resolution time:
 
-| Type | Python Type | Example Value |
+| Variable Type | Python Type | Example Value |
 | :--- | :---------- | :------------ |
 | `string` | `str` | `"production"` |
 | `bool` | `bool` | `true`, `false` |
