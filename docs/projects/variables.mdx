@@ -14,7 +14,7 @@ Add variables to the `[vars]` section of your `colin.toml`. Colin supports two s
 
 ### Simple Syntax
 
-For straightforward cases, assign values directly. Colin infers the type from the value:
+For variables with defaults, assign values directly. Colin infers the type from the value:
 
 ```toml colin.toml
 [vars]
@@ -24,7 +24,7 @@ max_items = 100
 rate = 3.14
 ```
 
-This creates four variables with types inferred as string, bool, int, and float respectively.
+This creates four variables with types inferred as string, bool, int, and float respectively. Each value serves as the default, which can be overridden at runtime via CLI flags or environment variables.
 
 ### Typed Syntax
 
@@ -48,8 +48,12 @@ The typed syntax supports additional options:
 | Field | Description | Default |
 | :---- | :---------- | :------ |
 | `type` | Variable type (see below) | `string` |
-| `default` | Default value, can include Jinja expressions | None |
+| `default` | Default value | None |
 | `optional` | If true, returns `None` when not provided | `false` |
+
+<Tip>
+TOML has no `null` value, so Colin uses `optional = true` to indicate a variable can be `None`. Without a default and without `optional = true`, a variable is required and Colin will error if it's not provided.
+</Tip>
 
 ## Supported Types
 
