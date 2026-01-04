@@ -35,6 +35,27 @@ project/
 
 **`target/`**: Configurable via `target-path`. Contains only published files. This is what users consume. **This directory is fully managed by Colin**—it may be completely wiped and rebuilt on each compile. Users should not place hand-written files here; instead, copy files out of `target/` if needed elsewhere.
 
+### Compilation pipeline
+
+Compilation produces final artifacts in a single pass:
+
+```
+models/           →  .colin/compiled/  →  target/
+(source files)       (final artifacts)    (literal copy)
+     ↓                     ↓                    ↓
+  COMPILE              STORE               PUBLISH
+  (Jinja +            (write)             (copy public)
+   render)
+```
+
+**Compilation = Jinja + rendering**: Template rendering (Jinja) and format rendering (JSON, YAML) happen together. The result is the final artifact—no further transformation.
+
+**Compiled = final**: Files in `.colin/compiled/` are the finished artifacts. A JSON document is stored as valid JSON, not intermediate markdown.
+
+**Publishing = copy**: The publish step simply copies public files from `.colin/compiled/` to `target/`. No transformation, no re-rendering.
+
+**ref() by output name**: References are to OUTPUT documents by their actual filenames. `ref("config.json")` looks for `config.json` in compiled/. `ref("config")` defaults to `ref("config.md")`.
+
 ### Visibility: public vs private
 
 Files can be marked as private (compile but don't copy to target).
@@ -82,12 +103,15 @@ Accessing `.path` on private files raises an error—linking to files that won't
 
 ```python
 class CompiledArtifact:
-    uri: str                # project://greeting.md
-    content: str            # compiled content
+    uri: str                # project://greeting.md (source identity)
+    output_path: str        # greeting.md or config.json (actual filename)
+    content: str            # final rendered content (JSON, YAML, or markdown)
     output_hash: str        # content hash for cache invalidation
     is_private: bool        # if True, don't copy to target/
     metadata: dict          # frontmatter, format, etc.
 ```
+
+**Content is final**: The `content` field contains the fully rendered artifact—valid JSON for JSON outputs, valid YAML for YAML outputs.
 
 **Content-addressed artifacts**: Only rewritten when content actually changes.
 
@@ -125,7 +149,11 @@ Storage plugins provide escape hatch for projects that want remote cache instead
 
 - New `.colin/` directory in all projects
 - Manifest moves from `target/manifest.json` to `.colin/manifest.json`
-- Compiled artifacts write to `.colin/compiled/` first, then publish step copies public files to `target/`
+- Compilation produces final artifacts (Jinja + rendering in one step)
+- `.colin/compiled/` contains ready-to-use files (JSON is valid JSON, etc.)
+- Publishing is a simple copy from `.colin/compiled/` to `target/`
+- `ref("file.json")` looks for the actual output filename
+- `ref("file")` defaults to `ref("file.md")`
 - `ref().path` errors on private files
 - `_` prefix naming convention marks files as private (idiomatic)
 - `colin.private: bool` frontmatter available as override

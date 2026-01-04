@@ -319,15 +319,11 @@ class CompileEngine:
                         compiled_outputs[uri] = result
                         if was_recompiled:
                             recompiled_uris.add(uri)
-                        # Determine if private and write output
+                        # Determine if private, write output, update manifest
                         doc = doc_map[uri]
                         result.is_private = self._is_private(doc)
-                        output_path, output_hash = await self._write_output(result)
-                        self._update_manifest(
-                            result,
-                            output_path=output_path,
-                            output_hash=output_hash,
-                        )
+                        await self._write_output(result)
+                        self._update_manifest(result)
 
         # Raise collected errors if any
         if errors:
@@ -370,16 +366,10 @@ class CompileEngine:
         async with create_provider_manager(self.config) as provider_manager:
             result = await self._compile_document(doc, {}, provider_manager)
 
-        # Write output with private detection
+        # Write output with private detection and update manifest
         result.is_private = self._is_private(doc)
-        output_path, output_hash = await self._write_output(result)
-
-        # Update manifest
-        self._update_manifest(
-            result,
-            output_path=output_path,
-            output_hash=output_hash,
-        )
+        await self._write_output(result)
+        self._update_manifest(result)
 
         return result
 
@@ -445,8 +435,9 @@ class CompileEngine:
         relative = path.relative_to(self.config.model_path)
         uri = f"project://{relative}"
 
-        # Hash the template content for change detection
-        source_hash = hashlib.sha256(post.content.encode()).hexdigest()[:16]
+        # Hash the FULL content (including frontmatter) for change detection
+        # This ensures changes to colin.output, colin.private, etc. invalidate cache
+        source_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
 
         return ColinDocument(
             uri=uri,
@@ -463,6 +454,13 @@ class CompileEngine:
         Args:
             documents: List of documents to analyze.
         """
+        # Build output_path → source_uri mapping for resolving refs like ref("config.json")
+        # when the source is config.md with colin.output: json
+        output_path_to_uri: dict[str, str] = {}
+        for doc in documents:
+            output_path = self._compute_output_path(doc)
+            output_path_to_uri[output_path] = doc.uri
+
         # Use full environment with extensions so {% llm %} etc. are recognized
         env = create_jinja_environment()
 
@@ -472,19 +470,36 @@ class CompileEngine:
                 refs = self._extract_refs_from_ast(ast)
                 for ref_uri in refs:
                     # Normalize ref URIs to match document URIs (project://...)
-                    normalized_ref = self._normalize_uri(ref_uri)
+                    normalized_ref = self._normalize_uri(ref_uri, output_path_to_uri)
                     self.graph.add_edge(doc.uri, normalized_ref)
             except TemplateSyntaxError:
                 # If parsing fails, we'll catch actual errors during compilation
                 pass
 
-    def _normalize_uri(self, uri: str) -> str:
+    def _compute_output_path(self, doc: ColinDocument) -> str:
+        """Compute the output path for a document based on its output format.
+
+        Args:
+            doc: The document to compute output path for.
+
+        Returns:
+            The output filename (e.g., 'config.json' for json output).
+        """
+        # Extract path from URI (project://path.md -> path.md)
+        path = doc.uri.split("://", 1)[1] if "://" in doc.uri else doc.uri
+        renderer = get_renderer(doc.frontmatter.colin.output)
+        return renderer._get_output_filename(path)
+
+    def _normalize_uri(self, uri: str, output_path_to_uri: dict[str, str] | None = None) -> str:
         """Normalize a URI to project:// format.
 
         Converts shorthand refs like 'data' to 'project://data.md'.
+        Also handles refs to output paths (e.g., 'config.json' for a document
+        that outputs JSON).
 
         Args:
             uri: URI in any format (shorthand or full).
+            output_path_to_uri: Optional mapping from output_path to source URI.
 
         Returns:
             Normalized URI.
@@ -493,9 +508,14 @@ class CompileEngine:
         if "://" in uri:
             return uri
 
+        # Check if this matches an output_path
+        # (e.g., ref("config.json") for config.md with output: json)
+        if output_path_to_uri is not None and uri in output_path_to_uri:
+            return output_path_to_uri[uri]
+
         # Schemaless shorthand - normalize to project://
         # Add .md extension if missing
-        if not uri.endswith(".md"):
+        if "." not in Path(uri).name:
             uri = f"{uri}.md"
         return f"project://{uri}"
 
@@ -567,17 +587,22 @@ class CompileEngine:
         template = env.from_string(doc.template_content)
         set_compile_context(context)
         try:
-            output = await template.render_async()
+            raw_output = await template.render_async()
         finally:
             set_compile_context(None)
 
-        # Calculate output hash
-        output_hash = hashlib.sha256(output.encode()).hexdigest()[:16]
+        # Apply format renderer (JSON, YAML, or markdown passthrough)
+        renderer = get_renderer(doc.frontmatter.colin.output)
+        render_result = renderer.render(raw_output, doc.uri, doc.frontmatter)
+
+        # Hash the FINAL rendered content
+        output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
 
         return CompiledDocument(
             uri=doc.uri,
             frontmatter=doc.frontmatter,
-            output=output,
+            output=render_result.content,
+            output_path=render_result.filename,
             source_hash=doc.source_hash,
             output_hash=output_hash,
             refs=context.refs,
@@ -586,54 +611,31 @@ class CompileEngine:
             total_cost_usd=context.total_cost,
         )
 
-    async def _write_output(self, doc: CompiledDocument) -> tuple[str, str]:
-        """Write compiled output to storage with content-addressing.
+    async def _write_output(self, doc: CompiledDocument) -> None:
+        """Write pre-rendered output to storage with content-addressing.
 
-        Uses the renderer specified in frontmatter.colin.output (default: markdown).
-        Only writes if the content hash differs from existing file.
+        Content is already rendered during compilation. Only writes if
+        the output hash differs from existing file.
 
         Args:
-            doc: The compiled document (must have is_private set).
-
-        Returns:
-            Tuple of (output_path, rendered_output_hash).
+            doc: The compiled document (must have output_path and output set).
         """
-        # Get renderer from frontmatter
-        output_format = doc.frontmatter.colin.output
-        renderer = get_renderer(output_format)
-
-        # Render the document
-        render_result = renderer.render(doc)
-
-        # Compute hash of rendered content
-        rendered_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
-
         # Content-addressed: only write if hash differs from existing
         existing_meta = self.manifest.get_document(doc.uri)
-        if existing_meta is None or existing_meta.output_hash != rendered_hash:
-            await self.artifact_storage.write(render_result.filename, render_result.content)
+        if existing_meta is None or existing_meta.output_hash != doc.output_hash:
+            await self.artifact_storage.write(doc.output_path, doc.output)
 
-        return (render_result.filename, rendered_hash)
-
-    def _update_manifest(
-        self,
-        doc: CompiledDocument,
-        *,
-        output_path: str,
-        output_hash: str,
-    ) -> None:
+    def _update_manifest(self, doc: CompiledDocument) -> None:
         """Update manifest with compilation result.
 
         Args:
-            doc: The compiled document (must have is_private set).
-            output_path: Relative path of the rendered output.
-            output_hash: Hash of the rendered output.
+            doc: The compiled document.
         """
         meta = DocumentMeta(
             uri=doc.uri,
             source_hash=doc.source_hash,
-            output_hash=output_hash,
-            output_path=output_path,
+            output_hash=doc.output_hash,
+            output_path=doc.output_path,
             is_private=doc.is_private,
             compiled_at=datetime.now(timezone.utc),
             refs=doc.refs,

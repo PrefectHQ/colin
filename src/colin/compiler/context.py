@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from colin.compiler.state import OperationState, Status
@@ -103,8 +104,18 @@ class CompileContext:
         uri = f"project://{path}"
 
         # Check in-memory compiled outputs first (from current compile run)
-        if uri in self.compiled_outputs:
-            compiled = self.compiled_outputs[uri]
+        # Try by URI first (e.g., ref("config") -> project://config.md)
+        compiled: CompiledDocument | None = self.compiled_outputs.get(uri)
+
+        # If not found by URI, try by output_path (e.g., ref("config.json") finds
+        # document whose output_path is "config.json" even if source is config.md)
+        if compiled is None:
+            for doc in self.compiled_outputs.values():
+                if doc.output_path == path:
+                    compiled = doc
+                    break
+
+        if compiled is not None:
             name_val = compiled.frontmatter.metadata.get("name")
             desc_val = compiled.frontmatter.metadata.get("description")
 
@@ -158,9 +169,11 @@ class CompileContext:
     def _normalize_path(self, path: str) -> str:
         """Normalize a path for project refs.
 
-        Adds .md extension if missing.
+        Adds .md extension only if no extension is present.
+        ref("config") -> "config.md"
+        ref("config.json") -> "config.json" (preserved)
         """
-        if not path.endswith(".md"):
+        if "." not in Path(path).name:
             path = f"{path}.md"
         return path
 

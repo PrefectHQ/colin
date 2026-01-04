@@ -10,6 +10,7 @@ import pytest
 
 from colin.api.project import ProjectConfig
 from colin.compiler import CompileEngine
+from colin.exceptions import MultipleCompilationErrors
 from colin.providers.storage.file import FileStorage
 
 
@@ -176,7 +177,7 @@ Just this one.
     async def test_malformed_json_raises_error(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
-        """Malformed JSON output raises JSONDecodeError during compilation."""
+        """Malformed JSON output raises error during compilation."""
         engine, source_dir, _ = engine_setup
 
         # Malformed JSON - trailing comma
@@ -190,5 +191,142 @@ colin:
 {"foo": "bar",}
 """)
 
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(MultipleCompilationErrors) as exc_info:
             await engine.compile_all()
+
+        # Underlying error should be JSONDecodeError
+        errors = exc_info.value.errors
+        assert "project://bad.md" in errors
+        assert any(isinstance(e, json.JSONDecodeError) for e in errors["project://bad.md"])
+
+    async def test_ref_returns_rendered_json_content(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """ref() to a JSON document returns rendered JSON, not raw Jinja."""
+        engine, source_dir, _ = engine_setup
+
+        # Create a document that outputs JSON
+        (source_dir / "config.md").write_text("""\
+---
+name: Config
+colin:
+  output: json
+---
+
+## host
+localhost
+
+## port
+```json
+5432
+```
+""")
+
+        # Create a document that refs the JSON config
+        (source_dir / "derived.md").write_text("""\
+---
+name: Derived
+---
+
+Config content: {{ ref('config.json').content }}
+""")
+
+        result = await engine.compile_all()
+        derived = next(doc for doc in result if doc.uri == "project://derived.md")
+
+        # The ref().content should be valid JSON, not raw markdown
+        assert '"host": "localhost"' in derived.output
+        assert '"port": 5432' in derived.output
+        # Should not contain raw markdown headers
+        assert "## host" not in derived.output
+
+    async def test_ref_finds_json_output_by_extension(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """ref('config.json') finds the compiled JSON output."""
+        engine, source_dir, output_dir = engine_setup
+
+        # Create a JSON-output document
+        (source_dir / "config.md").write_text("""\
+---
+name: Config
+colin:
+  output: json
+---
+
+## key
+value
+""")
+
+        result = await engine.compile_all()
+
+        # Verify it wrote config.json (not config.md)
+        config = next(doc for doc in result if doc.uri == "project://config.md")
+        assert config.output_path == "config.json"
+        assert (output_dir / "config.json").exists()
+
+    async def test_hash_consistency_between_document_and_manifest(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """CompiledDocument.output_hash matches what's stored in manifest."""
+        engine, source_dir, _ = engine_setup
+
+        (source_dir / "test.md").write_text("""\
+---
+name: Test
+colin:
+  output: json
+---
+
+## key
+value
+""")
+
+        results = await engine.compile_all()
+        doc = results[0]
+
+        # The manifest should have the same output_hash as the CompiledDocument
+        manifest_meta = engine.manifest.get_document(doc.uri)
+        assert manifest_meta is not None
+        assert manifest_meta.output_hash == doc.output_hash
+
+    async def test_frontmatter_change_invalidates_cache(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """Changing frontmatter (e.g., colin.output) triggers recompilation."""
+        engine, source_dir, output_dir = engine_setup
+
+        # First compile as markdown
+        (source_dir / "config.md").write_text("""\
+---
+name: Config
+---
+
+## key
+value
+""")
+        await engine.compile_all()
+        assert (output_dir / "config.md").exists()
+        first_meta = engine.manifest.get_document("project://config.md")
+        assert first_meta is not None
+        first_source_hash = first_meta.source_hash
+
+        # Change output format in frontmatter
+        (source_dir / "config.md").write_text("""\
+---
+name: Config
+colin:
+  output: json
+---
+
+## key
+value
+""")
+        await engine.compile_all()
+
+        # Should have recompiled due to source_hash change
+        second_meta = engine.manifest.get_document("project://config.md")
+        assert second_meta is not None
+        assert second_meta.source_hash != first_source_hash
+        # Output path should now be JSON
+        assert second_meta.output_path == "config.json"

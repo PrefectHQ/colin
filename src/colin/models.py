@@ -306,6 +306,9 @@ class CompiledDocument(BaseModel):
     output_hash: str
     """Hash of the rendered output (used for versioning and content-addressed writes)."""
 
+    output_path: str
+    """Output filename (e.g., 'greeting.md' or 'config.json'). Set during compilation."""
+
     is_private: bool = False
     """Whether this document is private (not published to target/)."""
 
