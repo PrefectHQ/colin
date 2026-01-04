@@ -595,13 +595,16 @@ class CompileEngine:
             set_compile_context(None)
 
         # Extract sections from markers in rendered output
-        from colin.compiler.section_parser import parse_sections
+        from colin.compiler.section_parser import parse_sections, remove_colin_markers
 
         context.sections = parse_sections(raw_output)
 
+        # Remove all Colin markers before rendering (JSON/YAML parsers error on them)
+        clean_output = remove_colin_markers(raw_output)
+
         # Apply format renderer (JSON, YAML, or markdown passthrough)
         renderer = get_renderer(doc.frontmatter.colin.output)
-        render_result = renderer.render(raw_output, doc.uri, doc.frontmatter)
+        render_result = renderer.render(clean_output, doc.uri, doc.frontmatter)
 
         # Hash the FINAL rendered content
         output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]

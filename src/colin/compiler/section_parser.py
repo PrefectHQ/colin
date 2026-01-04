@@ -38,3 +38,31 @@ def parse_sections(content: str) -> dict[str, str]:
         sections[section_name] = section_content  # Last wins if duplicates
 
     return sections
+
+
+def remove_colin_markers(content: str) -> str:
+    """Remove all Colin internal markers from rendered content.
+
+    Colin uses HTML comment markers for internal tracking (sections, items, etc.).
+    These must be stripped before passing content to format renderers (JSON/YAML)
+    since the markdown parser raises errors when seeing non-header content.
+
+    Note: Item markers are consumed by the markdown parser's _parse_items(),
+    but we strip them here too for defensive programming.
+
+    Args:
+        content: The rendered template output with markers.
+
+    Returns:
+        Content with all Colin markers removed but content preserved.
+
+    Example:
+        >>> content = '''<!--COLIN:SECTION_START:strategy-->
+        ... ## Our Strategy
+        ... <!--COLIN:SECTION_END:strategy-->'''
+        >>> remove_colin_markers(content)
+        '## Our Strategy'
+    """
+    # Remove all Colin markers (sections, items, and any future marker types)
+    pattern = r"<!--COLIN:[^>]+-->\n?"
+    return re.sub(pattern, "", content)
