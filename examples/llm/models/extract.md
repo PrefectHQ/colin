@@ -9,10 +9,10 @@ This document demonstrates how to use the `extract()` filter to pull specific in
 
 ## Source Content
 
-{{ ref('source').content }}
+{{ ref('source.md').content }}
 
 ---
 
 ## Extracted Information
 
-**Main Complaints**: {{ ref('source') | llm_extract('the main complaints or negative feedback mentioned') }}
+**Main Complaints**: {{ ref('source.md') | llm_extract('the main complaints or negative feedback mentioned') }}

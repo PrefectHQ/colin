@@ -9,10 +9,10 @@ This document demonstrates how to use the `classify()` filter to categorize cont
 
 ## Source Content
 
-{{ ref('source').content }}
+{{ ref('source.md').content }}
 
 ---
 
 ## Classification Result
 
-**Sentiment**: {{ ref('source') | llm_classify(labels=['positive', 'negative', 'neutral']) }}
+**Sentiment**: {{ ref('source.md') | llm_classify(labels=['positive', 'negative', 'neutral']) }}

@@ -135,7 +135,7 @@ class CompileContext:
             try:
                 result = await self.project_provider.get(path)
             except FileNotFoundError as e:
-                raise RefNotFoundError(f"Referenced document not found: {path}") from e
+                raise RefNotFoundError(f"Referenced document not found: {path!r}") from e
             return result
 
         project_ref = Ref(

@@ -8,6 +8,7 @@ This example demonstrates Colin's `llm_classify()` filter for categorizing conte
 - `models/extract.md` - Demonstrates the `llm_extract()` filter with a single extraction
 - `models/classify.md` - Demonstrates the `llm_classify()` filter with a single classification
 - `models/classify_multi_label.md` - Demonstrates multi-label classification with `multi=True`
+- `models/instructions.md` - Demonstrates using instructions (system prompts) to control LLM behavior
 
 ## Run It
 
@@ -38,19 +39,33 @@ export ANTHROPIC_API_KEY=your-key-here
 
 5. **Structured Output**: The classify filter uses structured output to ensure the result is one of the provided labels.
 
+6. **Instructions**: The `instructions.md` file shows how to pass system prompts to control LLM behavior (e.g., making it respond like a pirate).
+
 ## Example Usage
 
 ### Extract
 ```jinja
-{{ ref('source') | llm_extract('the main complaints or negative feedback mentioned') }}
+{{ ref('source.md') | llm_extract('the main complaints or negative feedback mentioned') }}
 ```
 
 ### Single Label Classification
 ```jinja
-{{ ref('source') | llm_classify(labels=['positive', 'negative', 'neutral']) }}
+{{ ref('source.md') | llm_classify(labels=['positive', 'negative', 'neutral']) }}
 ```
 
 ### Multi-Label Classification
 ```jinja
-{{ ref('source') | llm_classify(labels=['interface', 'performance', 'pricing'], multi=True) }}
+{{ ref('source.md') | llm_classify(labels=['interface', 'performance', 'pricing'], multi=True) }}
+```
+
+### Instructions (System Prompts)
+```jinja
+{{ ref('source.md') | llm_extract('summarize', instructions='Talk like a pirate.') }}
+```
+
+Or with the `{% llm %}` block:
+```jinja
+{% llm instructions='Talk like a pirate.' %}
+Summarize this: {{ ref('source.md').content }}
+{% endllm %}
 ```

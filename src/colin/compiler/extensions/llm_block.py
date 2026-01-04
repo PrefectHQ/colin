@@ -24,6 +24,10 @@ class LLMBlockExtension(Extension):
         Prompt with explicit model and ID.
         {% endllm %}
 
+        {% llm instructions=ref('prompts/agent.md').content %}
+        Prompt with instructions override.
+        {% endllm %}
+
     The body is rendered first (resolving any refs/expressions),
     then passed to the LLM for processing.
     """
@@ -69,6 +73,7 @@ class LLMBlockExtension(Extension):
         id: str | None = None,  # noqa: A002 - using 'id' to match template syntax
         _cache_id: str | None = None,
         _cache: bool = True,
+        instructions: str | None = None,
         caller: object = None,
     ) -> str:
         """Called during template rendering.
@@ -78,6 +83,7 @@ class LLMBlockExtension(Extension):
             id: Alias for _cache_id (deprecated, use _cache_id).
             _cache_id: Optional custom cache ID.
             _cache: Set to False to bypass cache.
+            instructions: Optional instructions override (call-level).
             caller: Async callable that renders the block body.
 
         Returns:
@@ -106,6 +112,7 @@ class LLMBlockExtension(Extension):
         return await llm_namespace.complete(
             body_content,
             model=model,
+            instructions=instructions,
             _cache_id=effective_cache_id,
             _cache=_cache,
         )
