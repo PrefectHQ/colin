@@ -299,231 +299,129 @@ Accessing `ref('config.json.md').sections.database` returns:
 
 ## Defer Blocks
 
-Defer blocks solve a fundamental problem: how can a document reference its own rendered output? Use `{% defer %}` when you need to generate content based on the complete rendered document—table of contents, metadata, summaries, or change tracking.
+Defer blocks let documents reference their own rendered output. Use `{% defer %}` when you need content based on the complete rendered document—table of contents, metadata, summaries, or change tracking.
 
 ```markdown models/guide.md
----
-name: Developer Guide
----
-
 {% defer %}
 ## Table of Contents
 {% for name in rendered.sections.keys() %}
-- [{{ name | title }}](#{{ name | replace(' ', '-') }})
+- [{{ name | title }}](#{{ name }})
 {% endfor %}
 {% enddefer %}
 
 {% section introduction %}
 ## Introduction
-Welcome to the developer guide.
-{% endsection %}
-
-{% section setup %}
-## Setup
-Installation and configuration steps.
+Welcome to the guide.
 {% endsection %}
 ```
 
-The TOC generates from the sections that were just rendered. Without defer blocks, this would be impossible—you can't reference what doesn't exist yet.
-
 ### How It Works
 
-Defer blocks use two-pass rendering:
-
-1. **First pass**: Render the document normally. Defer blocks emit placeholders and store themselves for later.
-2. **Second pass**: Render defer blocks with access to `rendered` (first pass output) and `previous_rendered` (cached output from last compile).
-
-This creates a powerful primitive: documents that reason about themselves.
+Two-pass rendering: first pass renders the document and stores defer blocks, second pass renders defer blocks with access to `rendered` and `previous_rendered`.
 
 ### Accessing Rendered Output
 
-Inside a defer block, two variables are available:
+Defer blocks have access to two variables:
 
-**`rendered`** - The document's output from the first pass:
-- `rendered.content` - Full rendered text as string
-- `rendered.sections` - Format-aware accessor for sections
+#### Content
 
-**`previous_rendered`** - The cached output from last compile (or `None` on first compile):
-- `previous_rendered.content` - Previous version's full text
-- `previous_rendered.sections` - Previous version's sections
+`rendered.content` - Full rendered text as string
+`previous_rendered.content` - Previous version's text (or `None` on first compile)
 
 ```markdown
 {% defer %}
-## Document Stats
-- {{ rendered.content.split() | length }} words
-- {{ rendered.sections.keys() | list | length }} sections
-
+Words: {{ rendered.content.split() | length }}
 {% if previous_rendered %}
-**Changes**: {{ rendered.content | length - previous_rendered.content | length }} characters
-{% else %}
-**First version**
+Changed: {{ rendered.content | length - previous_rendered.content | length }} chars
 {% endif %}
 {% enddefer %}
 ```
 
+#### Sections
+
+`rendered.sections` - Format-aware accessor for sections (raw strings for markdown, parsed data for JSON/YAML)
+`previous_rendered.sections` - Previous version's sections
+
+```markdown
+{% defer %}
+{% for name in rendered.sections.keys() %}
+- {{ name | title }}
+{% endfor %}
+{% enddefer %}
+```
+
+#### Previous Rendered
+
+`previous_rendered` is `None` on first compile and contains the cached output from the last compile on subsequent runs.
+
 ### Variables from First Pass
 
-Defer blocks capture the lexical environment—variables defined outside the defer block are accessible inside:
+Variables defined outside defer blocks are accessible inside:
 
 ```markdown
 {% set title = "Strategic Plan" %}
-{% set version = "2.0" %}
-
-# {{ title }}
 
 {% defer %}
-## Metadata
-- **Title**: {{ title }}
-- **Version**: {{ version }}
-- **Word count**: {{ rendered.content.split() | length }}
+Title: {{ title }}
+Word count: {{ rendered.content.split() | length }}
 {% enddefer %}
 ```
 
 ### Common Patterns
 
-**Auto-generate title and metadata** from document content:
+#### Auto-Generate Metadata
 
 ```yaml
 ---
-name: {% defer %}{{ rendered.content | llm_extract("A concise title for this document") }}{% enddefer %}
-description: {% defer %}{{ rendered.content | llm_extract("A one-sentence description") }}{% enddefer %}
-tags: {% defer %}{% llm %}Read this document and suggest 3-5 relevant tags:
-
-{{ rendered.content }}
-
-Return only the tags as comma-separated list.
-{% endllm %}{% enddefer %}
+name: {% defer %}{{ rendered.content | llm_extract("A concise title") }}{% enddefer %}
+tags: {% defer %}{% llm %}Suggest 3-5 tags: {{ rendered.content }}{% endllm %}{% enddefer %}
 ---
 ```
 
-Frontmatter values are template strings, so defer blocks work there too. The document writes itself—content first, metadata derived from it.
-
-**Table of contents from sections**:
+#### Table of Contents
 
 ```markdown
 {% defer %}
 ## Contents
-{% for section_name in rendered.sections.keys() %}
-- [{{ section_name | title }}](#{{ section_name | replace(' ', '-') }})
+{% for name in rendered.sections.keys() %}
+- [{{ name | title }}](#{{ name | replace(' ', '-') }})
 {% endfor %}
 {% enddefer %}
 ```
 
-**Executive summary with LLM**:
+#### Executive Summary
 
 ```markdown
 {% defer %}
-## Executive Summary
-{% llm model="opus" %}
-Provide a 2-3 sentence executive summary of this document:
-
-{{ rendered.content }}
-{% endllm %}
+{% llm %}Summarize in 2-3 sentences: {{ rendered.content }}{% endllm %}
 {% enddefer %}
 ```
 
-**Change tracking**:
+#### Change Tracking
 
 ```markdown
 {% defer %}
 {% if previous_rendered %}
-## Changelog
-- Content changed: {{ rendered.content | length - previous_rendered.content | length }} chars
-- Sections added/removed: {{ rendered.sections.keys() | list | length - previous_rendered.sections.keys() | list | length }}
+Changed: {{ rendered.content | length - previous_rendered.content | length }} chars
 {% else %}
-## New Document
-First version compiled.
+First version
 {% endif %}
 {% enddefer %}
 ```
 
-**Conditional metadata**:
-
-```markdown
----
-difficulty: {% defer %}{{ "```python" in rendered.content and "intermediate" or "beginner" }}{% enddefer %}
-estimated_reading_time: {% defer %}{{ (rendered.content.split() | length / 200) | round }} min{% enddefer %}
----
-```
-
-### Format-Aware Sections
-
-When accessing `rendered.sections` in a defer block, sections automatically adapt to your output format:
-
-- **Markdown**: Returns raw string content
-- **JSON/YAML**: Parses markdown structure into data
-
-For JSON output with sections:
-
-```markdown models/config.json.md
----
-colin:
-  output: json
----
-
-{% section database %}
-## host
-localhost
-
-## port
-5432
-{% endsection %}
-
-{% defer %}
-{% section metadata %}
-## sections_count
-{{ rendered.sections.keys() | list | length }}
-{% endsection %}
-{% enddefer %}
-```
-
-Accessing `rendered.sections.database` in the defer block returns a parsed dict with `host` and `port` keys, not markdown text.
-
 ### Multiple Defer Blocks
 
-You can have multiple defer blocks in a document. Each sees the same first-pass output:
-
-```markdown
-{% defer %}
-**Word count**: {{ rendered.content.split() | length }}
-{% enddefer %}
-
-More content here.
-
-{% defer %}
-**Character count**: {{ rendered.content | length }}
-{% enddefer %}
-```
-
-Both defer blocks see the complete first-pass output, including content between them. But they don't see each other's output—defer blocks execute in parallel during the second pass.
+Multiple defer blocks in a document each see the same first-pass output but not each other's output.
 
 ### Sections in Defer Blocks
 
-Defer blocks can define sections:
+Defer blocks can define sections that are captured in document metadata:
 
 ```markdown
 {% defer %}
 {% section summary %}
 ## Summary
-This document has {{ rendered.sections.keys() | list | length }} sections.
+{{ rendered.sections.keys() | list | length }} sections total
 {% endsection %}
 {% enddefer %}
-```
-
-The `summary` section is captured in document metadata and available via `ref('doc').sections.summary`.
-
-## Naming
-
-Document URIs derive from their file paths relative to the models directory. Subdirectories become part of the URI:
-
-| File Path | URI |
-| :-------- | :-- |
-| `models/overview.md` | `overview` |
-| `models/products/widget.md` | `products/widget` |
-| `models/team/engineering/leads.md` | `team/engineering/leads` |
-
-When referencing documents, use the URI without the `.md` extension:
-
-```markdown
-{{ ref('products/widget').content }}
 ```
