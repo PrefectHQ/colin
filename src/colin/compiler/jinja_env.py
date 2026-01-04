@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from jinja2 import Environment
 
+from colin.compiler.extensions.defer_block import DeferBlockExtension
 from colin.compiler.extensions.filters import create_llm_classify_filter, create_llm_extract_filter
 from colin.compiler.extensions.item_block import ItemBlockExtension
 from colin.compiler.extensions.llm_block import LLMBlockExtension
@@ -24,7 +25,12 @@ def create_jinja_environment() -> Environment:
     """
     env = Environment(
         enable_async=True,
-        extensions=[LLMBlockExtension, ItemBlockExtension, SectionBlockExtension],
+        extensions=[
+            LLMBlockExtension,
+            ItemBlockExtension,
+            SectionBlockExtension,
+            DeferBlockExtension,
+        ],
         # Don't auto-escape for markdown output
         autoescape=False,
     )

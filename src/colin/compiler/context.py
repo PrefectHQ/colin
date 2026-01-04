@@ -53,6 +53,7 @@ class CompileContext:
         self.llm_calls: dict[str, LLMCall] = {}
         self.total_cost: float = 0.0
         self.sections: dict[str, str] = {}  # section_name -> raw_content
+        self.defer_blocks: dict[str, Any] = {}  # defer_id -> callable
 
     @overload
     async def ref(self, target: str) -> ProjectResource: ...
