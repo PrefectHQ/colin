@@ -550,7 +550,7 @@ class CompileEngine:
         self,
         doc: ColinDocument,
         compiled_outputs: dict[str, CompiledDocument],
-        provider_manager,
+        provider_manager: ProviderManager,
         doc_state: OperationState | None = None,
     ) -> CompiledDocument:
         """Compile a single document.

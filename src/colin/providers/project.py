@@ -57,7 +57,7 @@ class ProjectResource(Resource):
         if self._is_private:
             raise ValueError(
                 f"Cannot get path for private file '{self._relative_path}'. "
-                "Private files are not published to target/."
+                "Private files are not published to target/. Use .content instead."
             )
         return self._target_path / self._relative_path
 
@@ -67,7 +67,7 @@ class ProjectResource(Resource):
         if self._is_private:
             raise ValueError(
                 f"Cannot get relative_path for private file '{self._relative_path}'. "
-                "Private files are not published to target/."
+                "Private files are not published to target/. Use .content instead."
             )
         return self._relative_path
 
