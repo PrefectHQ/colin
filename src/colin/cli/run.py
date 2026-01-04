@@ -99,26 +99,26 @@ def render_state(state: CompilationState) -> RenderableType:
     return Group(*trees)
 
 
-def print_project_info(project_file: Path, project_name: str, target_dir: Path) -> None:
+def print_project_info(project_file: Path, project_name: str, output_dir: Path) -> None:
     """Print project info header used by multiple commands."""
     cwd = Path.cwd()
     try:
         config_display = project_file.relative_to(cwd)
-        target_display = target_dir.relative_to(cwd)
+        output_display = output_dir.relative_to(cwd)
     except ValueError:
         config_display = project_file
-        target_display = target_dir
+        output_display = output_dir
 
     console.print(f"[dim]Config:[/]  {config_display}")
     console.print(f"[dim]Project:[/] {project_name}")
-    console.print(f"[dim]Target:[/]  {target_display}/")
+    console.print(f"[dim]Output:[/]  {output_display}/")
     console.print()
 
 
 async def run(
     project: Path = Path("."),
     *,
-    target: Path | None = None,
+    output: Annotated[Path | None, cyclopts.Parameter(name=["-o", "--output"])] = None,
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
     dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
@@ -127,7 +127,7 @@ async def run(
 
     Args:
         project: Project directory (default: current directory).
-        target: Override target directory (default: from colin.toml).
+        output: Override output directory (default: from colin.toml).
         no_cache: Ignore cached results and recompile all documents.
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
@@ -144,7 +144,7 @@ async def run(
 
         config = load_project(project_file)
         project_name = config.name
-        target_dir = target or config.target_path
+        output_dir = output or config.output_path
 
         # Handle dry run
         if dry_run:
@@ -152,12 +152,12 @@ async def run(
                 list[tuple[str, Path]],
                 await api.compile_project(
                     project_dir=project,
-                    target_dir=target,
+                    output_dir=output,
                     force=no_cache,
                     dry_run=True,
                 ),
             )
-            print_project_info(project_file, project_name, target_dir)
+            print_project_info(project_file, project_name, output_dir)
             console.print(f"[bold]Would run {len(dry_result)} documents:[/]")
             for uri, _ in dry_result:
                 console.print(f"  {uri}")
@@ -170,7 +170,7 @@ async def run(
             # No output at all, just run compilation
             await api.compile_project(
                 project_dir=project,
-                target_dir=target,
+                output_dir=output,
                 force=no_cache,
                 dry_run=False,
                 state=state,
@@ -178,7 +178,7 @@ async def run(
             return
 
         # Print project info before starting
-        print_project_info(project_file, project_name, target_dir)
+        print_project_info(project_file, project_name, output_dir)
 
         with Live(
             # render_state(state),
@@ -190,7 +190,7 @@ async def run(
             task = asyncio.create_task(
                 api.compile_project(
                     project_dir=project,
-                    target_dir=target,
+                    output_dir=output,
                     force=no_cache,
                     dry_run=False,
                     state=state,
@@ -245,7 +245,7 @@ def init(
     *,
     name: str | None = None,
     models: str = "models",
-    target: str = "target",
+    output: str = "output",
 ) -> None:
     """Initialize a new Colin project.
 
@@ -255,7 +255,7 @@ def init(
         project: Project directory (default: current directory).
         name: Project name (default: directory name).
         models: Path to models directory (default: "models").
-        target: Path to target directory (default: "target").
+        output: Path to output directory (default: "output").
     """
     project_dir = project.resolve()
 
@@ -264,7 +264,7 @@ def init(
             directory=project_dir,
             name=name,
             model_path_rel=models,
-            target_path_rel=target,
+            output_path_rel=output,
         )
 
         cwd = Path.cwd()
@@ -290,7 +290,7 @@ def clean(
     *,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
 ) -> None:
-    """Remove target directory (compiled outputs and manifest).
+    """Remove output directory (compiled outputs and manifest).
 
     Args:
         project: Project directory (default: current directory).
@@ -298,33 +298,33 @@ def clean(
     """
     status_info = api.get_project_status(project)
     project_file = status_info["project_file"]
-    target_dir = status_info["target_dir"]
+    output_dir = status_info["output_dir"]
 
     if not project_file:
         err_console.print(f"[red]Error:[/] No colin.toml found in {project.resolve()}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
 
-    if not target_dir.exists():
+    if not output_dir.exists():
         console.print("[dim]Nothing to clean.[/]")
         return
 
     # Collect files for display
-    files_in_target: list[str] = []
+    files_in_output: list[str] = []
     project_dir = project.resolve()
-    for path in target_dir.rglob("*"):
+    for path in output_dir.rglob("*"):
         if path.is_file():
             try:
                 rel = path.relative_to(project_dir)
-                files_in_target.append(str(rel))
+                files_in_output.append(str(rel))
             except ValueError:
-                files_in_target.append(str(path))
+                files_in_output.append(str(path))
 
     # Show what will be removed
     if not yes:
-        print_project_info(project_file, status_info["project_name"], target_dir)
+        print_project_info(project_file, status_info["project_name"], output_dir)
         console.print("[bold]Will remove:[/]")
-        for rel in files_in_target:
+        for rel in files_in_output:
             console.print(f"  [yellow]{rel}[/]")
         console.print()
         confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
@@ -334,7 +334,7 @@ def clean(
 
     # Show project info if skipping confirmation
     if yes:
-        print_project_info(project_file, status_info["project_name"], target_dir)
+        print_project_info(project_file, status_info["project_name"], output_dir)
 
     # Remove files
     removed = api.clean_project(project)

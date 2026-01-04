@@ -5,7 +5,7 @@
 
 ## Context
 
-Colin currently writes all compiled files to `target/` with the manifest at `target/manifest.json`. This conflates two concerns:
+Colin writes all compiled files to `output/` with the manifest at `.colin/manifest.json`. This separates two concerns:
 
 1. **Cache layer**: Compiled artifacts for incremental builds and LLM reproducibility
 2. **Published outputs**: Files users actually want to consume
@@ -28,19 +28,19 @@ project/
 ├── .colin/              # cache layer (fixed location)
 │   ├── manifest.json    # build metadata, timestamps
 │   └── compiled/        # all compiled artifacts
-└── target/              # published outputs only (configurable)
+└── output/              # published outputs only (configurable)
 ```
 
 **`.colin/`**: Fixed location in project root (like `.git/`). Contains all compiled artifacts and the manifest. This is the source of truth for compiled content.
 
-**`target/`**: Configurable via `target-path`. Contains only published files. This is what users consume. **This directory is fully managed by Colin**—it may be completely wiped and rebuilt on each compile. Users should not place hand-written files here; instead, copy files out of `target/` if needed elsewhere.
+**`output/`**: Configurable via `output-path`. Contains only published files. This is what users consume. **This directory is fully managed by Colin**—it may be completely wiped and rebuilt on each compile. Users should not place hand-written files here; instead, copy files out of `output/` if needed elsewhere.
 
 ### Compilation pipeline
 
 Compilation produces final artifacts in a single pass:
 
 ```
-models/           →  .colin/compiled/  →  target/
+models/           →  .colin/compiled/  →  output/
 (source files)       (final artifacts)    (literal copy)
      ↓                     ↓                    ↓
   COMPILE              STORE               PUBLISH
@@ -52,19 +52,19 @@ models/           →  .colin/compiled/  →  target/
 
 **Compiled = final**: Files in `.colin/compiled/` are the finished artifacts. A JSON document is stored as valid JSON, not intermediate markdown.
 
-**Publishing = copy**: The publish step simply copies public files from `.colin/compiled/` to `target/`. No transformation, no re-rendering.
+**Publishing = copy**: The publish step simply copies public files from `.colin/compiled/` to `output/`. No transformation, no re-rendering.
 
 **ref() by output name**: References are to OUTPUT documents by their actual filenames. `ref("config.json")` looks for `config.json` in compiled/. `ref("config")` defaults to `ref("config.md")`.
 
 ### Visibility: public vs private
 
-Files can be marked as private (compile but don't copy to target).
+Files can be marked as private (compile but don't copy to output).
 
 **Naming convention (preferred):** Any path segment under the models root that starts with `_` marks the file as private. This is the idiomatic way to mark internal/helper files:
 
 ```
 models/
-├── greeting.md          # public (copied to target/)
+├── greeting.md          # public (copied to output/)
 ├── _helpers.md          # private (stays in .colin/compiled/)
 ├── _data.md             # private
 ├── _partials/intro.md   # private (directory starts with _)
@@ -89,15 +89,15 @@ colin:
 
 ### Ref resolution
 
-`ref()` reads content from `.colin/compiled/` (source of truth). Path accessors resolve to `target/` for linking:
+`ref()` reads content from `.colin/compiled/` (source of truth). Path accessors resolve to `output/` for linking:
 
 | Property | Public file | Private file |
 |----------|-------------|--------------|
 | `.content` | `.colin/compiled/` | `.colin/compiled/` |
-| `.path` | `target/file.md` | **Error** |
+| `.path` | `output/file.md` | **Error** |
 | `.relative_path` | `file.md` | **Error** |
 
-Accessing `.path` on private files raises an error—linking to files that won't exist in `target/` is a bug.
+Accessing `.path` on private files raises an error—linking to files that won't exist in `output/` is a bug.
 
 ### Artifact storage model
 
@@ -107,7 +107,7 @@ class CompiledArtifact:
     output_path: str        # greeting.md or config.json (actual filename)
     content: str            # final rendered content (JSON, YAML, or markdown)
     output_hash: str        # content hash for cache invalidation
-    is_private: bool        # if True, don't copy to target/
+    is_private: bool        # if True, don't copy to output/
     metadata: dict          # frontmatter, format, etc.
 ```
 
@@ -148,10 +148,10 @@ Storage plugins provide escape hatch for projects that want remote cache instead
 ## Consequences
 
 - New `.colin/` directory in all projects
-- Manifest moves from `target/manifest.json` to `.colin/manifest.json`
+- Manifest is at `.colin/manifest.json`
 - Compilation produces final artifacts (Jinja + rendering in one step)
 - `.colin/compiled/` contains ready-to-use files (JSON is valid JSON, etc.)
-- Publishing is a simple copy from `.colin/compiled/` to `target/`
+- Publishing is a simple copy from `.colin/compiled/` to `output/`
 - `ref("file.json")` looks for the actual output filename
 - `ref("file")` defaults to `ref("file.md")`
 - `ref().path` errors on private files

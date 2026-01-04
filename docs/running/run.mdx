@@ -4,7 +4,7 @@ sidebarTitle: Run
 icon: play
 ---
 
-The `colin run` command compiles your project. It discovers documents in your `models/` directory, resolves dependencies between them, and produces compiled output in `target/`. During compilation, Colin invokes LLM calls as needed, caches their results, and tracks changes to enable incremental rebuilds.
+The `colin run` command compiles your project. It discovers documents in your `models/` directory, resolves dependencies between them, and produces compiled output in `output/`. During compilation, Colin invokes LLM calls as needed, caches their results, and tracks changes to enable incremental rebuilds.
 
 A compilation run involves several phases: discovery finds all documents, graph building extracts dependency edges from `ref()` calls, topological sorting determines compilation order, and finally each document compiles with its dependencies already available.
 
@@ -21,7 +21,7 @@ Colin displays progress as it compiles, showing each document and its operations
 ```
 Config:  colin.toml
 Project: my-context
-Target:  target/
+Output:  output/
 
 ✓ company.md
 ✓ products/overview.md
@@ -85,7 +85,7 @@ Output:
 ```
 Config:  colin.toml
 Project: my-context
-Target:  target/
+Output:  output/
 
 Would run 3 documents:
   context/company.md
@@ -105,12 +105,12 @@ colin run -q
 
 In quiet mode, Colin only outputs errors. Use this in scripts or CI environments where you only care about success or failure.
 
-### Target Override
+### Output Override
 
-The `--target` flag overrides the target directory from `colin.toml`:
+The `--output` flag overrides the output directory from `colin.toml`:
 
 ```bash
-colin run --target ./output
+colin run --output ./output
 ```
 
 Compiled documents and the manifest write to the specified directory instead of the default.
@@ -125,7 +125,7 @@ A document recompiles when:
 2. **A dependency changed** - Any document it references was recompiled this run
 3. **It's new** - No record exists in the manifest
 
-Documents that haven't changed and whose dependencies are unchanged skip compilation entirely. Their compiled output from the previous run remains in `target/`.
+Documents that haven't changed and whose dependencies are unchanged skip compilation entirely. Their compiled output from the previous run remains in `output/`.
 
 ### Change Propagation
 

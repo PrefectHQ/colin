@@ -95,7 +95,7 @@ src/colin/
 10. **Render output** - Apply format renderer (markdown passthrough, JSON extraction, YAML extraction)
 11. **Write to cache** - Save compiled outputs to `.colin/compiled/`
 12. **Update manifest** - Record output_path, hashes, refs, LLM calls
-13. **Publish** - Copy non-private outputs from `.colin/compiled/` to `target/`
+13. **Publish** - Copy non-private outputs from `.colin/compiled/` to `output/`
 
 ### ref() Call Flow
 
@@ -112,7 +112,7 @@ ref("config.json")                              # Project ref to JSON output
        - .content: compiled output
        - .ref(): Ref for re-fetching
        - .version: output_hash from manifest
-       - .path, .relative_path: target/ paths (errors on private files)
+       - .path, .relative_path: output/ paths (errors on private files)
        - .name, .description: from frontmatter
        - __str__() → .content
 
@@ -156,21 +156,21 @@ project/
 ├── .colin/              # build cache (fixed location)
 │   ├── manifest.json    # build metadata
 │   └── compiled/        # all compiled artifacts
-└── target/              # published outputs only
+└── output/              # published outputs only
 ```
 
 **`.colin/`**: Fixed location containing all compiled artifacts and the manifest. This is the source of truth for compiled content. Should be committed to git for LLM reproducibility.
 
-**`target/`**: Configurable output directory containing only published files. Fully managed by Colin—may be completely wiped on each compile.
+**`output/`**: Configurable output directory containing only published files. Fully managed by Colin—may be completely wiped on each compile.
 
 ### Private Files
 
-Files can be marked as private (compiled but not published to target):
+Files can be marked as private (compiled but not published to output):
 
 - **Naming convention**: Any path segment starting with `_` marks the file as private (`_helpers.md`, `_partials/intro.md`)
 - **Frontmatter override**: `colin.private: true/false` overrides the naming convention
 
-Private files are accessible via `ref().content` but `ref().path` raises an error (linking to files that won't exist in target is a bug).
+Private files are accessible via `ref().content` but `ref().path` raises an error (linking to files that won't exist in output is a bug).
 
 See [ADR 018: Storage Architecture](decisions/018-storage-architecture.md) for details.
 

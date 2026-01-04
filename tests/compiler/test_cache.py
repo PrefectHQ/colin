@@ -23,8 +23,8 @@ class TestStalenessDetection:
     ) -> tuple[CompileEngine, Path, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        target_dir = tmp_path / "target"
-        target_dir.mkdir(parents=True)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
         build_dir = tmp_path / ".colin"
         build_dir.mkdir()
         compiled_dir = build_dir / "compiled"
@@ -34,7 +34,7 @@ class TestStalenessDetection:
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=target_dir,
+            output_path=output_dir,
             manifest_path=build_dir / "manifest.json",
         )
         artifact_storage = FileStorage(base_path=compiled_dir)
@@ -43,7 +43,7 @@ class TestStalenessDetection:
             config=config,
             artifact_storage=artifact_storage,
         )
-        return engine, source_dir, compiled_dir, target_dir
+        return engine, source_dir, compiled_dir, output_dir
 
     async def test_stale_when_never_compiled(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
@@ -228,8 +228,8 @@ class TestCachePolicies:
     ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        target_dir = tmp_path / "target"
-        target_dir.mkdir(parents=True)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
         build_dir = tmp_path / ".colin"
         build_dir.mkdir()
         compiled_dir = build_dir / "compiled"
@@ -239,7 +239,7 @@ class TestCachePolicies:
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=target_dir,
+            output_path=output_dir,
             manifest_path=build_dir / "manifest.json",
         )
         artifact_storage = FileStorage(base_path=compiled_dir)
@@ -248,7 +248,7 @@ class TestCachePolicies:
             config=config,
             artifact_storage=artifact_storage,
         )
-        return engine, source_dir, target_dir
+        return engine, source_dir, output_dir
 
     async def test_cache_never_always_rebuilds(
         self, engine_setup: tuple[CompileEngine, Path, Path]
@@ -858,8 +858,8 @@ class TestTimeBasedExpiration:
     ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        target_dir = tmp_path / "target"
-        target_dir.mkdir(parents=True)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
         build_dir = tmp_path / ".colin"
         build_dir.mkdir()
         compiled_dir = build_dir / "compiled"
@@ -869,7 +869,7 @@ class TestTimeBasedExpiration:
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=target_dir,
+            output_path=output_dir,
             manifest_path=build_dir / "manifest.json",
         )
         artifact_storage = FileStorage(base_path=compiled_dir)
@@ -878,7 +878,7 @@ class TestTimeBasedExpiration:
             config=config,
             artifact_storage=artifact_storage,
         )
-        return engine, source_dir, target_dir
+        return engine, source_dir, output_dir
 
     async def test_expired_after_time_threshold(
         self, engine_setup: tuple[CompileEngine, Path, Path]

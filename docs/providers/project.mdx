@@ -163,7 +163,7 @@ Focus on revenue changes and customer growth.
 References point to compiled outputs, not source files. When you reference a document:
 
 1. Colin compiles the source document (if needed)
-2. The compiled output is stored in `target/`
+2. The compiled output is stored in `output/`
 3. `ref()` reads from the compiled output
 
 This means a reference to `ref('data')` returns the result of compiling `models/data.md`, including any template expansions, LLM calls, and nested references that document performed.

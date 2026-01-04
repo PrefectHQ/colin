@@ -20,10 +20,10 @@ Files in the `models/` directory (or configured `model-path`) are models regardl
 
 ```
 models/
-  report.md        → target/compiled/report.md
-  config.json      → target/compiled/config.json
-  schema.yaml      → target/compiled/schema.yaml
-  query.sql        → target/compiled/query.sql
+  report.md        → output/report.md
+  config.json      → output/config.json
+  schema.yaml      → output/schema.yaml
+  query.sql        → output/query.sql
 ```
 
 All files are processed with Jinja templating. The extension determines output format. IDEs treat them as their native type.

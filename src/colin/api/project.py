@@ -26,7 +26,7 @@ DEFAULT_CONFIG = """\
 name = "{name}"
 
 # model-path = "models"
-# target-path = "target"
+# output-path = "output"
 """
 
 
@@ -100,8 +100,8 @@ class ProjectConfig(BaseModel):
     """Absolute path to project directory (where colin.toml lives)."""
     model_path: Path
     """Absolute path to models directory."""
-    target_path: Path
-    """Absolute path to target directory (published outputs)."""
+    output_path: Path
+    """Absolute path to output directory (published outputs)."""
     manifest_path: Path
     """Absolute path to manifest file (.colin/manifest.json)."""
 
@@ -226,7 +226,7 @@ def load_project(path: Path) -> ProjectConfig:
     # Resolve paths relative to project root (or use absolute if specified)
     project_root = path.parent.resolve()
     model_path_rel = project.get("model-path", "models")
-    target_path_rel = project.get("target-path", "target")
+    output_path_rel = project.get("output-path", "output")
     manifest_path_rel = project.get("manifest-path")
 
     # Handle absolute paths
@@ -235,10 +235,10 @@ def load_project(path: Path) -> ProjectConfig:
     else:
         model_path = (project_root / model_path_rel).resolve()
 
-    if Path(target_path_rel).is_absolute():
-        target_path = Path(target_path_rel).resolve()
+    if Path(output_path_rel).is_absolute():
+        output_path = Path(output_path_rel).resolve()
     else:
-        target_path = (project_root / target_path_rel).resolve()
+        output_path = (project_root / output_path_rel).resolve()
 
     # Manifest path: explicit config or default to .colin/manifest.json
     if manifest_path_rel:
@@ -274,7 +274,7 @@ def load_project(path: Path) -> ProjectConfig:
         name=project.get("name", "colin-project"),
         project_root=project_root,
         model_path=model_path,
-        target_path=target_path,
+        output_path=output_path,
         manifest_path=manifest_path,
         project_storage=project_storage,
         artifacts_storage=artifacts_storage,
@@ -305,7 +305,7 @@ def init_project(
     directory: Path,
     name: str | None = None,
     model_path_rel: str = "models",
-    target_path_rel: str = "target",
+    output_path_rel: str = "output",
 ) -> tuple[Path, Path]:
     """Initialize a new Colin project with colin.toml and models directory.
 
@@ -313,7 +313,7 @@ def init_project(
         directory: Directory to create project in.
         name: Project name (default: directory name).
         model_path_rel: Relative path to models directory (default: "models").
-        target_path_rel: Relative path to target directory (default: "target").
+        output_path_rel: Relative path to output directory (default: "output").
 
     Returns:
         Tuple of (colin.toml path, models directory path).
@@ -329,7 +329,7 @@ def init_project(
     # Resolve paths
     project_root = directory.resolve()
     model_path = (project_root / model_path_rel).resolve()
-    target_path = (project_root / target_path_rel).resolve()
+    output_path = (project_root / output_path_rel).resolve()
     manifest_path = project_root / ".colin" / settings.manifest_file
 
     # Create colin.toml with full config
@@ -338,7 +338,7 @@ def init_project(
         name=project_name,
         project_root=project_root,
         model_path=model_path,
-        target_path=target_path,
+        output_path=output_path,
         manifest_path=manifest_path,
     )
     # Create project directory and models subdirectory
@@ -367,15 +367,15 @@ def save_project(path: Path, config: ProjectConfig) -> None:
         model_path_rel = str(config.model_path)
 
     try:
-        target_path_rel = config.target_path.relative_to(config.project_root)
+        output_path_rel = config.output_path.relative_to(config.project_root)
     except ValueError:
         # Absolute path outside project root - keep as absolute
-        target_path_rel = str(config.target_path)
+        output_path_rel = str(config.output_path)
 
     project_data: dict[str, Any] = {
         "name": config.name,
         "model-path": str(model_path_rel),
-        "target-path": str(target_path_rel),
+        "output-path": str(output_path_rel),
     }
 
     data: dict[str, Any] = {"project": project_data}
@@ -406,7 +406,7 @@ def get_project_status(project_dir: Path) -> dict:
         Dictionary with status information:
         - project_file: Path to colin.toml (or None if not found)
         - project_name: Name of the project
-        - target_dir: Target directory path
+        - output_dir: Output directory path
         - manifest_exists: Whether manifest.json exists
         - document_count: Number of documents in manifest
         - total_llm_calls: Total LLM calls across all documents
@@ -418,12 +418,12 @@ def get_project_status(project_dir: Path) -> dict:
     if project_file:
         config = load_project(project_file)
         project_name = config.name
-        target_dir = config.target_path
+        output_dir = config.output_path
         manifest_path = config.manifest_path
     else:
         project_dir = project_dir.resolve()
         project_name = project_dir.name
-        target_dir = project_dir / "target"
+        output_dir = project_dir / "output"
         manifest_path = project_dir / ".colin" / settings.manifest_file
 
     manifest = load_manifest(manifest_path)
@@ -434,7 +434,7 @@ def get_project_status(project_dir: Path) -> dict:
     return {
         "project_file": project_file,
         "project_name": project_name,
-        "target_dir": target_dir,
+        "output_dir": output_dir,
         "manifest_exists": manifest_path.exists(),
         "document_count": len(manifest.documents),
         "total_llm_calls": total_llm_calls,
@@ -451,7 +451,7 @@ def get_project_status(project_dir: Path) -> dict:
 
 
 def clean_project(project_dir: Path) -> list[Path]:
-    """Remove target directory and all compiled outputs.
+    """Remove output directory and all compiled outputs.
 
     Args:
         project_dir: Project directory.
@@ -463,17 +463,17 @@ def clean_project(project_dir: Path) -> list[Path]:
 
     if project_file:
         config = load_project(project_file)
-        target_dir = config.target_path
+        output_dir = config.output_path
     else:
-        target_dir = project_dir.resolve() / "target"
+        output_dir = project_dir.resolve() / "output"
 
-    if not target_dir.exists():
+    if not output_dir.exists():
         return []
 
     # Collect files before removal
-    removed_files = [path for path in target_dir.rglob("*") if path.is_file()]
+    removed_files = [path for path in output_dir.rglob("*") if path.is_file()]
 
     # Remove directory
-    shutil.rmtree(target_dir)
+    shutil.rmtree(output_dir)
 
     return removed_files

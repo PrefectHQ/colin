@@ -132,7 +132,7 @@ name: Standup Context
 colin run
 ```
 
-Colin compiles `team` first (no dependencies), then `standup` (depends on `team` plus Linear and GitHub data). Output lands in `target/`.
+Colin compiles `team` first (no dependencies), then `standup` (depends on `team` plus Linear and GitHub data). Output lands in `output/`.
 
 Update `team.md`—add a new engineer, change the focus areas. Run `colin run` again. Both documents recompile because `standup` depends on `team`.
 
@@ -238,7 +238,7 @@ For external resources (MCP, HTTP), Colin tracks versions automatically. When yo
 [project]
 name = "my-context"
 model-path = "models"
-target-path = "target"
+output-path = "output"
 
 [[providers.llm]]
 model = "anthropic:claude-sonnet-4-5"

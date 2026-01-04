@@ -147,7 +147,7 @@ Auto-generated keys start with `auto:` followed by a hash. Manual keys use the I
 
 ## The Manifest
 
-The `manifest.json` file in your `target/` directory tracks all compilation state. It records:
+The `manifest.json` file in your `output/` directory tracks all compilation state. It records:
 
 - Document metadata (source hashes, output hashes, timestamps)
 - Dependency edges (which refs each document evaluated)
@@ -197,7 +197,7 @@ A typical manifest structure:
 
 ### Manifest Location
 
-The manifest writes to `target/manifest.json` by default. If you override the target directory with `--target`, the manifest goes there instead.
+The manifest writes to `output/manifest.json` by default. If you override the output directory with `--output`, the manifest goes there instead.
 
 ## No Cache
 
@@ -216,7 +216,7 @@ This incurs the full cost of all LLM calls since nothing is cached.
 
 ## Cleaning
 
-The `colin clean` command removes the entire `target/` directory, including the manifest:
+The `colin clean` command removes the entire `output/` directory, including the manifest:
 
 ```bash
 colin clean

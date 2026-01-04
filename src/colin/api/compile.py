@@ -55,7 +55,7 @@ class CompileResult:
 async def compile_project(
     project_dir: Path,
     *,
-    target_dir: Path | None = None,
+    output_dir: Path | None = None,
     force: bool = False,
     dry_run: bool = False,
     state: CompilationState | None = None,
@@ -64,7 +64,7 @@ async def compile_project(
 
     Args:
         project_dir: Project directory (must contain colin.toml).
-        target_dir: Override target directory (default: from colin.toml).
+        output_dir: Override output directory (default: from colin.toml).
         force: Force recompile all documents.
         dry_run: If True, return list of (uri, path) tuples instead of compiling.
         state: Optional compilation state for progress tracking.
@@ -85,17 +85,17 @@ async def compile_project(
 
     config = load_project(project_file)
 
-    # Override target_dir if provided (only affects published outputs)
-    if target_dir is not None:
-        target_dir = target_dir.resolve()
-        # Update config paths - manifest stays in .colin/, only target changes
+    # Override output_dir if provided (only affects published outputs)
+    if output_dir is not None:
+        output_dir = output_dir.resolve()
+        # Update config paths - manifest stays in .colin/, only output changes
         from colin.api.project import ProjectConfig
 
         config = ProjectConfig(
             name=config.name,
             project_root=config.project_root,
             model_path=config.model_path,
-            target_path=target_dir,
+            output_path=output_dir,
             manifest_path=config.manifest_path,  # Keep in .colin/
             project_storage=config.project_storage,
             artifacts_storage=config.artifacts_storage,
@@ -109,7 +109,7 @@ async def compile_project(
             for path in config.model_path.rglob("*.md"):
                 relative = path.relative_to(config.model_path)
                 uri = f"project://{relative}"
-                uris.append((uri, config.target_path / str(relative)))
+                uris.append((uri, config.output_path / str(relative)))
         return sorted(uris, key=lambda x: x[0])
 
     # Ensure .colin/compiled/ directory exists

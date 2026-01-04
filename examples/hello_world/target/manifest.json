@@ -1,0 +1,116 @@
+{
+  "version": "1",
+  "compiled_at": "2026-01-02T02:25:10.921882Z",
+  "documents": {
+    "project://greeting.md": {
+      "uri": "project://greeting.md",
+      "source_path": null,
+      "source_hash": "0ecab7e96184f7ba",
+      "output_hash": "0ecab7e96184f7ba",
+      "compiled_at": "2026-01-02T02:25:03.404481Z",
+      "refs": [],
+      "ref_versions": {},
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://summary.md": {
+      "uri": "project://summary.md",
+      "source_path": null,
+      "source_hash": "6d45446de3a195df",
+      "output_hash": "a6a67871dcb011a4",
+      "compiled_at": "2026-01-02T02:25:05.155313Z",
+      "refs": [
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "greeting.md"
+          }
+        }
+      ],
+      "ref_versions": {
+        "{\"args\": {\"path\": \"greeting.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "0ecab7e96184f7ba"
+      },
+      "llm_calls": {
+        "llm.extract:789ac724c76d3599": {
+          "call_id": "llm.extract:789ac724c76d3599",
+          "input_hash": "12799d974a56f5a8",
+          "output_hash": "8ff5dfa04615e046",
+          "output": "# Extracted Information\n\n**Main Message:** Colin is a simple document designed to be referenced by other documents.",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T02:25:04.273299Z"
+        },
+        "llm.complete:3d7f34d0c0e58da0": {
+          "call_id": "llm.complete:3d7f34d0c0e58da0",
+          "input_hash": "3d7f34d0c0e58da0",
+          "output_hash": "7ebcfada5ce1a816",
+          "output": "# Welcome Haiku\n\nWarm words greet the soul,\nA door opens to belonging,\nNew journey begins.",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T02:25:05.153985Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://welcome.md": {
+      "uri": "project://welcome.md",
+      "source_path": null,
+      "source_hash": "0042e649e2564307",
+      "output_hash": "5ce49dd641d0d293",
+      "compiled_at": "2026-01-02T02:25:05.155863Z",
+      "refs": [
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "greeting.md"
+          }
+        }
+      ],
+      "ref_versions": {
+        "{\"args\": {\"path\": \"greeting.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "0ecab7e96184f7ba"
+      },
+      "llm_calls": {
+        "llm.complete:d6a5a0fc53ae5f47": {
+          "call_id": "llm.complete:d6a5a0fc53ae5f47",
+          "input_hash": "d6a5a0fc53ae5f47",
+          "output_hash": "08591c85af3295ea",
+          "output": "# French Translation\n\nBonjour ! Bienvenue dans Colin.\n\nCeci est un document simple que d'autres documents peuvent référencer.\n\n---\n\n**Alternative (slightly more formal):**\n\nBienvenue dans Colin !\n\nCeci est un document simple que d'autres documents peuvent consulter ou référencer.",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T02:25:04.472765Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    }
+  },
+  "cache": {
+    "llm.extract:1e09c44e2404d9ae": {
+      "cache_key": "llm.extract:1e09c44e2404d9ae",
+      "output": "\"# Extracted Information\\n\\n**Main Message:** Colin is a simple document designed to be referenced by other documents.\"",
+      "created_at": "2026-01-02T02:25:04.273319Z"
+    },
+    "llm.complete:2543964341d62669": {
+      "cache_key": "llm.complete:2543964341d62669",
+      "output": "\"# French Translation\\n\\nBonjour ! Bienvenue dans Colin.\\n\\nCeci est un document simple que d'autres documents peuvent r\\u00e9f\\u00e9rencer.\\n\\n---\\n\\n**Alternative (slightly more formal):**\\n\\nBienvenue dans Colin !\\n\\nCeci est un document simple que d'autres documents peuvent consulter ou r\\u00e9f\\u00e9rencer.\"",
+      "created_at": "2026-01-02T02:25:04.472802Z"
+    },
+    "llm.complete:6b599ad2bde14ac1": {
+      "cache_key": "llm.complete:6b599ad2bde14ac1",
+      "output": "\"# Welcome Haiku\\n\\nWarm words greet the soul,\\nA door opens to belonging,\\nNew journey begins.\"",
+      "created_at": "2026-01-02T02:25:05.154042Z"
+    }
+  }
+}

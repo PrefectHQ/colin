@@ -15,10 +15,10 @@ from colin.providers.storage.file import FileStorage
 
 @pytest.fixture
 def engine_setup(tmp_path: Path, mock_agent: MagicMock) -> tuple[CompileEngine, Path, Path, Path]:
-    """Create engine with source, build, and target directories."""
+    """Create engine with source, build, and output directories."""
     source_dir = tmp_path / "models"
     source_dir.mkdir()
-    output_dir = tmp_path / "target"
+    output_dir = tmp_path / "output"
     output_dir.mkdir(parents=True)
     build_dir = tmp_path / ".colin"
     build_dir.mkdir()
@@ -29,7 +29,7 @@ def engine_setup(tmp_path: Path, mock_agent: MagicMock) -> tuple[CompileEngine, 
         name="test-project",
         project_root=tmp_path,
         model_path=source_dir,
-        target_path=output_dir,
+        output_path=output_dir,
         manifest_path=build_dir / "manifest.json",
     )
     artifact_storage = FileStorage(base_path=compiled_dir)
@@ -47,8 +47,8 @@ class TestPrivateNamingConvention:
     async def test_underscore_prefix_marks_file_private(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
-        """Files with _ prefix are private and not published to target."""
-        engine, source_dir, compiled_dir, target_dir = engine_setup
+        """Files with _ prefix are private and not published to output."""
+        engine, source_dir, compiled_dir, output_dir = engine_setup
 
         (source_dir / "_helper.md").write_text("---\nname: Helper\n---\nPrivate content")
         (source_dir / "public.md").write_text("---\nname: Public\n---\nPublic content")
@@ -59,15 +59,15 @@ class TestPrivateNamingConvention:
         assert (compiled_dir / "_helper.md").exists()
         assert (compiled_dir / "public.md").exists()
 
-        # Only public file published to target/
-        assert not (target_dir / "_helper.md").exists()
-        assert (target_dir / "public.md").exists()
+        # Only public file published to output/
+        assert not (output_dir / "_helper.md").exists()
+        assert (output_dir / "public.md").exists()
 
     async def test_underscore_directory_marks_files_private(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Files in _ prefixed directories are private."""
-        engine, source_dir, compiled_dir, target_dir = engine_setup
+        engine, source_dir, compiled_dir, output_dir = engine_setup
 
         partials_dir = source_dir / "_partials"
         partials_dir.mkdir()
@@ -81,14 +81,14 @@ class TestPrivateNamingConvention:
         assert (compiled_dir / "main.md").exists()
 
         # Only main published
-        assert not (target_dir / "_partials" / "intro.md").exists()
-        assert (target_dir / "main.md").exists()
+        assert not (output_dir / "_partials" / "intro.md").exists()
+        assert (output_dir / "main.md").exists()
 
     async def test_nested_underscore_directory_marks_files_private(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Files under nested _ prefixed directories are private."""
-        engine, source_dir, compiled_dir, target_dir = engine_setup
+        engine, source_dir, compiled_dir, output_dir = engine_setup
 
         nested_dir = source_dir / "chapters" / "_drafts"
         nested_dir.mkdir(parents=True)
@@ -97,7 +97,7 @@ class TestPrivateNamingConvention:
         await engine.compile_all()
 
         assert (compiled_dir / "chapters" / "_drafts" / "draft.md").exists()
-        assert not (target_dir / "chapters" / "_drafts" / "draft.md").exists()
+        assert not (output_dir / "chapters" / "_drafts" / "draft.md").exists()
 
     async def test_manifest_tracks_private_status(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
@@ -127,7 +127,7 @@ class TestPrivateFrontmatterOverride:
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Frontmatter colin.private: true makes a normally public file private."""
-        engine, source_dir, compiled_dir, target_dir = engine_setup
+        engine, source_dir, compiled_dir, output_dir = engine_setup
 
         (source_dir / "secret.md").write_text("""\
 ---
@@ -143,7 +143,7 @@ Secret content
 
         # Compiled but not published
         assert (compiled_dir / "secret.md").exists()
-        assert not (target_dir / "secret.md").exists()
+        assert not (output_dir / "secret.md").exists()
 
         meta = engine.manifest.get_document("project://secret.md")
         assert meta is not None
@@ -153,7 +153,7 @@ Secret content
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Frontmatter colin.private: false makes a _ prefixed file public."""
-        engine, source_dir, compiled_dir, target_dir = engine_setup
+        engine, source_dir, compiled_dir, output_dir = engine_setup
 
         (source_dir / "_actually_public.md").write_text("""\
 ---
@@ -169,7 +169,7 @@ Public content despite underscore
 
         # Both compiled and published
         assert (compiled_dir / "_actually_public.md").exists()
-        assert (target_dir / "_actually_public.md").exists()
+        assert (output_dir / "_actually_public.md").exists()
 
         meta = engine.manifest.get_document("project://_actually_public.md")
         assert meta is not None
@@ -213,7 +213,7 @@ Helper content.
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """ref().content works for private files."""
-        engine, source_dir, _, target_dir = engine_setup
+        engine, source_dir, _, output_dir = engine_setup
 
         (source_dir / "_data.md").write_text("---\nname: Data\n---\nSecret data")
         (source_dir / "consumer.md").write_text("""\
@@ -228,7 +228,7 @@ Data: {{ ref('_data.md').content }}
 
         consumer = next(doc for doc in result if doc.uri == "project://consumer.md")
         assert "Secret data" in consumer.output
-        assert (target_dir / "consumer.md").exists()
+        assert (output_dir / "consumer.md").exists()
 
     async def test_ref_path_raises_on_private_files(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
@@ -318,7 +318,7 @@ Path: {{ ref('_config.json').path }}
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """ref('_config.json').content works for private JSON outputs."""
-        engine, source_dir, _, target_dir = engine_setup
+        engine, source_dir, _, output_dir = engine_setup
 
         (source_dir / "_config.md").write_text("""\
 ---
@@ -342,9 +342,9 @@ Content: {{ ref('_config.json').content }}
 
         consumer = next(doc for doc in result if doc.uri == "project://consumer.md")
         assert '"key": "value"' in consumer.output
-        assert (target_dir / "consumer.md").exists()
+        assert (output_dir / "consumer.md").exists()
         # Private JSON should NOT be in target
-        assert not (target_dir / "_config.json").exists()
+        assert not (output_dir / "_config.json").exists()
 
     async def test_private_yaml_output_path_raises(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
@@ -382,7 +382,7 @@ Path: {{ ref('_config.yaml').path }}
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """ref('config.json') finds manifest metadata via output_path lookup."""
-        engine, source_dir, compiled_dir, target_dir = engine_setup
+        engine, source_dir, compiled_dir, output_dir = engine_setup
 
         (source_dir / "config.md").write_text("""\
 ---
@@ -408,7 +408,7 @@ localhost
         assert by_output.uri == "project://config.md"
 
         # Verify output exists in correct location
-        assert (target_dir / "config.json").exists()
+        assert (output_dir / "config.json").exists()
         assert (compiled_dir / "config.json").exists()
 
 
@@ -425,8 +425,8 @@ class TestParentDirectoryDoesNotAffectPrivacy:
 
         source_dir = project_root / "models"
         source_dir.mkdir()
-        target_dir = project_root / "target"
-        target_dir.mkdir()
+        output_dir = project_root / "output"
+        output_dir.mkdir()
         build_dir = project_root / ".colin"
         build_dir.mkdir()
         compiled_dir = build_dir / "compiled"
@@ -436,7 +436,7 @@ class TestParentDirectoryDoesNotAffectPrivacy:
             name="test-project",
             project_root=project_root,
             model_path=source_dir,
-            target_path=target_dir,
+            output_path=output_dir,
             manifest_path=build_dir / "manifest.json",
         )
         artifact_storage = FileStorage(base_path=compiled_dir)
@@ -448,7 +448,7 @@ class TestParentDirectoryDoesNotAffectPrivacy:
         await engine.compile_all()
 
         # File should be published even though project is in _my_project/
-        assert (target_dir / "public.md").exists()
+        assert (output_dir / "public.md").exists()
 
         meta = engine.manifest.get_document("project://public.md")
         assert meta is not None

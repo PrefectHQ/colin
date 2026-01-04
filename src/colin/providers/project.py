@@ -17,7 +17,7 @@ from colin.providers.resource import Resource
 class ProjectResource(Resource):
     """Resource returned by ProjectProvider.
 
-    Path properties error on private files since they aren't published to target/.
+    Path properties error on private files since they aren't published to output/.
     """
 
     def __init__(
@@ -25,7 +25,7 @@ class ProjectResource(Resource):
         content: str,
         ref: Ref,
         relative_path: str,
-        target_path: Path,
+        output_path: Path,
         is_private: bool = False,
         name: str | None = None,
         description: str | None = None,
@@ -37,7 +37,7 @@ class ProjectResource(Resource):
             content: Compiled output content.
             ref: The Ref for this resource.
             relative_path: Relative path within project (e.g., "greeting.md").
-            target_path: Absolute path to target directory.
+            output_path: Absolute path to output directory.
             is_private: Whether this resource is private.
             name: Resource name (defaults to filename).
             description: Resource description.
@@ -45,7 +45,7 @@ class ProjectResource(Resource):
         """
         super().__init__(content, ref)
         self._relative_path = Path(relative_path)
-        self._target_path = target_path
+        self._output_path = output_path
         self._is_private = is_private
         self.name = name or self._relative_path.name
         self.description = description
@@ -53,21 +53,21 @@ class ProjectResource(Resource):
 
     @property
     def path(self) -> Path:
-        """Absolute path in target/. Errors on private files."""
+        """Absolute path in output/. Errors on private files."""
         if self._is_private:
             raise ValueError(
                 f"Cannot get path for private file '{self._relative_path}'. "
-                "Private files are not published to target/. Use .content instead."
+                "Private files are not published to output/. Use .content instead."
             )
-        return self._target_path / self._relative_path
+        return self._output_path / self._relative_path
 
     @property
     def relative_path(self) -> Path:
-        """Relative path within target/. Errors on private files."""
+        """Relative path within output/. Errors on private files."""
         if self._is_private:
             raise ValueError(
                 f"Cannot get relative_path for private file '{self._relative_path}'. "
-                "Private files are not published to target/. Use .content instead."
+                "Private files are not published to output/. Use .content instead."
             )
         return self._relative_path
 
@@ -83,7 +83,7 @@ class ProjectProvider(Provider):
     """Provider for reading compiled artifacts from .colin/compiled/.
 
     Uses manifest for version lookups and private detection.
-    Path properties on resources resolve to target/.
+    Path properties on resources resolve to output/.
 
     Template usage: ref("greeting.md") reads base_path/greeting.md
     """
@@ -93,8 +93,8 @@ class ProjectProvider(Provider):
     base_path: Path
     """Directory containing compiled artifacts (.colin/compiled/)."""
 
-    target_path: Path | None = None
-    """Target directory for path resolution (published outputs)."""
+    output_path: Path | None = None
+    """Output directory for path resolution (published outputs)."""
 
     manifest: Manifest | None = None
     """Manifest for version lookups and private detection."""
@@ -140,7 +140,7 @@ class ProjectProvider(Provider):
             content=content,
             ref=ref,
             relative_path=path,
-            target_path=self.target_path or self.base_path,
+            output_path=self.output_path or self.base_path,
             is_private=is_private,
             name=path.split("/")[-1],
             output_hash=output_hash,

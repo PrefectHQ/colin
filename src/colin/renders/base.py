@@ -29,7 +29,7 @@ class Renderer:
     - Determine the output filename (applying their extension)
 
     Rendering is part of compilation. The result is the final artifact
-    stored in .colin/compiled/ and copied to target/.
+    stored in .colin/compiled/ and copied to output/.
 
     Subclasses must set `name`.
     """

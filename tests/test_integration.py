@@ -25,7 +25,7 @@ class TestCompileIntegration:
         # Set up directories
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
+        output_dir = tmp_path / "output"
         output_dir.mkdir(parents=True)
         build_dir = tmp_path / ".colin"
         build_dir.mkdir()
@@ -90,7 +90,7 @@ Write a haiku about being welcomed.
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=tmp_path / "target",
+            output_path=tmp_path / "output",
             manifest_path=tmp_path / ".colin" / "manifest.json",
         )
         artifact_storage = FileStorage(base_path=compiled_dir)
@@ -130,7 +130,7 @@ Write a haiku about being welcomed.
         """Test diamond dependency pattern (A depends on B and C, both depend on D)."""
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
+        output_dir = tmp_path / "output"
         output_dir.mkdir(parents=True)
         build_dir = tmp_path / ".colin"
         build_dir.mkdir()
@@ -174,7 +174,7 @@ A uses {{ ref('b.md').content }} and {{ ref('c.md').content }}
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=tmp_path / "target",
+            output_path=tmp_path / "output",
             manifest_path=tmp_path / ".colin" / "manifest.json",
         )
         artifact_storage = FileStorage(base_path=compiled_dir)
@@ -201,7 +201,7 @@ A uses {{ ref('b.md').content }} and {{ ref('c.md').content }}
         source_dir = tmp_path / "models"
         source_dir.mkdir()
         (source_dir / "reports").mkdir()
-        output_dir = tmp_path / "target"
+        output_dir = tmp_path / "output"
         output_dir.mkdir(parents=True)
         build_dir = tmp_path / ".colin"
         build_dir.mkdir()
@@ -227,7 +227,7 @@ Report includes {{ ref('base.md').content }}
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=tmp_path / "target",
+            output_path=tmp_path / "output",
             manifest_path=tmp_path / ".colin" / "manifest.json",
         )
         artifact_storage = FileStorage(base_path=compiled_dir)

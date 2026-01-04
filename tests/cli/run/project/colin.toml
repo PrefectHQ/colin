@@ -1,4 +1,4 @@
 [project]
 name = "refs-test"
 model_path = "models"
-target_path = "target"
+output_path = "output"
