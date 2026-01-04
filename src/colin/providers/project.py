@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
+import yaml
 from pydantic import validate_call
 
 from colin.models import Manifest, Ref
@@ -50,6 +52,7 @@ class ProjectResource(Resource):
         self.name = name or self._relative_path.name
         self.description = description
         self._output_hash = output_hash
+        self._parsed_data: dict[str, Any] | list[Any] | str | None = None
 
     @property
     def path(self) -> Path:
@@ -77,6 +80,48 @@ class ProjectResource(Resource):
         if self._output_hash is not None:
             return self._output_hash
         return super().version
+
+    @property
+    def data(self) -> dict[str, Any] | list[Any] | str:
+        """Return parsed content for structured files, or string for text files.
+
+        Behavior by output format:
+        - JSON (.json): Returns parsed dict/list
+        - YAML (.yaml, .yml): Returns parsed dict/list
+        - Markdown/other: Returns string content (same as .content)
+
+        Returns:
+            Parsed data structure for JSON/YAML, or string content for other formats.
+
+        Examples:
+            {{ ref('config.json').data['api_key'] }}
+            {{ ref('config.yaml').data['users'][0]['name'] }}
+            {{ ref('readme.md').data }}  # Same as .content
+        """
+        # Return cached parsed data if available
+        if self._parsed_data is not None:
+            return self._parsed_data
+
+        # Determine format from file extension
+        suffix = self._relative_path.suffix.lower()
+
+        if suffix == ".json":
+            # Parse JSON content
+            if not self.content.strip():
+                self._parsed_data = {}
+            else:
+                self._parsed_data = json.loads(self.content)
+        elif suffix in (".yaml", ".yml"):
+            # Parse YAML content
+            if not self.content.strip():
+                self._parsed_data = {}
+            else:
+                self._parsed_data = yaml.safe_load(self.content) or {}
+        else:
+            # Return string content for markdown and other formats
+            self._parsed_data = self.content
+
+        return self._parsed_data
 
 
 class ProjectProvider(Provider):
