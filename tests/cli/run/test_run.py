@@ -59,9 +59,9 @@ async def test_provider_llm_model_config(
     import tomli_w
 
     from colin.api.project import load_project
+    from colin.compiler.cache import set_compile_context
     from colin.compiler.context import CompileContext
     from colin.models import Manifest
-    from colin.providers.cache import set_compile_context
     from colin.providers.llm import LLMProvider
     from colin.providers.manager import create_provider
     from colin.providers.project import ProjectProvider

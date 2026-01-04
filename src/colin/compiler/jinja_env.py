@@ -9,6 +9,7 @@ from jinja2 import Environment
 from colin.compiler.extensions.filters import create_llm_classify_filter, create_llm_extract_filter
 from colin.compiler.extensions.item_block import ItemBlockExtension
 from colin.compiler.extensions.llm_block import LLMBlockExtension
+from colin.compiler.extensions.section_block import SectionBlockExtension
 
 if TYPE_CHECKING:
     from colin.compiler.context import CompileContext
@@ -23,7 +24,7 @@ def create_jinja_environment() -> Environment:
     """
     env = Environment(
         enable_async=True,
-        extensions=[LLMBlockExtension, ItemBlockExtension],
+        extensions=[LLMBlockExtension, ItemBlockExtension, SectionBlockExtension],
         # Don't auto-escape for markdown output
         autoescape=False,
     )

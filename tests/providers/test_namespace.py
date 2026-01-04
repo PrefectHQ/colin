@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 from colin.models import Ref
 from colin.providers.base import Provider
 from colin.providers.manager import ProviderManager
-from colin.providers.resource import Resource
+from colin.resources import Resource
 
 
 class DummyResource(Resource):

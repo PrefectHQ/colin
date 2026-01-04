@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 import frontmatter as fm_parser
 from jinja2 import TemplateSyntaxError, nodes
 
+from colin.compiler.cache import set_compile_context
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
@@ -28,7 +29,6 @@ from colin.models import (
     Manifest,
     parse_duration,
 )
-from colin.providers.cache import set_compile_context
 from colin.providers.manager import ProviderManager, create_provider_manager
 from colin.providers.project import ProjectProvider
 from colin.providers.storage.base import Storage
@@ -594,9 +594,17 @@ class CompileEngine:
         finally:
             set_compile_context(None)
 
+        # Extract sections from markers in rendered output
+        from colin.compiler.section_parser import parse_sections, remove_colin_markers
+
+        context.sections = parse_sections(raw_output)
+
+        # Remove all Colin markers before rendering (JSON/YAML parsers error on them)
+        clean_output = remove_colin_markers(raw_output)
+
         # Apply format renderer (JSON, YAML, or markdown passthrough)
         renderer = get_renderer(doc.frontmatter.colin.output)
-        render_result = renderer.render(raw_output, doc.uri, doc.frontmatter)
+        render_result = renderer.render(clean_output, doc.uri, doc.frontmatter)
 
         # Hash the FINAL rendered content
         output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
@@ -612,6 +620,7 @@ class CompileEngine:
             ref_versions=context.ref_versions,
             llm_calls=context.llm_calls,
             total_cost_usd=context.total_cost,
+            sections=context.sections,
         )
 
     async def _write_output(self, doc: CompiledDocument) -> None:
@@ -650,6 +659,7 @@ class CompileEngine:
             ref_versions=doc.ref_versions,
             llm_calls=doc.llm_calls,
             total_cost_usd=doc.total_cost_usd,
+            sections=doc.sections,
         )
         self.manifest.set_document(doc.uri, meta)
 

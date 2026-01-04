@@ -223,6 +223,9 @@ class DocumentMeta(BaseModel):
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     """Artifacts written for this document (concrete URIs)."""
 
+    sections: dict[str, str] = Field(default_factory=dict)
+    """Named sections extracted from the document (section_name -> raw_content)."""
+
 
 class Manifest(BaseModel):
     """Root manifest structure, persisted as JSON."""
@@ -345,3 +348,6 @@ class CompiledDocument(BaseModel):
 
     total_cost_usd: float = 0.0
     """Total cost of LLM calls."""
+
+    sections: dict[str, str] = Field(default_factory=dict)
+    """Named sections extracted from the document (section_name -> raw_content)."""

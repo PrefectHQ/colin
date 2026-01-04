@@ -4,9 +4,9 @@ import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
+from colin.compiler.cache import set_compile_context
 from colin.compiler.context import CompileContext
 from colin.models import Manifest
-from colin.providers.cache import set_compile_context
 from colin.providers.llm import LLMProvider
 from colin.providers.project import ProjectProvider
 

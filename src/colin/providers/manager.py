@@ -8,11 +8,11 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from colin.api.project import ProjectConfig, ProviderInstanceConfig
+from colin.compiler.namespace import Namespace, build_namespace
 from colin.providers.base import Provider
 from colin.providers.http import HTTPProvider
 from colin.providers.llm import LLMProvider
 from colin.providers.mcp import MCPProvider
-from colin.providers.namespace import Namespace, build_namespace
 
 logger = logging.getLogger(__name__)
 

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import validate_call
 
+from colin.compiler.cache import get_compile_context
 from colin.models import Manifest, Ref
 from colin.providers.base import Provider
-from colin.providers.cache import get_compile_context
-from colin.providers.resource import Resource
+from colin.resources import Resource
+
+if TYPE_CHECKING:
+    from colin.compiler.sections import SectionsAccessor
 
 
 class ProjectResource(Resource):
@@ -30,6 +33,8 @@ class ProjectResource(Resource):
         name: str | None = None,
         description: str | None = None,
         output_hash: str | None = None,
+        output_format: str | None = None,
+        sections: dict[str, str] | None = None,
     ) -> None:
         """Initialize a project resource.
 
@@ -42,6 +47,8 @@ class ProjectResource(Resource):
             name: Resource name (defaults to filename).
             description: Resource description.
             output_hash: Hash of compiled output (used as version).
+            output_format: Output format (json, yaml, markdown).
+            sections: Named sections extracted from document.
         """
         super().__init__(content, ref)
         self._relative_path = Path(relative_path)
@@ -50,6 +57,9 @@ class ProjectResource(Resource):
         self.name = name or self._relative_path.name
         self.description = description
         self._output_hash = output_hash
+        self._output_format = output_format or "markdown"
+        self._sections_data = sections or {}
+        self._sections_cache: SectionsAccessor | None = None
 
     @property
     def path(self) -> Path:
@@ -77,6 +87,38 @@ class ProjectResource(Resource):
         if self._output_hash is not None:
             return self._output_hash
         return super().version
+
+    @property
+    def sections(self) -> SectionsAccessor:
+        """Access sections with format-aware parsing.
+
+        Only available on ProjectResource since only compiled documents have sections.
+
+        Returns:
+            SectionsAccessor for dot/dict access to sections.
+        """
+        if self._sections_cache is None:
+            from colin.compiler.sections import SectionsAccessor
+
+            self._sections_cache = SectionsAccessor(self._sections_data, self._detect_format())
+        return self._sections_cache
+
+    def _detect_format(self) -> str:
+        """Detect output format for format-aware section parsing.
+
+        Returns:
+            Output format (json, yaml, or markdown).
+        """
+        if self._output_format:
+            return self._output_format
+
+        # Infer from extension
+        ext = self._relative_path.suffix.lower()
+        if ext == ".json":
+            return "json"
+        elif ext in (".yaml", ".yml"):
+            return "yaml"
+        return "markdown"
 
 
 class ProjectProvider(Provider):
@@ -128,6 +170,8 @@ class ProjectProvider(Provider):
         # Get metadata from manifest
         output_hash = self._get_output_hash(path)
         is_private = self._is_private(path)
+        sections = self._get_sections(path)
+        output_format = self._get_output_format(path)
 
         ref = Ref(
             provider=self.namespace,
@@ -144,6 +188,8 @@ class ProjectProvider(Provider):
             is_private=is_private,
             name=path.split("/")[-1],
             output_hash=output_hash,
+            output_format=output_format,
+            sections=sections,
         )
 
         if watch:
@@ -205,6 +251,30 @@ class ProjectProvider(Provider):
         if doc_meta is None:
             return False
         return doc_meta.is_private
+
+    def _get_sections(self, path: str) -> dict[str, str]:
+        """Get sections from manifest for a document by output_path."""
+        if self.manifest is None:
+            return {}
+        doc_meta = self.manifest.get_document_by_output_path(path)
+        if doc_meta is None:
+            return {}
+        return doc_meta.sections
+
+    def _get_output_format(self, path: str) -> str | None:
+        """Get output format from manifest for a document by output_path."""
+        if self.manifest is None:
+            return None
+        doc_meta = self.manifest.get_document_by_output_path(path)
+        if doc_meta is None:
+            return None
+        # Get the document URI to look up frontmatter
+        for uri, meta in self.manifest.documents.items():
+            if meta.output_path == path:
+                # For now, return None - format will be inferred from extension
+                # In the future, could store format in manifest
+                return None
+        return None
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         return {"get": self.get}

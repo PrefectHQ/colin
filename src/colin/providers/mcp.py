@@ -11,10 +11,10 @@ from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
 from pydantic import TypeAdapter, validate_call
 from typing_extensions import Self
 
+from colin.compiler.cache import get_compile_context
 from colin.models import Ref
 from colin.providers.base import Provider
-from colin.providers.cache import get_compile_context
-from colin.providers.resource import Resource
+from colin.resources import Resource
 
 # TypeAdapter for parsing MCP server config from TOML
 MCPServerAdapter: TypeAdapter[StdioMCPServer | RemoteMCPServer] = TypeAdapter(

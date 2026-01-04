@@ -11,10 +11,10 @@ from typing import ClassVar
 
 from pydantic import validate_call
 
+from colin.compiler.cache import get_compile_context
 from colin.models import Ref
 from colin.providers.base import Provider
-from colin.providers.cache import get_compile_context
-from colin.providers.resource import Resource
+from colin.resources import Resource
 
 
 class FileResource(Resource):

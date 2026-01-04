@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from colin.models import CompiledDocument
-    from colin.providers.resource import Resource
+    from colin.resources import Resource
 
 
 class InputPlugin(Protocol):
