@@ -316,7 +316,7 @@ class CompileEngine:
                         errors.setdefault(uri, []).append(result)
                     else:
                         compiled.append(result)
-                        compiled_outputs[uri] = result
+                        compiled_outputs[result.output_path] = result
                         if was_recompiled:
                             recompiled_uris.add(uri)
                         # Determine if private, write output, update manifest
@@ -490,34 +490,31 @@ class CompileEngine:
         renderer = get_renderer(doc.frontmatter.colin.output)
         return renderer._get_output_filename(path)
 
-    def _normalize_uri(self, uri: str, output_path_to_uri: dict[str, str] | None = None) -> str:
-        """Normalize a URI to project:// format.
+    def _normalize_uri(
+        self, ref_target: str, output_path_to_uri: dict[str, str] | None = None
+    ) -> str:
+        """Resolve a ref target to a source document URI.
 
-        Converts shorthand refs like 'data' to 'project://data.md'.
-        Also handles refs to output paths (e.g., 'config.json' for a document
-        that outputs JSON).
+        Refs must specify exact output filename (no magic .md suffix).
+        Uses output_path_to_uri mapping to resolve output filenames to source URIs.
 
         Args:
-            uri: URI in any format (shorthand or full).
-            output_path_to_uri: Optional mapping from output_path to source URI.
+            ref_target: What the user wrote in ref(), e.g., "config.json" or "project://foo".
+            output_path_to_uri: Mapping from output_path to source URI.
 
         Returns:
-            Normalized URI.
+            Source document URI for dependency tracking.
         """
         # Already has a scheme - leave as-is
-        if "://" in uri:
-            return uri
+        if "://" in ref_target:
+            return ref_target
 
-        # Check if this matches an output_path
-        # (e.g., ref("config.json") for config.md with output: json)
-        if output_path_to_uri is not None and uri in output_path_to_uri:
-            return output_path_to_uri[uri]
+        # Look up output_path → source URI
+        if output_path_to_uri is not None and ref_target in output_path_to_uri:
+            return output_path_to_uri[ref_target]
 
-        # Schemaless shorthand - normalize to project://
-        # Add .md extension if missing
-        if "." not in Path(uri).name:
-            uri = f"{uri}.md"
-        return f"project://{uri}"
+        # Not found - construct URI anyway (will fail at compile time)
+        return f"project://{ref_target}"
 
     def _extract_refs_from_ast(self, ast: nodes.Template) -> list[str]:
         """Extract ref() URIs from Jinja AST.

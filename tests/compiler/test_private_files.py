@@ -221,7 +221,7 @@ Helper content.
 name: Consumer
 ---
 
-Data: {{ ref('_data').content }}
+Data: {{ ref('_data.md').content }}
 """)
 
         result = await engine.compile_all()
@@ -242,7 +242,7 @@ Data: {{ ref('_data').content }}
 name: Linker
 ---
 
-Link: {{ ref('_private').path }}
+Link: {{ ref('_private.md').path }}
 """)
 
         with pytest.raises(MultipleCompilationErrors) as exc_info:
@@ -266,7 +266,7 @@ Link: {{ ref('_private').path }}
 name: Linker
 ---
 
-Relative: {{ ref('_private').relative_path }}
+Relative: {{ ref('_private.md').relative_path }}
 """)
 
         with pytest.raises(MultipleCompilationErrors) as exc_info:

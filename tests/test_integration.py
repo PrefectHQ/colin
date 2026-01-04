@@ -52,7 +52,7 @@ description: Demonstrates ref() to include other documents
 
 # Welcome
 
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 ---
 
@@ -69,17 +69,17 @@ description: Demonstrates LLM blocks and llm_extract filter
 
 Here's some content to work with:
 
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 ## Extracted Info
 
-{{ ref('greeting') | llm_extract('the main message in one sentence') }}
+{{ ref('greeting.md') | llm_extract('the main message in one sentence') }}
 
 ## LLM-Generated Content
 
 {% llm %}
 Given this greeting:
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 Write a haiku about being welcomed.
 {% endllm %}
@@ -150,7 +150,7 @@ D content
 ---
 name: B
 ---
-B uses {{ ref('d').content }}
+B uses {{ ref('d.md').content }}
 """)
 
         # C depends on D
@@ -158,7 +158,7 @@ B uses {{ ref('d').content }}
 ---
 name: C
 ---
-C uses {{ ref('d').content }}
+C uses {{ ref('d.md').content }}
 """)
 
         # A depends on B and C
@@ -166,7 +166,7 @@ C uses {{ ref('d').content }}
 ---
 name: A
 ---
-A uses {{ ref('b').content }} and {{ ref('c').content }}
+A uses {{ ref('b.md').content }} and {{ ref('c.md').content }}
 """)
 
         # Compile
@@ -219,7 +219,7 @@ Base content
 ---
 name: Weekly Report
 ---
-Report includes {{ ref('base').content }}
+Report includes {{ ref('base.md').content }}
 """)
 
         # Compile

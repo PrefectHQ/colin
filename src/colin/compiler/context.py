@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Coroutine
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from colin.compiler.state import OperationState, Status
@@ -99,21 +98,11 @@ class CompileContext:
             self.track(target.ref(), target.version)
             return cast(T, target)
 
-        # String path → project ref
-        path = self._normalize_path(target)
-        uri = f"project://{path}"
+        # String path → exact output filename (no normalization)
+        path = target
 
-        # Check in-memory compiled outputs first (from current compile run)
-        # Try by URI first (e.g., ref("config") -> project://config.md)
-        compiled: CompiledDocument | None = self.compiled_outputs.get(uri)
-
-        # If not found by URI, try by output_path (e.g., ref("config.json") finds
-        # document whose output_path is "config.json" even if source is config.md)
-        if compiled is None:
-            for doc in self.compiled_outputs.values():
-                if doc.output_path == path:
-                    compiled = doc
-                    break
+        # Check in-memory compiled outputs first (keyed by output_path)
+        compiled = self.compiled_outputs.get(path)
 
         if compiled is not None:
             name_val = compiled.frontmatter.metadata.get("name")
@@ -165,17 +154,6 @@ class CompileContext:
         result = await fetch_from_provider()
         self.track(result.ref(), result.version)
         return result
-
-    def _normalize_path(self, path: str) -> str:
-        """Normalize a path for project refs.
-
-        Adds .md extension only if no extension is present.
-        ref("config") -> "config.md"
-        ref("config.json") -> "config.json" (preserved)
-        """
-        if "." not in Path(path).name:
-            path = f"{path}.md"
-        return path
 
     def track(self, ref: Ref, version: str) -> bool:
         """Record a ref and its version as a dependency.

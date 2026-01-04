@@ -84,7 +84,7 @@ Base content here.
 name: Derived
 ---
 
-Including: {{ ref('base').content }}
+Including: {{ ref('base.md').content }}
 """)
 
         result = await engine.compile_all()
@@ -165,8 +165,8 @@ Just this one.
         engine, source_dir, output_dir = engine_setup
 
         (source_dir / "a.md").write_text("---\nname: A\n---\nA content")
-        (source_dir / "b.md").write_text("---\nname: B\n---\nB uses {{ ref('a').content }}")
-        (source_dir / "c.md").write_text("---\nname: C\n---\nC uses {{ ref('b').content }}")
+        (source_dir / "b.md").write_text("---\nname: B\n---\nB uses {{ ref('a.md').content }}")
+        (source_dir / "c.md").write_text("---\nname: C\n---\nC uses {{ ref('b.md').content }}")
 
         result = await engine.compile_all()
         uris = [doc.uri for doc in result]

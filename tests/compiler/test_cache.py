@@ -103,7 +103,9 @@ class TestStalenessDetection:
 
         # Create base and derived documents
         (source_dir / "base.md").write_text("---\nname: Base\n---\nBase content")
-        (source_dir / "derived.md").write_text("---\nname: Derived\n---\n{{ ref('base').content }}")
+        (source_dir / "derived.md").write_text(
+            "---\nname: Derived\n---\n{{ ref('base.md').content }}"
+        )
 
         # First compile
         result1 = await engine.compile_all()
@@ -128,7 +130,9 @@ class TestStalenessDetection:
 
         # Create base and derived documents
         (source_dir / "base.md").write_text("---\nname: Base\n---\nBase content")
-        (source_dir / "derived.md").write_text("---\nname: Derived\n---\n{{ ref('base').content }}")
+        (source_dir / "derived.md").write_text(
+            "---\nname: Derived\n---\n{{ ref('base.md').content }}"
+        )
 
         # First compile
         result1 = await engine.compile_all()
@@ -146,8 +150,8 @@ class TestStalenessDetection:
 
         # Create chain: a -> b -> c
         (source_dir / "a.md").write_text("---\nname: A\n---\nA content")
-        (source_dir / "b.md").write_text("---\nname: B\n---\n{{ ref('a').content }}")
-        (source_dir / "c.md").write_text("---\nname: C\n---\n{{ ref('b').content }}")
+        (source_dir / "b.md").write_text("---\nname: B\n---\n{{ ref('a.md').content }}")
+        (source_dir / "c.md").write_text("---\nname: C\n---\n{{ ref('b.md').content }}")
 
         # First compile
         result1 = await engine.compile_all()
@@ -444,6 +448,7 @@ class TestProjectProviderGetRefVersion:
                 uri="project://test.md",
                 source_hash="abc123",
                 output_hash="def456",
+                output_path="test.md",
             ),
         )
 

@@ -179,11 +179,10 @@ class ProjectProvider(Provider):
         return resource.version
 
     def _get_output_hash(self, path: str) -> str | None:
-        """Get output_hash from manifest for a document."""
+        """Get output_hash from manifest for a document by output_path."""
         if self.manifest is None:
             return None
-        uri = f"project://{path}"
-        doc_meta = self.manifest.get_document(uri)
+        doc_meta = self.manifest.get_document_by_output_path(path)
         if doc_meta is None:
             return None
         return doc_meta.output_hash
@@ -196,8 +195,7 @@ class ProjectProvider(Provider):
         """
         if self.manifest is None:
             return False
-        uri = f"project://{path}"
-        doc_meta = self.manifest.get_document(uri)
+        doc_meta = self.manifest.get_document_by_output_path(path)
         if doc_meta is None:
             return False
         return doc_meta.is_private

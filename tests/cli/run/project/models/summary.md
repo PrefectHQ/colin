@@ -1,5 +1,5 @@
 ---
 name: Summary
 ---
-Greeting says: {{ ref('greeting').content }}
-Welcome says: {{ ref('welcome').content }}
+Greeting says: {{ ref('greeting.md').content }}
+Welcome says: {{ ref('welcome.md').content }}

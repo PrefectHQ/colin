@@ -1,4 +1,4 @@
 ---
 name: Welcome
 ---
-{{ ref('greeting').content }} Welcome to Colin.
+{{ ref('greeting.md').content }} Welcome to Colin.

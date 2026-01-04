@@ -35,7 +35,7 @@ class TestCompileContext:
         output_file = tmp_path / "target" / "other.md"
         output_file.write_text("Compiled other")
 
-        await context.ref("other")
+        await context.ref("other.md")
 
         # Check that a Ref with the right args was tracked
         assert len(context.refs) == 1
@@ -51,7 +51,7 @@ class TestCompileContext:
         output_file = tmp_path / "target" / "doc.md"
         output_file.write_text("Compiled content")
 
-        result = await context.ref("doc")
+        result = await context.ref("doc.md")
 
         # Returns Resource (ProjectResource) with content
         assert result.content == "Compiled content"
@@ -64,7 +64,7 @@ class TestCompileContext:
 
     async def test_ref_not_found(self, context: CompileContext) -> None:
         with pytest.raises(RefNotFoundError):
-            await context.ref("nonexistent")
+            await context.ref("nonexistent.md")
 
     async def test_add_llm_call_records_call(self, context: CompileContext) -> None:
         """Test that add_llm_call properly records an LLM call."""
@@ -127,43 +127,3 @@ class TestCompileContext:
         assert len(context.refs) == 1
         # First version wins (existing behavior)
         assert context.ref_versions[ref.key()] == "version-1"
-
-
-class TestNormalizePath:
-    """Tests for _normalize_path extension handling."""
-
-    @pytest.fixture
-    def context(self, tmp_path: Path) -> CompileContext:
-        output_dir = tmp_path / "target"
-        output_dir.mkdir()
-        manifest = Manifest()
-        project_provider = ProjectProvider(base_path=output_dir)
-        return CompileContext(
-            manifest=manifest,
-            document_uri="test-doc",
-            project_provider=project_provider,
-        )
-
-    def test_adds_md_extension_when_no_extension(self, context: CompileContext) -> None:
-        """ref('config') should default to config.md."""
-        assert context._normalize_path("config") == "config.md"
-
-    def test_preserves_json_extension(self, context: CompileContext) -> None:
-        """ref('config.json') should preserve .json extension."""
-        assert context._normalize_path("config.json") == "config.json"
-
-    def test_preserves_yaml_extension(self, context: CompileContext) -> None:
-        """ref('config.yaml') should preserve .yaml extension."""
-        assert context._normalize_path("config.yaml") == "config.yaml"
-
-    def test_preserves_md_extension(self, context: CompileContext) -> None:
-        """ref('config.md') should preserve .md extension."""
-        assert context._normalize_path("config.md") == "config.md"
-
-    def test_handles_subdirectory_paths(self, context: CompileContext) -> None:
-        """ref('subdir/config') should add .md to the filename only."""
-        assert context._normalize_path("subdir/config") == "subdir/config.md"
-
-    def test_preserves_extension_in_subdirectory(self, context: CompileContext) -> None:
-        """ref('subdir/config.json') should preserve extension."""
-        assert context._normalize_path("subdir/config.json") == "subdir/config.json"
