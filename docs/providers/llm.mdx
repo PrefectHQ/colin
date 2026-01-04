@@ -22,6 +22,8 @@ Model identifiers follow the `provider:model-name` format. Supported providers i
 | Field | Description | Default |
 | :---- | :---------- | :------ |
 | `model` | Model identifier (e.g., `anthropic:claude-sonnet-4-20250514`) | From settings |
+| `instructions` | System prompt for all LLM calls from this provider | None |
+| `instructions_ref` | Path to a document whose compiled content becomes the system prompt | None |
 
 ### Named Providers
 
@@ -62,6 +64,38 @@ Named providers are accessed through their name:
 ```
 
 This lets you optimize cost and latency by routing simple tasks to faster, cheaper models while reserving capable models for complex work.
+
+### Instructions
+
+Instructions act as system prompts, shaping how the LLM responds across all calls. Set them at the provider level:
+
+```toml colin.toml
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-20250514"
+instructions = "You are a technical writer. Be concise and precise."
+```
+
+For longer instructions, reference a compiled document:
+
+```toml colin.toml
+[[providers.llm]]
+model = "anthropic:claude-sonnet-4-20250514"
+instructions_ref = "prompts/analyst.md"
+```
+
+The referenced document is compiled first, and its output becomes the system prompt. This lets you maintain complex instructions as standalone files.
+
+Override instructions on individual calls when needed:
+
+```markdown
+{{ ref('data') | llm_extract('summary', instructions='Respond in Spanish.') }}
+
+{% llm instructions='Write in a casual, friendly tone.' %}
+Explain this concept: {{ ref('topic').content }}
+{% endllm %}
+```
+
+Call-level instructions take precedence over provider-level settings.
 
 ## Template Functions
 

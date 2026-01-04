@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import nullcontext as _nullcontext
 from typing import Any, ClassVar
 
+from pydantic import model_validator
 from pydantic_ai import Agent
 from pydantic_ai.models import Model, infer_model
 
@@ -43,6 +44,56 @@ class LLMProvider(Provider):
     model: str | Model | None = None
     """Model for LLM calls. Falls back to COLIN_DEFAULT_LLM_MODEL env var."""
 
+    instructions: str | None = None
+    """Provider-level instructions (system prompt context). Inline string."""
+
+    instructions_ref: str | None = None
+    """Provider-level instructions reference. Path relative to project root, compiled via ref()."""
+
+    @model_validator(mode="after")
+    def _validate_instructions(self) -> LLMProvider:
+        """Validate that only one of instructions or instructions_ref is set."""
+        if self.instructions is not None and self.instructions_ref is not None:
+            raise ValueError(
+                "Cannot set both 'instructions' and 'instructions_ref' on the same LLM provider. "
+                "Use only one."
+            )
+        return self
+
+    async def _resolve_instructions(self, call_level_instructions: str | None = None) -> str | None:
+        """Resolve effective instructions with precedence: call-level > provider-level > None.
+
+        Args:
+            call_level_instructions: Optional instructions from call site (highest precedence).
+
+        Returns:
+            Resolved instructions string, or None if no instructions configured.
+
+        Raises:
+            RuntimeError: If instructions_ref is set but compile context is not available.
+        """
+        # Highest precedence: call-level override
+        if call_level_instructions is not None:
+            return call_level_instructions
+
+        # Provider-level: inline string
+        if self.instructions is not None:
+            return self.instructions
+
+        # Provider-level: reference to compiled file
+        if self.instructions_ref is not None:
+            compile_ctx = get_compile_context()
+            if compile_ctx is None:
+                raise RuntimeError(
+                    f"Cannot resolve instructions_ref '{self.instructions_ref}' "
+                    "without compile context."
+                )
+            # Use ref() to get compiled content
+            resource = await compile_ctx.ref(self.instructions_ref)
+            return resource.content
+
+        return None
+
     async def load_address(self, payload: dict[str, Any]):  # type: ignore[override]
         """LLM provider does not support load_address.
 
@@ -66,6 +117,7 @@ class LLMProvider(Provider):
         content: object,
         prompt: str,
         model: str | None = None,
+        instructions: str | None = None,
     ) -> str:
         """Extract information from content using LLM.
 
@@ -73,6 +125,7 @@ class LLMProvider(Provider):
             content: The content to extract from.
             prompt: What to extract.
             model: Optional model override.
+            instructions: Optional instructions override (call-level).
 
         Returns:
             The extracted text.
@@ -92,15 +145,23 @@ class LLMProvider(Provider):
         # Render prompt from template
         full_prompt = render_extract_prompt(serialized, prompt, previous_output)
 
+        # Resolve effective instructions
+        effective_instructions = await self._resolve_instructions(instructions)
+
         # Call LLM (with state tracking if enabled)
         doc_state = compile_ctx.doc_state if compile_ctx else None
         op = doc_state.child("llm", detail=f"extract({_truncate(prompt)})") if doc_state else None
         with op if op else _nullcontext():
             try:
                 output_type: list[type] = [str]
+                agent_kwargs: dict[str, Any] = {
+                    "output_type": output_type,  # type: ignore[arg-type]
+                }
+                if effective_instructions:
+                    agent_kwargs["instructions"] = effective_instructions
                 agent: Agent[None, LLMOutput] = Agent(
                     effective_model,
-                    output_type=output_type,  # type: ignore[arg-type]
+                    **agent_kwargs,
                 )
                 result = await agent.run(full_prompt)
                 output_text = str(result.output)
@@ -144,6 +205,7 @@ class LLMProvider(Provider):
         labels: list[str | bool],
         model: str | None = None,
         multi: bool = False,
+        instructions: str | None = None,
     ) -> str | bool | list[str | bool]:
         """Classify content into one or more predefined labels using LLM.
 
@@ -152,6 +214,7 @@ class LLMProvider(Provider):
             labels: List of valid labels to choose from.
             model: Optional model override.
             multi: Whether to allow multiple labels (multi-label classification).
+            instructions: Optional instructions override (call-level).
 
         Returns:
             Single label (str or bool) if multi=False, list of labels if multi=True.
@@ -184,6 +247,9 @@ class LLMProvider(Provider):
         # Create classification model for structured output
         ClassificationModel = create_classification_model(sorted_labels, multi)
 
+        # Resolve effective instructions
+        effective_instructions = await self._resolve_instructions(instructions)
+
         # Call LLM (with state tracking if enabled)
         doc_state = compile_ctx.doc_state if compile_ctx else None
         labels_display = ",".join(str(lbl) for lbl in sorted_labels[:3])
@@ -193,9 +259,14 @@ class LLMProvider(Provider):
         with op if op else _nullcontext():
             try:
                 output_type: list[type] = [ClassificationModel]
+                agent_kwargs: dict[str, Any] = {
+                    "output_type": output_type,  # type: ignore[arg-type]
+                }
+                if effective_instructions:
+                    agent_kwargs["instructions"] = effective_instructions
                 agent: Agent[None, Any] = Agent(  # type: ignore[assignment]
                     effective_model,
-                    output_type=output_type,  # type: ignore[arg-type]
+                    **agent_kwargs,
                 )
                 result = await agent.run(full_prompt)
 
@@ -252,6 +323,7 @@ class LLMProvider(Provider):
         self,
         prompt: str,
         model: str | None = None,
+        instructions: str | None = None,
     ) -> str:
         """Complete a prompt using LLM.
 
@@ -260,6 +332,7 @@ class LLMProvider(Provider):
         Args:
             prompt: The prompt to complete.
             model: Optional model override.
+            instructions: Optional instructions override (call-level).
 
         Returns:
             The LLM response.
@@ -278,15 +351,23 @@ class LLMProvider(Provider):
         # Render prompt from template
         full_prompt = render_complete_prompt(prompt, previous_output)
 
+        # Resolve effective instructions
+        effective_instructions = await self._resolve_instructions(instructions)
+
         # Call LLM (with state tracking if enabled)
         doc_state = compile_ctx.doc_state if compile_ctx else None
         op = doc_state.child("llm", detail=f"complete({_truncate(prompt)})") if doc_state else None
         with op if op else _nullcontext():
             try:
                 output_type: list[type] = [str]
+                agent_kwargs: dict[str, Any] = {
+                    "output_type": output_type,  # type: ignore[arg-type]
+                }
+                if effective_instructions:
+                    agent_kwargs["instructions"] = effective_instructions
                 agent: Agent[None, LLMOutput] = Agent(
                     effective_model,
-                    output_type=output_type,  # type: ignore[arg-type]
+                    **agent_kwargs,
                 )
                 result = await agent.run(full_prompt)
                 output_text = str(result.output)

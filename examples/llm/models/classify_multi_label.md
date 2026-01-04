@@ -9,10 +9,10 @@ This document demonstrates how to use the `classify()` filter with `multi=True` 
 
 ## Source Content
 
-{{ ref('source').content }}
+{{ ref('source.md').content }}
 
 ---
 
 ## Multi-Label Classification Result
 
-**Topics**: {{ ref('source') | llm_classify(labels=['interface', 'performance', 'pricing', 'support', 'features', 'bugs'], multi=True) }}
+**Topics**: {{ ref('source.md') | llm_classify(labels=['interface', 'performance', 'pricing', 'support', 'features', 'bugs'], multi=True) }}

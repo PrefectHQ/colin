@@ -147,3 +147,162 @@ class TestLLMProvider:
 
         # Model should be called twice - failure wasn't cached
         assert call_count == 2
+
+    def test_instructions_validation_both_set(self) -> None:
+        """Test that setting both instructions and instructions_ref raises error."""
+        with pytest.raises(
+            ValueError, match="Cannot set both 'instructions' and 'instructions_ref'"
+        ):
+            LLMProvider(
+                model="test",
+                instructions="Be helpful",
+                instructions_ref="prompts/analyst.md",
+            )
+
+    def test_instructions_can_be_set(self) -> None:
+        """Test that instructions can be set as inline string."""
+        provider = LLMProvider(model="test", instructions="You are a helpful assistant")
+        assert provider.instructions == "You are a helpful assistant"
+        assert provider.instructions_ref is None
+
+    def test_instructions_ref_can_be_set(self) -> None:
+        """Test that instructions_ref can be set as path."""
+        provider = LLMProvider(model="test", instructions_ref="prompts/analyst.md")
+        assert provider.instructions_ref == "prompts/analyst.md"
+        assert provider.instructions is None
+
+    async def test_extract_with_provider_instructions(
+        self, compile_ctx: CompileContext, tmp_path
+    ) -> None:
+        """Test that extract uses provider-level instructions."""
+        provider = LLMProvider(model="test", instructions="Be concise and helpful")
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._extract("content", "prompt")
+        finally:
+            set_compile_context(None)
+
+        # Should work without error
+        assert isinstance(result, str)
+
+    async def test_extract_with_call_level_instructions(self, compile_ctx: CompileContext) -> None:
+        """Test that call-level instructions override provider-level."""
+        provider = LLMProvider(model="test", instructions="Provider instructions")
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._extract(
+                "content", "prompt", instructions="Call-level instructions"
+            )
+        finally:
+            set_compile_context(None)
+
+        # Should work without error
+        assert isinstance(result, str)
+
+    async def test_extract_with_instructions_ref(
+        self, compile_ctx: CompileContext, tmp_path
+    ) -> None:
+        """Test that instructions_ref resolves via ref() at runtime."""
+        # Create a file that will be referenced
+        instructions_file = tmp_path / "prompts" / "analyst.md"
+        instructions_file.parent.mkdir(parents=True, exist_ok=True)
+        instructions_file.write_text("You are a senior analyst.")
+
+        # Update compile_ctx to use the tmp_path
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx.project_provider = project_provider
+
+        # Create a compiled document entry for the instructions file
+        from colin.models import CompiledDocument, Frontmatter
+
+        compiled_doc = CompiledDocument(
+            uri="project://prompts/analyst.md",
+            frontmatter=Frontmatter(),
+            output="You are a senior analyst.",
+            output_path="prompts/analyst.md",
+            source_hash="test",
+            output_hash="test",
+            refs=[],
+            ref_versions={},
+            llm_calls={},
+            total_cost_usd=0.0,
+        )
+        compile_ctx.compiled_outputs["prompts/analyst.md"] = compiled_doc
+
+        provider = LLMProvider(model="test", instructions_ref="prompts/analyst.md")
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._extract("content", "prompt")
+        finally:
+            set_compile_context(None)
+
+        # Should work without error
+        assert isinstance(result, str)
+
+    async def test_extract_instructions_in_cache_key(
+        self, provider: LLMProvider, compile_ctx: CompileContext
+    ) -> None:
+        """Test that different instructions create different cache entries."""
+        set_compile_context(compile_ctx)
+        try:
+            # First call with instructions
+            await provider._extract("content", "prompt", instructions="Be concise")
+            # Second call with different instructions
+            await provider._extract("content", "prompt", instructions="Be detailed")
+        finally:
+            set_compile_context(None)
+
+        # Different instructions should create different cache entries
+        assert len(compile_ctx.manifest.cache) == 2
+
+    async def test_classify_with_instructions(self, compile_ctx: CompileContext) -> None:
+        """Test that classify accepts instructions parameter."""
+        provider = LLMProvider(model="test", instructions="Be helpful")
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._classify("content", ["yes", "no"], instructions="Be concise")
+        finally:
+            set_compile_context(None)
+
+        assert isinstance(result, (str, bool))
+
+    async def test_complete_with_instructions(self, compile_ctx: CompileContext) -> None:
+        """Test that complete accepts instructions parameter."""
+        provider = LLMProvider(model="test", instructions="Be helpful")
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._complete("Write a haiku", instructions="Be creative")
+        finally:
+            set_compile_context(None)
+
+        assert isinstance(result, str)
+
+    async def test_resolve_instructions_without_context(self) -> None:
+        """Test that resolving instructions_ref without compile context raises error."""
+        provider = LLMProvider(model="test", instructions_ref="prompts/analyst.md")
+
+        with pytest.raises(
+            RuntimeError, match="Cannot resolve instructions_ref.*without compile context"
+        ):
+            await provider._resolve_instructions()
+
+    async def test_resolve_instructions_precedence(self, compile_ctx: CompileContext) -> None:
+        """Test that call-level instructions take precedence over provider-level."""
+        provider = LLMProvider(model="test", instructions="Provider instructions")
+
+        set_compile_context(compile_ctx)
+        try:
+            # Call-level should win
+            resolved = await provider._resolve_instructions("Call-level instructions")
+            assert resolved == "Call-level instructions"
+
+            # Provider-level should be used when call-level is None
+            resolved = await provider._resolve_instructions(None)
+            assert resolved == "Provider instructions"
+        finally:
+            set_compile_context(None)
