@@ -149,6 +149,9 @@ class ColinConfig(BaseModel):
     storage: str | None = None
     """Storage backend (future feature)."""
 
+    private: bool | None = None
+    """Override private detection. None uses naming convention (_ prefix)."""
+
     @field_validator("cache", mode="before")
     @classmethod
     def _normalize_cache(cls, v: Any) -> CacheConfig | dict[str, Any]:
@@ -194,7 +197,13 @@ class DocumentMeta(BaseModel):
     """Hash of the source file content."""
 
     output_hash: str | None = None
-    """Hash of the compiled output."""
+    """Hash of the rendered output (used for versioning and content-addressed writes)."""
+
+    output_path: str | None = None
+    """Relative output filename after rendering (e.g., 'greeting.md' or 'greeting.json')."""
+
+    is_private: bool = False
+    """Whether this document is private (not published to target/)."""
 
     compiled_at: datetime | None = None
     """When this document was last compiled."""
@@ -218,6 +227,8 @@ class DocumentMeta(BaseModel):
 class Manifest(BaseModel):
     """Root manifest structure, persisted as JSON."""
 
+    model_config = {"extra": "ignore"}
+
     version: str = "1"
     """Manifest format version."""
 
@@ -230,13 +241,33 @@ class Manifest(BaseModel):
     cache: dict[str, CacheEntry] = Field(default_factory=dict)
     """Global cache for provider function results."""
 
+    # Cached reverse index: output_path -> uri (not persisted)
+    _output_path_index: dict[str, str] | None = None
+
+    def _build_output_path_index(self) -> dict[str, str]:
+        """Build index mapping output_path -> document uri."""
+        return {
+            doc.output_path: uri
+            for uri, doc in self.documents.items()
+            if doc.output_path is not None
+        }
+
     def get_document(self, uri: str) -> DocumentMeta | None:
         """Get metadata for a document by URI."""
         return self.documents.get(uri)
 
+    def get_document_by_output_path(self, output_path: str) -> DocumentMeta | None:
+        """Find document by its output filename. O(1) after first call."""
+        if self._output_path_index is None:
+            self._output_path_index = self._build_output_path_index()
+        uri = self._output_path_index.get(output_path)
+        return self.documents.get(uri) if uri else None
+
     def set_document(self, uri: str, meta: DocumentMeta) -> None:
         """Set metadata for a document."""
         self.documents[uri] = meta
+        # Invalidate cached index
+        self._output_path_index = None
 
     def get_dependents(self, uri: str) -> list[str]:
         """Find all documents that depend on the given URI.
@@ -295,7 +326,13 @@ class CompiledDocument(BaseModel):
     """Hash of the source file."""
 
     output_hash: str
-    """Hash of the compiled output."""
+    """Hash of the rendered output (used for versioning and content-addressed writes)."""
+
+    output_path: str
+    """Output filename (e.g., 'greeting.md' or 'config.json'). Set during compilation."""
+
+    is_private: bool = False
+    """Whether this document is private (not published to target/)."""
 
     refs: list[Ref] = Field(default_factory=list)
     """Refs that were tracked during compilation."""

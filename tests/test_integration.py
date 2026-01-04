@@ -27,6 +27,10 @@ class TestCompileIntegration:
         source_dir.mkdir()
         output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         # Create fixture files (same as examples/hello_world)
         (source_dir / "greeting.md").write_text("""\
@@ -48,7 +52,7 @@ description: Demonstrates ref() to include other documents
 
 # Welcome
 
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 ---
 
@@ -65,17 +69,17 @@ description: Demonstrates LLM blocks and llm_extract filter
 
 Here's some content to work with:
 
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 ## Extracted Info
 
-{{ ref('greeting') | llm_extract('the main message in one sentence') }}
+{{ ref('greeting.md') | llm_extract('the main message in one sentence') }}
 
 ## LLM-Generated Content
 
 {% llm %}
 Given this greeting:
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 Write a haiku about being welcomed.
 {% endllm %}
@@ -87,9 +91,9 @@ Write a haiku about being welcomed.
             project_root=tmp_path,
             model_path=source_dir,
             target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
@@ -128,6 +132,10 @@ Write a haiku about being welcomed.
         source_dir.mkdir()
         output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         # D is the base (no deps)
         (source_dir / "d.md").write_text("""\
@@ -142,7 +150,7 @@ D content
 ---
 name: B
 ---
-B uses {{ ref('d').content }}
+B uses {{ ref('d.md').content }}
 """)
 
         # C depends on D
@@ -150,7 +158,7 @@ B uses {{ ref('d').content }}
 ---
 name: C
 ---
-C uses {{ ref('d').content }}
+C uses {{ ref('d.md').content }}
 """)
 
         # A depends on B and C
@@ -158,7 +166,7 @@ C uses {{ ref('d').content }}
 ---
 name: A
 ---
-A uses {{ ref('b').content }} and {{ ref('c').content }}
+A uses {{ ref('b.md').content }} and {{ ref('c.md').content }}
 """)
 
         # Compile
@@ -167,9 +175,9 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
             project_root=tmp_path,
             model_path=source_dir,
             target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
@@ -195,6 +203,10 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
         (source_dir / "reports").mkdir()
         output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         (source_dir / "base.md").write_text("""\
 ---
@@ -207,7 +219,7 @@ Base content
 ---
 name: Weekly Report
 ---
-Report includes {{ ref('base').content }}
+Report includes {{ ref('base.md').content }}
 """)
 
         # Compile
@@ -216,9 +228,9 @@ Report includes {{ ref('base').content }}
             project_root=tmp_path,
             model_path=source_dir,
             target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,

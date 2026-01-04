@@ -10,7 +10,7 @@ from colin.renders.base import Renderer, RenderResult
 from colin.renders.markdown_parser import parse_markdown_to_structure
 
 if TYPE_CHECKING:
-    from colin.models import CompiledDocument
+    from colin.models import Frontmatter
 
 
 class YAMLRenderer(Renderer):
@@ -29,11 +29,18 @@ class YAMLRenderer(Renderer):
     name: str = "yaml"
     extension: str = ".yaml"
 
-    def render(self, document: CompiledDocument) -> RenderResult:
+    def render(
+        self,
+        content: str,
+        uri: str,
+        frontmatter: Frontmatter | None = None,
+    ) -> RenderResult:
         """Transform markdown content to YAML.
 
         Args:
-            document: The compiled document.
+            content: Raw template output (markdown-structured content).
+            uri: Document URI for filename generation.
+            frontmatter: Document frontmatter (unused currently).
 
         Returns:
             RenderResult with YAML content.
@@ -43,7 +50,7 @@ class YAMLRenderer(Renderer):
             yaml.YAMLError: For invalid YAML in fences.
         """
         # Parse markdown structure to Python object
-        structure = parse_markdown_to_structure(document.output)
+        structure = parse_markdown_to_structure(content)
 
         # Serialize to YAML
         yaml_content = yaml.dump(
@@ -51,6 +58,6 @@ class YAMLRenderer(Renderer):
         )
 
         return RenderResult(
-            filename=self._get_output_filename(document.uri),
+            filename=self._get_output_filename(uri),
             content=yaml_content,
         )

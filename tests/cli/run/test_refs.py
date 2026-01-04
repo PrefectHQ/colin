@@ -48,7 +48,7 @@ def test_missing_ref_fails(test_project: Path, target_dir: Path, mock_agent):
 ---
 name: Bad
 ---
-{{ ref('nonexistent').content }}
+{{ ref('nonexistent.md').content }}
 """)
 
     with pytest.raises(SystemExit) as exc_info:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from colin.models import CompiledDocument
+    from colin.models import Frontmatter
 
 
 @dataclass
@@ -24,12 +24,12 @@ class RenderResult:
 class Renderer:
     """Base class for content renderers.
 
-    Renderers transform compiled content and determine the output filename.
-    They can change file extensions and validate/format content.
+    Renderers transform raw template output into final artifacts. They:
+    - Transform content (e.g., markdown structure → JSON)
+    - Determine the output filename (applying their extension)
 
-    The default render() passes through content unchanged. Subclasses can
-    override to transform content or just override validate() for format
-    checking without transformation.
+    Rendering is part of compilation. The result is the final artifact
+    stored in .colin/compiled/ and copied to target/.
 
     Subclasses must set `name`.
     """
@@ -45,38 +45,29 @@ class Renderer:
         if not hasattr(cls, "name") or not isinstance(getattr(cls, "name", None), str):
             raise TypeError(f"{cls.__name__} must define 'name: str'")
 
-    def render(self, document: CompiledDocument) -> RenderResult:
-        """Transform document content and determine output filename.
+    def render(
+        self,
+        content: str,
+        uri: str,
+        frontmatter: Frontmatter | None = None,
+    ) -> RenderResult:
+        """Transform content to final format.
 
-        Default implementation validates and passes through content unchanged.
-        Override to transform content.
+        Default implementation passes through content unchanged.
+        Override to transform content (e.g., parse markdown to JSON).
 
         Args:
-            document: The compiled document.
+            content: Raw template output.
+            uri: Document URI for filename generation.
+            frontmatter: Document frontmatter for validation/config.
 
         Returns:
-            RenderResult with filename and content.
+            RenderResult with filename and rendered content.
         """
-        self.validate(document)
         return RenderResult(
-            filename=self._get_output_filename(document.uri),
-            content=document.output,
+            filename=self._get_output_filename(uri),
+            content=content,
         )
-
-    def validate(self, document: CompiledDocument) -> None:
-        """Validate document for this output format.
-
-        Override in subclasses to validate output format (e.g., JSON, YAML).
-        Can check frontmatter for validation settings (e.g., skip validation).
-        Raises an exception if content is invalid; returns None if valid.
-
-        Args:
-            document: The compiled document (includes output and frontmatter).
-
-        Raises:
-            ValueError: If content is invalid for this renderer's format.
-        """
-        pass
 
     def _get_output_filename(self, uri: str) -> str:
         """Get output filename from URI, applying this renderer's extension."""

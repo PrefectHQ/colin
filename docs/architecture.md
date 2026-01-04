@@ -86,29 +86,34 @@ src/colin/
 1. **Discover** - Find all `.md` models in the source directory
 2. **Load** - Parse frontmatter and template content
 3. **Extract refs** - Two-pass AST parsing to find `ref()` calls
-4. **Build graph** - Create dependency edges from refs
-5. **Detect changes** - Compare source hashes to manifest
-6. **Expand downstream** - Find all affected documents
-7. **Topological sort** - Order compilation by dependencies
-8. **Compile** - Render each template with Jinja
-9. **Write outputs** - Save compiled outputs via artifact storage
-10. **Update manifest** - Record hashes, refs, LLM calls
+4. **Compute output paths** - Determine output filename for each document based on `colin.output` setting (e.g., `config.md` → `config.json`)
+5. **Build graph** - Create dependency edges mapping refs to source documents via output path
+6. **Detect changes** - Compare source hashes to manifest
+7. **Expand downstream** - Find all affected documents
+8. **Topological sort** - Order compilation by dependencies
+9. **Compile** - Render each template with Jinja
+10. **Render output** - Apply format renderer (markdown passthrough, JSON extraction, YAML extraction)
+11. **Write to cache** - Save compiled outputs to `.colin/compiled/`
+12. **Update manifest** - Record output_path, hashes, refs, LLM calls
+13. **Publish** - Copy non-private outputs from `.colin/compiled/` to `target/`
 
 ### ref() Call Flow
 
-The `ref()` function works uniformly on all Resource types:
+The `ref()` function works uniformly on all Resource types. **Refs must specify the exact output filename including extension** (no magic `.md` suffix):
 
 ```
-ref("context/foo")                              # Project ref (string path)
+ref("greeting.md")                              # Project ref to markdown output
+ref("config.json")                              # Project ref to JSON output
     │
-    ├─ Normalizes to project://context/foo.md
-    ├─ Fetches via ProjectProvider
+    ├─ Looks up in compiled_outputs (in-memory, keyed by output_path)
+    ├─ Falls back to ProjectProvider (reads from .colin/compiled/)
     ├─ Tracks Ref + version for staleness
     └─ Returns ProjectResource:
        - .content: compiled output
        - .ref(): Ref for re-fetching
-       - .version: content hash
-       - .path, .name, .description
+       - .version: output_hash from manifest
+       - .path, .relative_path: target/ paths (errors on private files)
+       - .name, .description: from frontmatter
        - __str__() → .content
 
 ref(colin.s3.prod.get("config.json"))           # Provider resource
@@ -117,6 +122,8 @@ ref(colin.s3.prod.get("config.json"))           # Provider resource
     ├─ Tracks resource.ref() + resource.version
     └─ Returns the S3Resource unchanged
 ```
+
+**Output path resolution**: Refs are matched to source documents via the manifest's output_path index. When you `ref("config.json")`, Colin finds the document whose `output_path == "config.json"` (source might be `config.md` with `colin.output: json`).
 
 Provider functions like `s3.get()` return Resource objects. Wrapping in `ref()` registers the dependency for staleness tracking. Without `ref()`, the resource is fetched but changes won't trigger recompilation.
 
@@ -138,6 +145,35 @@ LLM call with id (auto or manual)
         - Store result in manifest
 ```
 
+## Storage Architecture
+
+Colin uses a two-layer storage architecture separating build cache from published outputs:
+
+```
+project/
+├── colin.toml
+├── models/              # source files
+├── .colin/              # build cache (fixed location)
+│   ├── manifest.json    # build metadata
+│   └── compiled/        # all compiled artifacts
+└── target/              # published outputs only
+```
+
+**`.colin/`**: Fixed location containing all compiled artifacts and the manifest. This is the source of truth for compiled content. Should be committed to git for LLM reproducibility.
+
+**`target/`**: Configurable output directory containing only published files. Fully managed by Colin—may be completely wiped on each compile.
+
+### Private Files
+
+Files can be marked as private (compiled but not published to target):
+
+- **Naming convention**: Any path segment starting with `_` marks the file as private (`_helpers.md`, `_partials/intro.md`)
+- **Frontmatter override**: `colin.private: true/false` overrides the naming convention
+
+Private files are accessible via `ref().content` but `ref().path` raises an error (linking to files that won't exist in target is a bug).
+
+See [ADR 018: Storage Architecture](decisions/018-storage-architecture.md) for details.
+
 ## Key Design Decisions
 
 See `docs/decisions/` for detailed ADRs:
@@ -152,6 +188,7 @@ See `docs/decisions/` for detailed ADRs:
 - **012-provider-architecture**: Providers and storage separation
 - **013-provider-template-functions**: Provider namespace + template functions
 - **017-resource-and-ref-architecture**: Refs as replay instructions, Resource/Ref split
+- **018-storage-architecture**: Two-layer storage, private files, cache vs published
 
 ## Frontmatter Structure
 

@@ -224,10 +224,12 @@ class TestCompiledDocument:
             uri="context/test",
             frontmatter=Frontmatter(),
             output="# Hello",
+            output_path="test.md",
             source_hash="abc123",
             output_hash="def456",
         )
         assert doc.uri == "context/test"
         assert doc.output == "# Hello"
+        assert doc.output_path == "test.md"
         assert doc.source_hash == "abc123"
         assert doc.output_hash == "def456"

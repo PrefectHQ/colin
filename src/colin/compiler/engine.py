@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import shutil
 from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,9 +75,11 @@ class CompileEngine:
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
 
-        # Project provider reads from target directory, uses manifest for timestamps
+        # Project provider reads from .colin/compiled/, uses manifest for versions
         self._project_provider = ProjectProvider(
-            base_path=config.target_path, manifest=self.manifest
+            base_path=config.build_path / "compiled",
+            target_path=config.target_path,
+            manifest=self.manifest,
         )
 
     def _load_manifest(self) -> Manifest:
@@ -85,6 +88,27 @@ class CompileEngine:
             content = self.config.manifest_path.read_text(encoding="utf-8")
             return Manifest.model_validate_json(content)
         return Manifest()
+
+    def _is_private(self, doc: ColinDocument) -> bool:
+        """Check if a document is private (not published to target/).
+
+        Private detection order:
+        1. Explicit frontmatter: colin.private = true/false (overrides all)
+        2. Naming convention: any path segment starting with _ means private
+
+        Args:
+            doc: The document to check.
+
+        Returns:
+            True if the document is private.
+        """
+        # Frontmatter override takes precedence
+        if doc.frontmatter.colin.private is not None:
+            return doc.frontmatter.colin.private
+
+        # Naming convention: any _ segment under models root marks as private
+        relative = Path(doc.uri.split("://", 1)[1])
+        return any(part.startswith("_") for part in relative.parts)
 
     async def _is_document_stale(
         self,
@@ -117,6 +141,12 @@ class CompileEngine:
         # Never compiled - rebuild regardless of policy
         if doc_meta is None or doc_meta.compiled_at is None:
             return (True, "never compiled")
+
+        # Compiled artifact missing - rebuild (handles deleted .colin/compiled/)
+        if doc_meta.output_path is not None:
+            compiled_path = self.config.build_path / "compiled" / doc_meta.output_path
+            if not compiled_path.exists():
+                return (True, "compiled artifact missing")
 
         # Time-based expiration (applies to both 'always' and 'auto')
         expires_duration = doc.frontmatter.colin.cache.expires
@@ -199,6 +229,12 @@ class CompileEngine:
         """
         # Phase 1: Discover and load documents
         documents = await self._discover_documents()
+
+        # Prune manifest entries for removed source files
+        current_uris = {doc.uri for doc in documents}
+        removed_uris = set(self.manifest.documents.keys()) - current_uris
+        for uri in removed_uris:
+            del self.manifest.documents[uri]
 
         # Phase 2: Build dependency graph from refs
         self._build_dependency_graph(documents)
@@ -286,9 +322,12 @@ class CompileEngine:
                         errors.setdefault(uri, []).append(result)
                     else:
                         compiled.append(result)
-                        compiled_outputs[uri] = result
+                        compiled_outputs[result.output_path] = result
                         if was_recompiled:
                             recompiled_uris.add(uri)
+                        # Determine if private, write output, update manifest
+                        doc = doc_map[uri]
+                        result.is_private = self._is_private(doc)
                         await self._write_output(result)
                         self._update_manifest(result)
 
@@ -299,10 +338,16 @@ class CompileEngine:
         # Update manifest timestamp
         self.manifest.compiled_at = datetime.now(timezone.utc)
 
+        # Publish public outputs to target/
+        await self._publish_outputs()
+
         return compiled
 
     async def compile_uri(self, uri: str) -> CompiledDocument:
         """Compile a single document by URI.
+
+        Writes compiled output to .colin/compiled/ but does not publish to target/.
+        Use compile_all() to compile and publish all documents.
 
         Args:
             uri: Document URI (project:// format).
@@ -327,10 +372,9 @@ class CompileEngine:
         async with create_provider_manager(self.config) as provider_manager:
             result = await self._compile_document(doc, {}, provider_manager)
 
-        # Write output
+        # Write output with private detection and update manifest
+        result.is_private = self._is_private(doc)
         await self._write_output(result)
-
-        # Update manifest
         self._update_manifest(result)
 
         return result
@@ -397,8 +441,9 @@ class CompileEngine:
         relative = path.relative_to(self.config.model_path)
         uri = f"project://{relative}"
 
-        # Hash the template content for change detection
-        source_hash = hashlib.sha256(post.content.encode()).hexdigest()[:16]
+        # Hash the FULL content (including frontmatter) for change detection
+        # This ensures changes to colin.output, colin.private, etc. invalidate cache
+        source_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
 
         return ColinDocument(
             uri=uri,
@@ -415,6 +460,13 @@ class CompileEngine:
         Args:
             documents: List of documents to analyze.
         """
+        # Build output_path → source_uri mapping for resolving refs like ref("config.json")
+        # when the source is config.md with colin.output: json
+        output_path_to_uri: dict[str, str] = {}
+        for doc in documents:
+            output_path = self._compute_output_path(doc)
+            output_path_to_uri[output_path] = doc.uri
+
         # Use full environment with extensions so {% llm %} etc. are recognized
         env = create_jinja_environment()
 
@@ -424,32 +476,51 @@ class CompileEngine:
                 refs = self._extract_refs_from_ast(ast)
                 for ref_uri in refs:
                     # Normalize ref URIs to match document URIs (project://...)
-                    normalized_ref = self._normalize_uri(ref_uri)
+                    normalized_ref = self._normalize_uri(ref_uri, output_path_to_uri)
                     self.graph.add_edge(doc.uri, normalized_ref)
             except TemplateSyntaxError:
                 # If parsing fails, we'll catch actual errors during compilation
                 pass
 
-    def _normalize_uri(self, uri: str) -> str:
-        """Normalize a URI to project:// format.
-
-        Converts shorthand refs like 'data' to 'project://data.md'.
+    def _compute_output_path(self, doc: ColinDocument) -> str:
+        """Compute the output path for a document based on its output format.
 
         Args:
-            uri: URI in any format (shorthand or full).
+            doc: The document to compute output path for.
 
         Returns:
-            Normalized URI.
+            The output filename (e.g., 'config.json' for json output).
+        """
+        # Extract path from URI (project://path.md -> path.md)
+        path = doc.uri.split("://", 1)[1] if "://" in doc.uri else doc.uri
+        renderer = get_renderer(doc.frontmatter.colin.output)
+        return renderer._get_output_filename(path)
+
+    def _normalize_uri(
+        self, ref_target: str, output_path_to_uri: dict[str, str] | None = None
+    ) -> str:
+        """Resolve a ref target to a source document URI.
+
+        Refs must specify exact output filename (no magic .md suffix).
+        Uses output_path_to_uri mapping to resolve output filenames to source URIs.
+
+        Args:
+            ref_target: What the user wrote in ref(), e.g., "config.json" or "project://foo".
+            output_path_to_uri: Mapping from output_path to source URI.
+
+        Returns:
+            Source document URI for dependency tracking.
         """
         # Already has a scheme - leave as-is
-        if "://" in uri:
-            return uri
+        if "://" in ref_target:
+            return ref_target
 
-        # Schemaless shorthand - normalize to project://
-        # Add .md extension if missing
-        if not uri.endswith(".md"):
-            uri = f"{uri}.md"
-        return f"project://{uri}"
+        # Look up output_path → source URI
+        if output_path_to_uri is not None and ref_target in output_path_to_uri:
+            return output_path_to_uri[ref_target]
+
+        # Not found - construct URI anyway (will fail at compile time)
+        return f"project://{ref_target}"
 
     def _extract_refs_from_ast(self, ast: nodes.Template) -> list[str]:
         """Extract ref() URIs from Jinja AST.
@@ -482,7 +553,7 @@ class CompileEngine:
         self,
         doc: ColinDocument,
         compiled_outputs: dict[str, CompiledDocument],
-        provider_manager,
+        provider_manager: ProviderManager,
         doc_state: OperationState | None = None,
     ) -> CompiledDocument:
         """Compile a single document.
@@ -519,17 +590,22 @@ class CompileEngine:
         template = env.from_string(doc.template_content)
         set_compile_context(context)
         try:
-            output = await template.render_async()
+            raw_output = await template.render_async()
         finally:
             set_compile_context(None)
 
-        # Calculate output hash
-        output_hash = hashlib.sha256(output.encode()).hexdigest()[:16]
+        # Apply format renderer (JSON, YAML, or markdown passthrough)
+        renderer = get_renderer(doc.frontmatter.colin.output)
+        render_result = renderer.render(raw_output, doc.uri, doc.frontmatter)
+
+        # Hash the FINAL rendered content
+        output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
 
         return CompiledDocument(
             uri=doc.uri,
             frontmatter=doc.frontmatter,
-            output=output,
+            output=render_result.content,
+            output_path=render_result.filename,
             source_hash=doc.source_hash,
             output_hash=output_hash,
             refs=context.refs,
@@ -539,22 +615,23 @@ class CompileEngine:
         )
 
     async def _write_output(self, doc: CompiledDocument) -> None:
-        """Write compiled output to storage.
+        """Write pre-rendered output to storage with content-addressing.
 
-        Uses the renderer specified in frontmatter.colin.output (default: markdown).
+        Content is already rendered during compilation. Only writes if
+        the output hash differs from existing file or artifact is missing.
 
         Args:
-            doc: The compiled document.
+            doc: The compiled document (must have output_path and output set).
         """
-        # Get renderer from frontmatter
-        output_format = doc.frontmatter.colin.output
-        renderer = get_renderer(output_format)
-
-        # Render the document
-        render_result = renderer.render(doc)
-
-        # Write to artifact storage (relative path)
-        await self.artifact_storage.write(render_result.filename, render_result.content)
+        # Content-addressed: only write if hash differs or artifact missing
+        existing_meta = self.manifest.get_document(doc.uri)
+        artifact_path = self.config.build_path / "compiled" / doc.output_path
+        if (
+            existing_meta is None
+            or existing_meta.output_hash != doc.output_hash
+            or not artifact_path.exists()
+        ):
+            await self.artifact_storage.write(doc.output_path, doc.output)
 
     def _update_manifest(self, doc: CompiledDocument) -> None:
         """Update manifest with compilation result.
@@ -566,6 +643,8 @@ class CompileEngine:
             uri=doc.uri,
             source_hash=doc.source_hash,
             output_hash=doc.output_hash,
+            output_path=doc.output_path,
+            is_private=doc.is_private,
             compiled_at=datetime.now(timezone.utc),
             refs=doc.refs,
             ref_versions=doc.ref_versions,
@@ -573,3 +652,35 @@ class CompileEngine:
             total_cost_usd=doc.total_cost_usd,
         )
         self.manifest.set_document(doc.uri, meta)
+
+    async def _publish_outputs(self, *, clean_target: bool = True) -> None:
+        """Publish public outputs from .colin/compiled/ to target/.
+
+        Uses manifest metadata to copy files without re-rendering.
+
+        Args:
+            clean_target: If True, remove target/ before publishing.
+        """
+        target_path = self.config.target_path
+
+        # Clean target directory
+        if clean_target and target_path.exists():
+            shutil.rmtree(target_path)
+
+        # Create target directory
+        target_path.mkdir(parents=True, exist_ok=True)
+
+        # Copy public files from .colin/compiled/ to target/
+        build_compiled = self.config.build_path / "compiled"
+        for doc_meta in self.manifest.documents.values():
+            if doc_meta.is_private:
+                continue
+            if doc_meta.output_path is None:
+                continue
+
+            src = build_compiled / doc_meta.output_path
+            dst = target_path / doc_meta.output_path
+
+            if src.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)

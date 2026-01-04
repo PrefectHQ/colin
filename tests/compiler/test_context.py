@@ -35,7 +35,7 @@ class TestCompileContext:
         output_file = tmp_path / "target" / "other.md"
         output_file.write_text("Compiled other")
 
-        await context.ref("other")
+        await context.ref("other.md")
 
         # Check that a Ref with the right args was tracked
         assert len(context.refs) == 1
@@ -51,7 +51,7 @@ class TestCompileContext:
         output_file = tmp_path / "target" / "doc.md"
         output_file.write_text("Compiled content")
 
-        result = await context.ref("doc")
+        result = await context.ref("doc.md")
 
         # Returns Resource (ProjectResource) with content
         assert result.content == "Compiled content"
@@ -64,7 +64,7 @@ class TestCompileContext:
 
     async def test_ref_not_found(self, context: CompileContext) -> None:
         with pytest.raises(RefNotFoundError):
-            await context.ref("nonexistent")
+            await context.ref("nonexistent.md")
 
     async def test_add_llm_call_records_call(self, context: CompileContext) -> None:
         """Test that add_llm_call properly records an LLM call."""

@@ -101,9 +101,9 @@ class ProjectConfig(BaseModel):
     model_path: Path
     """Absolute path to models directory."""
     target_path: Path
-    """Absolute path to target directory."""
+    """Absolute path to target directory (published outputs)."""
     manifest_path: Path
-    """Absolute path to manifest file."""
+    """Absolute path to manifest file (.colin/manifest.json)."""
 
     # Provider configuration
     project_storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -111,6 +111,11 @@ class ProjectConfig(BaseModel):
     providers: dict[str, ProviderInstanceConfig] = Field(default_factory=dict)
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def build_path(self) -> Path:
+        """Fixed location for build artifacts: .colin/"""
+        return self.project_root / ".colin"
 
 
 def find_project_file(start: Path | None = None) -> Path | None:
@@ -235,14 +240,14 @@ def load_project(path: Path) -> ProjectConfig:
     else:
         target_path = (project_root / target_path_rel).resolve()
 
-    # Manifest path: explicit config or default to {target}/manifest.json
+    # Manifest path: explicit config or default to .colin/manifest.json
     if manifest_path_rel:
         if Path(manifest_path_rel).is_absolute():
             manifest_path = Path(manifest_path_rel).resolve()
         else:
             manifest_path = (project_root / manifest_path_rel).resolve()
     else:
-        manifest_path = target_path / settings.manifest_file
+        manifest_path = project_root / ".colin" / settings.manifest_file
 
     # Parse project storage config
     project_storage_data = project.get("storage", {})
@@ -325,7 +330,7 @@ def init_project(
     project_root = directory.resolve()
     model_path = (project_root / model_path_rel).resolve()
     target_path = (project_root / target_path_rel).resolve()
-    manifest_path = target_path / settings.manifest_file
+    manifest_path = project_root / ".colin" / settings.manifest_file
 
     # Create colin.toml with full config
     project_name = name or directory.name
@@ -419,7 +424,7 @@ def get_project_status(project_dir: Path) -> dict:
         project_dir = project_dir.resolve()
         project_name = project_dir.name
         target_dir = project_dir / "target"
-        manifest_path = target_dir / settings.manifest_file
+        manifest_path = project_dir / ".colin" / settings.manifest_file
 
     manifest = load_manifest(manifest_path)
 

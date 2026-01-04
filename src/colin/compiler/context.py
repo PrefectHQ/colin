@@ -98,13 +98,13 @@ class CompileContext:
             self.track(target.ref(), target.version)
             return cast(T, target)
 
-        # String path → project ref
-        path = self._normalize_path(target)
-        uri = f"project://{path}"
+        # String path → exact output filename (no normalization)
+        path = target
 
-        # Check in-memory compiled outputs first (from current compile run)
-        if uri in self.compiled_outputs:
-            compiled = self.compiled_outputs[uri]
+        # Check in-memory compiled outputs first (keyed by output_path)
+        compiled = self.compiled_outputs.get(path)
+
+        if compiled is not None:
             name_val = compiled.frontmatter.metadata.get("name")
             desc_val = compiled.frontmatter.metadata.get("description")
 
@@ -117,9 +117,12 @@ class CompileContext:
             resource = ProjectResource(
                 content=compiled.output,
                 ref=project_ref,
-                path=path,
+                relative_path=path,
+                target_path=self.project_provider.target_path or self.project_provider.base_path,
+                is_private=compiled.is_private,
                 name=name_val if isinstance(name_val, str) else path.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,
+                output_hash=compiled.output_hash,
             )
             is_first = self.track(resource.ref(), resource.version)
             if is_first and self.doc_state is not None:
@@ -151,15 +154,6 @@ class CompileContext:
         result = await fetch_from_provider()
         self.track(result.ref(), result.version)
         return result
-
-    def _normalize_path(self, path: str) -> str:
-        """Normalize a path for project refs.
-
-        Adds .md extension if missing.
-        """
-        if not path.endswith(".md"):
-            path = f"{path}.md"
-        return path
 
     def track(self, ref: Ref, version: str) -> bool:
         """Record a ref and its version as a dependency.

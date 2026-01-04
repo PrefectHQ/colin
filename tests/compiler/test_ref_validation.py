@@ -47,7 +47,7 @@ class TestSchemalessRefValidation:
         (output_dir / "greeting.md").write_text("Hello!")
 
         # Should not raise - file exists in project
-        result = await context.ref("greeting")
+        result = await context.ref("greeting.md")
         assert result.content == "Hello!"
 
     async def test_schemaless_ref_to_nonexistent_file_raises(
@@ -58,9 +58,9 @@ class TestSchemalessRefValidation:
 
         # No files created - ref should fail validation
         with pytest.raises(RefNotFoundError) as exc_info:
-            await context.ref("nonexistent")
+            await context.ref("nonexistent.md")
 
-        assert "nonexistent" in str(exc_info.value)
+        assert "nonexistent.md" in str(exc_info.value)
         assert "not found" in str(exc_info.value)
 
     async def test_schemaless_ref_to_nested_valid_file(
@@ -75,7 +75,7 @@ class TestSchemalessRefValidation:
         (output_dir / "reports").mkdir()
         (output_dir / "reports" / "quarterly.md").write_text("Report")
 
-        result = await context.ref("reports/quarterly")
+        result = await context.ref("reports/quarterly.md")
         assert result.content == "Report"
 
     async def test_schemaless_ref_to_nested_nonexistent_raises(
@@ -85,9 +85,9 @@ class TestSchemalessRefValidation:
         context, source_dir, output_dir = project_setup
 
         with pytest.raises(RefNotFoundError) as exc_info:
-            await context.ref("reports/missing")
+            await context.ref("reports/missing.md")
 
-        assert "reports/missing" in str(exc_info.value)
+        assert "reports/missing.md" in str(exc_info.value)
 
     async def test_schemaless_ref_dependency_not_recorded_on_failure(
         self, project_setup: tuple[CompileContext, Path, Path]
@@ -96,7 +96,7 @@ class TestSchemalessRefValidation:
         context, source_dir, output_dir = project_setup
 
         with pytest.raises(RefNotFoundError):
-            await context.ref("nonexistent")
+            await context.ref("nonexistent.md")
 
         # Dependency should NOT be recorded since validation failed
         assert len(context.refs) == 0
@@ -137,9 +137,9 @@ class TestPathTraversalPrevention:
 
         # Attempt to reference file outside project via path traversal
         with pytest.raises(RefNotFoundError) as exc_info:
-            await context.ref("../secret")
+            await context.ref("../secret.md")
 
-        assert "../secret" in str(exc_info.value)
+        assert "../secret.md" in str(exc_info.value)
         assert "not found" in str(exc_info.value)
 
     async def test_deep_path_traversal_raises(
