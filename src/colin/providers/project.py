@@ -114,6 +114,12 @@ class ProjectProvider(Provider):
         """
         resolved = (self.base_path / path).resolve()
 
+        # Security: ensure resolved path is within base_path (prevent path traversal)
+        try:
+            resolved.relative_to(self.base_path.resolve())
+        except ValueError:
+            raise FileNotFoundError(f"File not found: {path}") from None
+
         if not resolved.exists():
             raise FileNotFoundError(f"File not found: {path} (expected at {resolved})")
 
