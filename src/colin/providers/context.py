@@ -8,7 +8,7 @@ from colin.compiler.state import OperationState
 from colin.models import Manifest
 
 if TYPE_CHECKING:
-    from colin.providers.resource import Resource
+    from colin.resources import Resource
 
 
 @dataclass

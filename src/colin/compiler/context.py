@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 from colin.compiler.state import OperationState, Status
 from colin.exceptions import RefNotFoundError
 from colin.models import CompiledDocument, LLMCall, Ref
-from colin.providers.resource import Resource
+from colin.resources import Resource
 
 if TYPE_CHECKING:
     from colin.models import Manifest
@@ -52,6 +52,7 @@ class CompileContext:
         self.ref_versions: dict[str, str] = {}  # ref.key() -> version
         self.llm_calls: dict[str, LLMCall] = {}
         self.total_cost: float = 0.0
+        self.sections: dict[str, str] = {}  # section_name -> raw_content
 
     @overload
     async def ref(self, target: str) -> ProjectResource: ...
@@ -123,6 +124,8 @@ class CompileContext:
                 name=name_val if isinstance(name_val, str) else path.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,
                 output_hash=compiled.output_hash,
+                output_format=compiled.frontmatter.colin.output,
+                sections=compiled.sections,
             )
             is_first = self.track(resource.ref(), resource.version)
             if is_first and self.doc_state is not None:

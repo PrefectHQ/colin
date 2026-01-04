@@ -1,7 +1,7 @@
 # Colin Architecture
 
 > **Status**: MVP in development
-> **Last Updated**: 2026-01-01
+> **Last Updated**: 2026-01-04
 
 Colin (**Co**ntext **Lin**eage) is a context engine for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and produces outputs your agents can use.
 
@@ -202,6 +202,61 @@ name: my-doc          # Document metadata
 description: ...      # Passed through to output
 ---
 ```
+
+## Template Extensions
+
+Colin templates support several Jinja block extensions:
+
+### {% llm %} Blocks
+
+LLM processing blocks for AI-powered transformations:
+
+```jinja
+{% llm model="sonnet" %}
+Summarize this content: {{ ref("report.md") }}
+{% endllm %}
+```
+
+### {% item %} Blocks
+
+Array item markers for JSON/YAML output:
+
+```jinja
+{% for user in users %}
+{% item %}
+## name
+{{ user.name }}
+
+## email
+{{ user.email }}
+{% enditem %}
+{% endfor %}
+```
+
+### {% section %} Blocks
+
+Named sections for cross-document references:
+
+```jinja
+{% section strategy %}
+## Our Strategy
+Focus on growth through innovation.
+{% endsection %}
+
+{% section "key metrics" %}
+## Revenue
+$1M
+{% endsection %}
+```
+
+Access sections from other documents:
+
+```jinja
+{{ ref("plan.md").sections.strategy }}
+{{ ref("plan.md").sections['key metrics'] }}
+```
+
+**Format-aware access**: Sections return raw strings for markdown output, parsed data structures for JSON/YAML output. Sections are captured via HTML markers during rendering, stored in the manifest, and accessed via the `SectionsAccessor` class.
 
 ## Providers and Template Functions
 

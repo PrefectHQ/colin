@@ -217,6 +217,86 @@ Summarize this content for an executive audience.
 {% endllm %}
 ```
 
+## Section Blocks
+
+Named sections let you mark and reference specific parts of a document from other templates. This is useful for creating modular documents where different sections can be accessed independently:
+
+```markdown models/plan.md
+---
+name: Strategic Plan
+---
+
+{% section strategy %}
+## Our Strategy
+Focus on growth through innovation and customer success.
+Target enterprise market with AI-powered solutions.
+{% endsection %}
+
+{% section "key metrics" %}
+## Key Metrics
+- Revenue: $1M ARR
+- Customers: 50 enterprise
+- Team size: 12
+{% endsection %}
+```
+
+Access sections from other documents using `ref()`:
+
+```markdown models/summary.md
+---
+name: Executive Summary
+---
+
+## Strategy Overview
+{{ ref('plan.md').sections.strategy }}
+
+## Performance
+{{ ref('plan.md').sections['key metrics'] }}
+```
+
+Section names support both identifiers (`strategy`) and quoted strings (`"key metrics"`). Use quoted strings for names with spaces or special characters.
+
+**Dot access**: `ref('doc').sections.name` (for simple identifiers)
+**Dict access**: `ref('doc').sections['name']` (for any name, including spaces)
+
+### Format-Aware Sections
+
+Sections automatically adapt to your output format:
+
+- **Markdown output**: Returns raw string content
+- **JSON/YAML output**: Parses markdown structure into data (headers → keys, lists → arrays)
+
+For a document with `colin.output: json`, section content is parsed:
+
+```markdown models/config.json.md
+---
+colin:
+  output: json
+---
+
+{% section database %}
+## host
+localhost
+
+## port
+5432
+{% endsection %}
+```
+
+Accessing `ref('config.json.md').sections.database` returns:
+```json
+{
+  "host": "localhost",
+  "port": 5432
+}
+```
+
+### Section Naming
+
+- **Duplicate names**: If multiple sections have the same name, the last one wins
+- **Empty sections**: Sections can be empty (useful for placeholders)
+- **Special characters**: Use quoted strings for names with spaces, hyphens, or other characters
+
 ## Naming
 
 Document URIs derive from their file paths relative to the models directory. Subdirectories become part of the URI:

@@ -11,11 +11,11 @@ from pydantic import model_validator
 from pydantic_ai import Agent
 from pydantic_ai.models import Model, infer_model
 
+from colin.compiler.cache import _serialize_value, cached, get_compile_context, hash_args
 from colin.llm.prompts import render_classify_prompt, render_complete_prompt, render_extract_prompt
 from colin.llm.types import LLMOutput, create_classification_model
 from colin.models import LLMCall
 from colin.providers.base import Provider
-from colin.providers.cache import _serialize_value, cached, get_compile_context, hash_args
 from colin.settings import settings
 
 
