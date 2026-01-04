@@ -117,9 +117,12 @@ class CompileContext:
             resource = ProjectResource(
                 content=compiled.output,
                 ref=project_ref,
-                path=path,
+                relative_path=path,
+                target_path=self.project_provider.target_path or self.project_provider.base_path,
+                is_private=compiled.is_private,
                 name=name_val if isinstance(name_val, str) else path.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,
+                output_hash=compiled.output_hash,
             )
             is_first = self.track(resource.ref(), resource.version)
             if is_first and self.doc_state is not None:

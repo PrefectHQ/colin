@@ -33,21 +33,24 @@ project/
 
 **`.colin/`**: Fixed location in project root (like `.git/`). Contains all compiled artifacts and the manifest. This is the source of truth for compiled content.
 
-**`target/`**: Configurable via `target-path`. Contains only published files. This is what users consume.
+**`target/`**: Configurable via `target-path`. Contains only published files. This is what users consume. **This directory is fully managed by Colin**—it may be completely wiped and rebuilt on each compile. Users should not place hand-written files here; instead, copy files out of `target/` if needed elsewhere.
 
 ### Visibility: public vs private
 
 Files can be marked as private (compile but don't copy to target).
 
-**Naming convention (preferred):** Files prefixed with `_` are private by default. This is the idiomatic way to mark internal/helper files:
+**Naming convention (preferred):** Any path segment under the models root that starts with `_` marks the file as private. This is the idiomatic way to mark internal/helper files:
 
 ```
 models/
 ├── greeting.md          # public (copied to target/)
 ├── _helpers.md          # private (stays in .colin/compiled/)
 ├── _data.md             # private
+├── _partials/intro.md   # private (directory starts with _)
 └── utils.md             # public
 ```
+
+Only path segments under the models root count. Parent directories have no effect—if your project is at `~/Developer/_my_project/models/`, the `_my_project` prefix does not make files private.
 
 **Frontmatter override:** For edge cases where renaming isn't practical:
 
@@ -82,7 +85,7 @@ class CompiledArtifact:
     uri: str                # project://greeting.md
     content: str            # compiled content
     output_hash: str        # content hash for cache invalidation
-    private: bool           # if True, don't copy to target/
+    is_private: bool        # if True, don't copy to target/
     metadata: dict          # frontmatter, format, etc.
 ```
 

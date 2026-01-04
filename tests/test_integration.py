@@ -27,6 +27,10 @@ class TestCompileIntegration:
         source_dir.mkdir()
         output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         # Create fixture files (same as examples/hello_world)
         (source_dir / "greeting.md").write_text("""\
@@ -87,9 +91,9 @@ Write a haiku about being welcomed.
             project_root=tmp_path,
             model_path=source_dir,
             target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
@@ -128,6 +132,10 @@ Write a haiku about being welcomed.
         source_dir.mkdir()
         output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         # D is the base (no deps)
         (source_dir / "d.md").write_text("""\
@@ -167,9 +175,9 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
             project_root=tmp_path,
             model_path=source_dir,
             target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
@@ -195,6 +203,10 @@ A uses {{ ref('b').content }} and {{ ref('c').content }}
         (source_dir / "reports").mkdir()
         output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         (source_dir / "base.md").write_text("""\
 ---
@@ -216,9 +228,9 @@ Report includes {{ ref('base').content }}
             project_root=tmp_path,
             model_path=source_dir,
             target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,

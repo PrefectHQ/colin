@@ -138,6 +138,35 @@ LLM call with id (auto or manual)
         - Store result in manifest
 ```
 
+## Storage Architecture
+
+Colin uses a two-layer storage architecture separating build cache from published outputs:
+
+```
+project/
+├── colin.toml
+├── models/              # source files
+├── .colin/              # build cache (fixed location)
+│   ├── manifest.json    # build metadata
+│   └── compiled/        # all compiled artifacts
+└── target/              # published outputs only
+```
+
+**`.colin/`**: Fixed location containing all compiled artifacts and the manifest. This is the source of truth for compiled content. Should be committed to git for LLM reproducibility.
+
+**`target/`**: Configurable output directory containing only published files. Fully managed by Colin—may be completely wiped on each compile.
+
+### Private Files
+
+Files can be marked as private (compiled but not published to target):
+
+- **Naming convention**: Any path segment starting with `_` marks the file as private (`_helpers.md`, `_partials/intro.md`)
+- **Frontmatter override**: `colin.private: true/false` overrides the naming convention
+
+Private files are accessible via `ref().content` but `ref().path` raises an error (linking to files that won't exist in target is a bug).
+
+See [ADR 018: Storage Architecture](decisions/018-storage-architecture.md) for details.
+
 ## Key Design Decisions
 
 See `docs/decisions/` for detailed ADRs:
@@ -152,6 +181,7 @@ See `docs/decisions/` for detailed ADRs:
 - **012-provider-architecture**: Providers and storage separation
 - **013-provider-template-functions**: Provider namespace + template functions
 - **017-resource-and-ref-architecture**: Refs as replay instructions, Resource/Ref split
+- **018-storage-architecture**: Two-layer storage, private files, cache vs published
 
 ## Frontmatter Structure
 

@@ -1,4 +1,4 @@
-"""Project provider - reads compiled artifacts from the project's target directory."""
+"""Project provider - reads compiled artifacts from .colin/compiled/."""
 
 from __future__ import annotations
 
@@ -15,13 +15,18 @@ from colin.providers.resource import Resource
 
 
 class ProjectResource(Resource):
-    """Resource returned by ProjectProvider."""
+    """Resource returned by ProjectProvider.
+
+    Path properties error on private files since they aren't published to target/.
+    """
 
     def __init__(
         self,
         content: str,
         ref: Ref,
-        path: str,
+        relative_path: str,
+        target_path: Path,
+        is_private: bool = False,
         name: str | None = None,
         description: str | None = None,
         output_hash: str | None = None,
@@ -31,16 +36,40 @@ class ProjectResource(Resource):
         Args:
             content: Compiled output content.
             ref: The Ref for this resource.
-            path: Relative path within project (e.g., "greeting.md").
+            relative_path: Relative path within project (e.g., "greeting.md").
+            target_path: Absolute path to target directory.
+            is_private: Whether this resource is private.
             name: Resource name (defaults to filename).
             description: Resource description.
             output_hash: Hash of compiled output (used as version).
         """
         super().__init__(content, ref)
-        self.path = path
-        self.name = name or path.split("/")[-1]
+        self._relative_path = Path(relative_path)
+        self._target_path = target_path
+        self._is_private = is_private
+        self.name = name or self._relative_path.name
         self.description = description
         self._output_hash = output_hash
+
+    @property
+    def path(self) -> Path:
+        """Absolute path in target/. Errors on private files."""
+        if self._is_private:
+            raise ValueError(
+                f"Cannot get path for private file '{self._relative_path}'. "
+                "Private files are not published to target/."
+            )
+        return self._target_path / self._relative_path
+
+    @property
+    def relative_path(self) -> Path:
+        """Relative path within target/. Errors on private files."""
+        if self._is_private:
+            raise ValueError(
+                f"Cannot get relative_path for private file '{self._relative_path}'. "
+                "Private files are not published to target/."
+            )
+        return self._relative_path
 
     @property
     def version(self) -> str:
@@ -51,9 +80,10 @@ class ProjectResource(Resource):
 
 
 class ProjectProvider(Provider):
-    """Provider for reading compiled artifacts from the project's target directory.
+    """Provider for reading compiled artifacts from .colin/compiled/.
 
-    Uses manifest for version lookups (output_hash) instead of file mtime.
+    Uses manifest for version lookups and private detection.
+    Path properties on resources resolve to target/.
 
     Template usage: ref("greeting.md") reads base_path/greeting.md
     """
@@ -61,10 +91,13 @@ class ProjectProvider(Provider):
     namespace: ClassVar[str] = "project"
 
     base_path: Path
-    """Target directory containing compiled artifacts."""
+    """Directory containing compiled artifacts (.colin/compiled/)."""
+
+    target_path: Path | None = None
+    """Target directory for path resolution (published outputs)."""
 
     manifest: Manifest | None = None
-    """Manifest for version lookups."""
+    """Manifest for version lookups and private detection."""
 
     _connection: str = ""
 
@@ -86,8 +119,9 @@ class ProjectProvider(Provider):
 
         content = resolved.read_text(encoding="utf-8")
 
-        # Get output_hash from manifest for version
+        # Get metadata from manifest
         output_hash = self._get_output_hash(path)
+        is_private = self._is_private(path)
 
         ref = Ref(
             provider=self.namespace,
@@ -99,7 +133,9 @@ class ProjectProvider(Provider):
         resource = ProjectResource(
             content=content,
             ref=ref,
-            path=path,
+            relative_path=path,
+            target_path=self.target_path or self.base_path,
+            is_private=is_private,
             name=path.split("/")[-1],
             output_hash=output_hash,
         )
@@ -151,6 +187,20 @@ class ProjectProvider(Provider):
         if doc_meta is None:
             return None
         return doc_meta.output_hash
+
+    def _is_private(self, path: str) -> bool:
+        """Check if a path is private using manifest (authoritative source).
+
+        The manifest is populated during compilation with the authoritative
+        privacy status. If the manifest or document is missing, assume public.
+        """
+        if self.manifest is None:
+            return False
+        uri = f"project://{path}"
+        doc_meta = self.manifest.get_document(uri)
+        if doc_meta is None:
+            return False
+        return doc_meta.is_private
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         return {"get": self.get}

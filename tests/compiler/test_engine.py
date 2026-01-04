@@ -22,15 +22,19 @@ class TestCompileEngine:
         source_dir.mkdir()
         output_dir = tmp_path / "target"
         output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         config = ProjectConfig(
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
             target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
 
         engine = CompileEngine(
             config=config,
@@ -140,7 +144,11 @@ Just this one.
 
         assert result.uri == "project://single.md"
         assert "Just this one." in result.output
-        assert (output_dir / "single.md").exists()
+        # compile_uri writes to build cache, not target (targeted compilation)
+        compiled_dir = engine.config.build_path / "compiled"
+        assert (compiled_dir / "single.md").exists()
+        # target only gets files after compile_all publishes
+        assert not (output_dir / "single.md").exists()
 
     async def test_compile_uri_not_found(
         self, engine_setup: tuple[CompileEngine, Path, Path]

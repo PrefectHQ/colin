@@ -44,6 +44,7 @@ def project_dir(tmp_path: Path) -> Path:
     (tmp_path / "skills").mkdir()
     (tmp_path / "dist").mkdir()
     (tmp_path / ".colin").mkdir()
+    (tmp_path / ".colin" / "compiled").mkdir()
     return tmp_path
 
 

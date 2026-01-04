@@ -149,6 +149,9 @@ class ColinConfig(BaseModel):
     storage: str | None = None
     """Storage backend (future feature)."""
 
+    private: bool | None = None
+    """Override private detection. None uses naming convention (_ prefix)."""
+
     @field_validator("cache", mode="before")
     @classmethod
     def _normalize_cache(cls, v: Any) -> CacheConfig | dict[str, Any]:
@@ -194,7 +197,13 @@ class DocumentMeta(BaseModel):
     """Hash of the source file content."""
 
     output_hash: str | None = None
-    """Hash of the compiled output."""
+    """Hash of the rendered output (used for versioning and content-addressed writes)."""
+
+    output_path: str | None = None
+    """Relative output filename after rendering (e.g., 'greeting.md' or 'greeting.json')."""
+
+    is_private: bool = False
+    """Whether this document is private (not published to target/)."""
 
     compiled_at: datetime | None = None
     """When this document was last compiled."""
@@ -295,7 +304,10 @@ class CompiledDocument(BaseModel):
     """Hash of the source file."""
 
     output_hash: str
-    """Hash of the compiled output."""
+    """Hash of the rendered output (used for versioning and content-addressed writes)."""
+
+    is_private: bool = False
+    """Whether this document is private (not published to target/)."""
 
     refs: list[Ref] = Field(default_factory=list)
     """Refs that were tracked during compilation."""

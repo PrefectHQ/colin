@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import shutil
 from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,9 +75,11 @@ class CompileEngine:
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
 
-        # Project provider reads from target directory, uses manifest for timestamps
+        # Project provider reads from .colin/compiled/, uses manifest for versions
         self._project_provider = ProjectProvider(
-            base_path=config.target_path, manifest=self.manifest
+            base_path=config.build_path / "compiled",
+            target_path=config.target_path,
+            manifest=self.manifest,
         )
 
     def _load_manifest(self) -> Manifest:
@@ -85,6 +88,27 @@ class CompileEngine:
             content = self.config.manifest_path.read_text(encoding="utf-8")
             return Manifest.model_validate_json(content)
         return Manifest()
+
+    def _is_private(self, doc: ColinDocument) -> bool:
+        """Check if a document is private (not published to target/).
+
+        Private detection order:
+        1. Explicit frontmatter: colin.private = true/false (overrides all)
+        2. Naming convention: any path segment starting with _ means private
+
+        Args:
+            doc: The document to check.
+
+        Returns:
+            True if the document is private.
+        """
+        # Frontmatter override takes precedence
+        if doc.frontmatter.colin.private is not None:
+            return doc.frontmatter.colin.private
+
+        # Naming convention: any _ segment under models root marks as private
+        relative = Path(doc.uri.split("://", 1)[1])
+        return any(part.startswith("_") for part in relative.parts)
 
     async def _is_document_stale(
         self,
@@ -200,6 +224,12 @@ class CompileEngine:
         # Phase 1: Discover and load documents
         documents = await self._discover_documents()
 
+        # Prune manifest entries for removed source files
+        current_uris = {doc.uri for doc in documents}
+        removed_uris = set(self.manifest.documents.keys()) - current_uris
+        for uri in removed_uris:
+            del self.manifest.documents[uri]
+
         # Phase 2: Build dependency graph from refs
         self._build_dependency_graph(documents)
 
@@ -289,8 +319,15 @@ class CompileEngine:
                         compiled_outputs[uri] = result
                         if was_recompiled:
                             recompiled_uris.add(uri)
-                        await self._write_output(result)
-                        self._update_manifest(result)
+                        # Determine if private and write output
+                        doc = doc_map[uri]
+                        result.is_private = self._is_private(doc)
+                        output_path, output_hash = await self._write_output(result)
+                        self._update_manifest(
+                            result,
+                            output_path=output_path,
+                            output_hash=output_hash,
+                        )
 
         # Raise collected errors if any
         if errors:
@@ -299,10 +336,16 @@ class CompileEngine:
         # Update manifest timestamp
         self.manifest.compiled_at = datetime.now(timezone.utc)
 
+        # Publish public outputs to target/
+        await self._publish_outputs()
+
         return compiled
 
     async def compile_uri(self, uri: str) -> CompiledDocument:
         """Compile a single document by URI.
+
+        Writes compiled output to .colin/compiled/ but does not publish to target/.
+        Use compile_all() to compile and publish all documents.
 
         Args:
             uri: Document URI (project:// format).
@@ -327,11 +370,16 @@ class CompileEngine:
         async with create_provider_manager(self.config) as provider_manager:
             result = await self._compile_document(doc, {}, provider_manager)
 
-        # Write output
-        await self._write_output(result)
+        # Write output with private detection
+        result.is_private = self._is_private(doc)
+        output_path, output_hash = await self._write_output(result)
 
         # Update manifest
-        self._update_manifest(result)
+        self._update_manifest(
+            result,
+            output_path=output_path,
+            output_hash=output_hash,
+        )
 
         return result
 
@@ -538,13 +586,17 @@ class CompileEngine:
             total_cost_usd=context.total_cost,
         )
 
-    async def _write_output(self, doc: CompiledDocument) -> None:
-        """Write compiled output to storage.
+    async def _write_output(self, doc: CompiledDocument) -> tuple[str, str]:
+        """Write compiled output to storage with content-addressing.
 
         Uses the renderer specified in frontmatter.colin.output (default: markdown).
+        Only writes if the content hash differs from existing file.
 
         Args:
-            doc: The compiled document.
+            doc: The compiled document (must have is_private set).
+
+        Returns:
+            Tuple of (output_path, rendered_output_hash).
         """
         # Get renderer from frontmatter
         output_format = doc.frontmatter.colin.output
@@ -553,19 +605,36 @@ class CompileEngine:
         # Render the document
         render_result = renderer.render(doc)
 
-        # Write to artifact storage (relative path)
-        await self.artifact_storage.write(render_result.filename, render_result.content)
+        # Compute hash of rendered content
+        rendered_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
 
-    def _update_manifest(self, doc: CompiledDocument) -> None:
+        # Content-addressed: only write if hash differs from existing
+        existing_meta = self.manifest.get_document(doc.uri)
+        if existing_meta is None or existing_meta.output_hash != rendered_hash:
+            await self.artifact_storage.write(render_result.filename, render_result.content)
+
+        return (render_result.filename, rendered_hash)
+
+    def _update_manifest(
+        self,
+        doc: CompiledDocument,
+        *,
+        output_path: str,
+        output_hash: str,
+    ) -> None:
         """Update manifest with compilation result.
 
         Args:
-            doc: The compiled document.
+            doc: The compiled document (must have is_private set).
+            output_path: Relative path of the rendered output.
+            output_hash: Hash of the rendered output.
         """
         meta = DocumentMeta(
             uri=doc.uri,
             source_hash=doc.source_hash,
-            output_hash=doc.output_hash,
+            output_hash=output_hash,
+            output_path=output_path,
+            is_private=doc.is_private,
             compiled_at=datetime.now(timezone.utc),
             refs=doc.refs,
             ref_versions=doc.ref_versions,
@@ -573,3 +642,35 @@ class CompileEngine:
             total_cost_usd=doc.total_cost_usd,
         )
         self.manifest.set_document(doc.uri, meta)
+
+    async def _publish_outputs(self, *, clean_target: bool = True) -> None:
+        """Publish public outputs from .colin/compiled/ to target/.
+
+        Uses manifest metadata to copy files without re-rendering.
+
+        Args:
+            clean_target: If True, remove target/ before publishing.
+        """
+        target_path = self.config.target_path
+
+        # Clean target directory
+        if clean_target and target_path.exists():
+            shutil.rmtree(target_path)
+
+        # Create target directory
+        target_path.mkdir(parents=True, exist_ok=True)
+
+        # Copy public files from .colin/compiled/ to target/
+        build_compiled = self.config.build_path / "compiled"
+        for doc_meta in self.manifest.documents.values():
+            if doc_meta.is_private:
+                continue
+            if doc_meta.output_path is None:
+                continue
+
+            src = build_compiled / doc_meta.output_path
+            dst = target_path / doc_meta.output_path
+
+            if src.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)

@@ -219,7 +219,7 @@ target-path = "dist"
         assert config.project_root == tmp_path
         assert config.model_path == tmp_path / "src/models"
         assert config.target_path == tmp_path / "dist"
-        assert config.manifest_path == tmp_path / "dist" / "manifest.json"
+        assert config.manifest_path == tmp_path / ".colin" / "manifest.json"
 
     def test_load_project_with_providers(self, tmp_path: Path) -> None:
         """Load project with provider configuration."""
@@ -297,7 +297,7 @@ name = "minimal"
         assert config.project_root == tmp_path
         assert config.model_path == tmp_path / "models"
         assert config.target_path == tmp_path / "target"
-        assert config.manifest_path == tmp_path / "target" / "manifest.json"
+        assert config.manifest_path == tmp_path / ".colin" / "manifest.json"
         assert config.project_storage.provider == "file"
         assert config.artifacts_storage is None
         assert config.providers == {}
@@ -318,7 +318,7 @@ target-path = "{absolute_target}"
         assert config.project_root == tmp_path
         assert config.target_path == absolute_target.resolve()
         assert config.target_path.is_absolute()
-        assert config.manifest_path == absolute_target.resolve() / "manifest.json"
+        assert config.manifest_path == tmp_path / ".colin" / "manifest.json"
 
     def test_save_project_preserves_absolute_target_path(self, tmp_path: Path) -> None:
         """Saving project with absolute target-path preserves it."""
@@ -331,7 +331,7 @@ target-path = "{absolute_target}"
             project_root=tmp_path,
             model_path=tmp_path / "models",
             target_path=absolute_target.resolve(),
-            manifest_path=absolute_target.resolve() / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
 
         save_project(config_file, config)
@@ -351,7 +351,7 @@ target-path = "{absolute_target}"
             project_root=tmp_path,
             model_path=tmp_path / "models",
             target_path=tmp_path / "dist",
-            manifest_path=tmp_path / "dist" / "manifest.json",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
         )
 
         save_project(config_file, config)

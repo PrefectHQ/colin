@@ -11,7 +11,6 @@ from colin.compiler.state import CompilationState
 from colin.exceptions import ProjectNotInitializedError
 from colin.models import CompiledDocument, Manifest
 from colin.providers.storage.file import FileStorage
-from colin.settings import settings
 
 
 def _save_manifest(manifest_path: Path, manifest: Manifest) -> None:
@@ -86,10 +85,10 @@ async def compile_project(
 
     config = load_project(project_file)
 
-    # Override target_dir if provided (need to update config paths)
+    # Override target_dir if provided (only affects published outputs)
     if target_dir is not None:
         target_dir = target_dir.resolve()
-        # Update config paths that depend on target_dir
+        # Update config paths - manifest stays in .colin/, only target changes
         from colin.api.project import ProjectConfig
 
         config = ProjectConfig(
@@ -97,7 +96,7 @@ async def compile_project(
             project_root=config.project_root,
             model_path=config.model_path,
             target_path=target_dir,
-            manifest_path=target_dir / settings.manifest_file,
+            manifest_path=config.manifest_path,  # Keep in .colin/
             project_storage=config.project_storage,
             artifacts_storage=config.artifacts_storage,
             providers=config.providers,
@@ -113,8 +112,12 @@ async def compile_project(
                 uris.append((uri, config.target_path / str(relative)))
         return sorted(uris, key=lambda x: x[0])
 
-    # Create artifact storage (FileStorage with base at target_path)
-    artifact_storage = FileStorage(base_path=config.target_path)
+    # Ensure .colin/compiled/ directory exists
+    compiled_path = config.build_path / "compiled"
+    compiled_path.mkdir(parents=True, exist_ok=True)
+
+    # Create artifact storage (FileStorage writes to .colin/compiled/)
+    artifact_storage = FileStorage(base_path=compiled_path)
 
     # Create and run compiler (engine loads manifest from config)
     engine = CompileEngine(
