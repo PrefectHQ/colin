@@ -1,0 +1,309 @@
+---
+title: Templating
+sidebarTitle: Templating
+icon: brackets-curly
+---
+
+Colin documents support Jinja2 templating, giving you dynamic content through expressions, filters, control structures, and specialized blocks. Templating transforms static Markdown into compiled output that can reference other documents, invoke LLMs, and adapt based on context.
+
+## Jinja
+
+Colin uses standard Jinja2 templating. This section covers the core features available in any Jinja environment.
+
+### Expressions
+
+Double braces output values into your document:
+
+```jinja models/status.md
+---
+name: Project Status
+---
+
+# Project Status
+
+Last updated: {{ now().strftime('%Y-%m-%d') }}
+```
+
+Expressions can access variables, call functions, and use filters. The result replaces the expression in the compiled output.
+
+### Control Structures
+
+Standard Jinja control flow works in documents. Use `{% %}` tags for logic:
+
+```jinja models/team-roster.md
+---
+name: Team Roster
+---
+
+# Team
+
+{% for member in ['Alice', 'Bob', 'Charlie'] %}
+- {{ member }}
+{% endfor %}
+```
+
+Conditionals control what content appears:
+
+```jinja
+{% if include_details %}
+## Additional Details
+This section only appears when include_details is truthy.
+{% endif %}
+```
+
+### Filters
+
+Filters transform values using the pipe syntax. Apply them after any expression:
+
+```jinja models/summary.md
+---
+name: Summary
+---
+
+{{ ref('report').content | upper }}
+{{ ref('data').content | length }} characters
+```
+
+Colin extends standard Jinja filters with LLM-powered transformations like `extract()` for intelligent content processing. See the [LLM Provider](/providers/llm) documentation for details.
+
+## Section Blocks
+
+Named sections mark parts of a document that other templates can reference independently. 
+
+Sections have the following properties:
+- **Duplicate names**: If multiple sections share a name, the last one wins
+- **Empty sections**: Sections can be empty, useful as placeholders
+- **Special characters**: Use quoted strings for names with spaces, hyphens, or other characters
+
+### Creating Sections
+Define a section with `{% section %}`:
+
+```jinja models/plan.md {5,9,11,16}
+---
+name: Strategic Plan
+---
+
+{% section strategy %}
+## Our Strategy
+Focus on growth through innovation and customer success.
+Target enterprise market with AI-powered solutions.
+{% endsection %}
+
+{% section "key metrics" %}
+## Key Metrics
+- Revenue: $1M ARR
+- Customers: 50 enterprise
+- Team size: 12
+{% endsection %}
+```
+
+Section names support identifiers (`strategy`) or quoted strings (`"key metrics"`) for names with spaces.
+
+### Accessing Sections
+
+Access sections from other documents through `ref()`:
+
+```jinja models/summary.md {6,9}
+---
+name: Executive Summary
+---
+
+## Strategy Overview
+{{ ref('plan.md').sections.strategy }}
+
+## Performance
+{{ ref('plan.md').sections['key metrics'] }}
+```
+
+Use dot access (`.sections.name`) for simple identifiers or dict access (`.sections['name']`) for any name including those with spaces.
+
+### Format-Aware Content
+
+Sections adapt to your output format automatically:
+
+- **Markdown output**: Returns raw string content
+- **JSON/YAML output**: Parses markdown structure into data (headers become keys, lists become arrays)
+
+For a document configured with `colin.output: json`:
+
+```jinja models/config.json.md
+---
+colin:
+  output: json
+---
+
+{% section database %}
+## host
+localhost
+
+## port
+5432
+{% endsection %}
+```
+
+Accessing `ref('config.json.md').sections.database` returns:
+
+```json
+{
+  "host": "localhost",
+  "port": 5432
+}
+```
+
+
+## Defer Blocks
+
+Documents render sequentially from top to bottom, but often you'll want to write content at the top that references the complete document, such as table of contents, executive summaries, desciprionts, and tags.
+
+Colin introduces `defer` blocks to solve this. A defer block lets you access the entire rendered content of the document by *deferring* the block until the rest of the document is finished. When Colin detects a defer block, it renders the document in two passes:
+
+1. **First pass**: Normal rendering that excludes defer blocks
+2. **Second pass**: Renders only the defer blocks with access to the complete first-pass output
+
+Each part of the document renders exactly once.
+
+
+### Accessing Content
+
+Colin makes two special variables available inside defer blocks:
+
+- `rendered` contains the full first-pass output of the document, as well as each of the document's sections.
+- `previous_rendered` contains the cached output from the document's last compilation.
+
+Here's how you might use a defer block to build a table of contents:
+
+```jinja models/guide.md {1,3,6}
+{% defer %}
+## Table of Contents
+{% for name in rendered.sections.keys() %}
+- [{{ name | title }}](#{{ name }})
+{% endfor %}
+{% enddefer %}
+
+{% section introduction %}
+## Introduction
+Welcome to the guide.
+{% endsection %}
+
+{% section concepts %}
+## Core Concepts
+The fundamental ideas behind the system.
+{% endsection %}
+```
+
+### Patterns
+
+#### Variables from First Pass
+
+Jinja variables defined outside defer blocks remain accessible inside them:
+
+```jinja
+{% set title = "Strategic Plan" %}
+
+{% defer %}
+Title: {{ title }}
+Word count: {{ rendered.content.split() | length }}
+{% enddefer %}
+```
+
+#### Auto-Generated Frontmatter
+
+Use a defer block to generate frontmatter values dynamically, based on the complete document content. This is especially useful when combined with Colin's [LLM provider](/providers/llm) to generate values based on the document content.
+
+```jinja
+---
+name: {% defer %}{{ rendered.content | extract("A concise title") }}{% enddefer %}
+tags: {% defer %}{% llm %}Suggest 3-5 tags: {{ rendered.content }}{% endllm %}{% enddefer %}
+---
+```
+
+#### Table of Contents
+
+Use a defer block to build a table of contents from sections or markdown headers:
+<CodeGroup>
+```jinja sections
+{% defer %}
+## Contents
+{% for name in rendered.sections.keys() %}
+- [{{ name | title }}](#{{ name | replace(' ', '-') }})
+{% endfor %}
+{% enddefer %}
+```
+```jinja headers
+{% defer %}
+## Contents
+{% for line in rendered.content.split('\n') %}
+{% if line.startswith('#') and not line.startswith('# Contents') %}
+{% set level = line.split()[0] | length %}
+{% set title = line.lstrip('#').strip() %}
+{{ '  ' * (level - 1) }}- [{{ title }}](#{{ title | lower | replace(' ', '-') }})
+{% endif %}
+{% endfor %}
+{% enddefer %}
+```
+</CodeGroup>
+
+#### Summaries
+
+Combine a defer block with an [LLM block](/projects/templating#llm-blocks) to generate summaries based on complete content that appears later in the document:
+
+```jinja
+{% defer %}
+## Executive Summary
+{% llm %}
+Write a 2-sentence executive summary of this document:
+
+{{ rendered.content }}
+{% endllm %}
+{% enddefer %}
+```
+
+#### Change Tracking
+
+Compare against `previous_rendered` to detect and report changes:
+
+```jinja
+{% defer %}
+{% if previous_rendered %}
+**Changes since last compile:**
+- Content: {{ rendered.content | length - previous_rendered.content | length }} characters difference
+{% else %}
+*First version of this document.*
+{% endif %}
+{% enddefer %}
+```
+
+This pattern is useful for documents that need to track their own evolution, like changelogs or audit trails.
+
+## LLM Blocks
+
+For complex LLM interactions, use `{% llm %}` blocks. The content inside becomes the prompt, and Colin replaces the block with the LLM's response:
+
+```jinja models/analysis.md
+---
+name: Competitive Analysis
+---
+
+# Analysis
+
+{% llm %}
+Compare these two products and identify key differentiators:
+
+Product A: {{ ref('product-a').content }}
+Product B: {{ ref('product-b').content }}
+
+Focus on pricing, features, and target market.
+{% endllm %}
+```
+
+LLM blocks can span multiple lines and include other template expressions. The entire block renders first (resolving refs and variables), then the rendered content goes to the LLM.
+
+Override the default model on specific blocks:
+
+```jinja
+{% llm model="anthropic:claude-sonnet-4-5" %}
+Summarize this content for an executive audience.
+{% endllm %}
+```
+
+See [LLM Provider](/providers/llm) for complete documentation on instructions, structured output, caching, and cost management.
