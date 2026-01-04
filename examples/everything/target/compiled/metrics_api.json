@@ -1,0 +1,21 @@
+{
+  "product": {
+    "name": "Acme Dashboard",
+    "quarter": "Q1 2025"
+  },
+  "metrics": {
+    "dau": 45000,
+    "mau": 180000,
+    "session_minutes": 8.5
+  },
+  "health": {
+    "uptime": 99.95,
+    "error_rate": 0.3,
+    "api_latency_p95_ms": 245
+  },
+  "goals": [
+    "Increase DAU by 20%",
+    "Reduce API latency to under 200ms",
+    "Launch mobile offline mode"
+  ]
+}

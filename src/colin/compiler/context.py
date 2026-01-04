@@ -118,7 +118,7 @@ class CompileContext:
                 content=compiled.output,
                 ref=project_ref,
                 relative_path=path,
-                target_path=self.project_provider.target_path or self.project_provider.base_path,
+                output_path=self.project_provider.output_path or self.project_provider.base_path,
                 is_private=compiled.is_private,
                 name=name_val if isinstance(name_val, str) else path.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,

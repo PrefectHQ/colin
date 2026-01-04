@@ -17,7 +17,7 @@ colin run
 
 ## Output
 
-After compiling, check the `target/` directory. The `summary.md` file will contain real LLM responses.
+After compiling, check the `output/` directory. The `summary.md` file will contain real LLM responses.
 
 Set your API key before running:
 

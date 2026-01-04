@@ -1,7 +1,7 @@
 [project]
 name = "hello_world"
 model-path = "models"
-target-path = "target"
+output-path = "output"
 
 [[providers.llm]]
 model = "anthropic:claude-haiku-4-5"

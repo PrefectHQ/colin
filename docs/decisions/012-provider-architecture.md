@@ -137,7 +137,7 @@ This means:
 class ProjectConfig(BaseModel):
     project_root: Path     # Where colin.toml lives
     model_path: Path       # Absolute path to models
-    target_path: Path      # Absolute path to target
+    output_path: Path      # Absolute path to output
     manifest_path: Path    # Absolute path to manifest.json
 ```
 

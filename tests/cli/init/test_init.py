@@ -49,14 +49,14 @@ def test_init_custom_model_path(tmp_path: Path, monkeypatch, cli: Callable[..., 
     assert not (tmp_path / "models").exists()
 
 
-def test_init_custom_target_path(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
-    """colin init respects --target option."""
+def test_init_custom_output_path(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
+    """colin init respects --output option."""
     monkeypatch.chdir(tmp_path)
 
-    cli("init", "--target", "build")
+    cli("init", "--output", "build")
 
     config_content = (tmp_path / "colin.toml").read_text()
-    assert 'target-path = "build"' in config_content
+    assert 'output-path = "build"' in config_content
 
 
 def test_init_creates_new_directory(tmp_path: Path, monkeypatch, cli: Callable[..., None]):

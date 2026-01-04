@@ -14,14 +14,14 @@ The `[project]` section contains core project configuration:
 [project]
 name = "my-context"
 model-path = "models"
-target-path = "target"
+output-path = "output"
 ```
 
 | Setting | Description | Default |
 | :------ | :---------- | :------ |
 | `name` | Project name for display | Directory name |
 | `model-path` | Directory containing source documents | `models` |
-| `target-path` | Directory for compiled output | `target` |
+| `output-path` | Directory for compiled output | `output` |
 
 ### Directory Paths
 
@@ -31,7 +31,7 @@ Paths can be relative to the location of `colin.toml` or absolute:
 [project]
 name = "documentation"
 model-path = "src/context"
-target-path = "dist"
+output-path = "dist"
 ```
 
 With this configuration, Colin reads from `src/context/` and writes to `dist/`.
@@ -41,7 +41,7 @@ Absolute paths are also supported:
 ```toml
 [project]
 name = "documentation"
-target-path = "/tmp/colin-output"
+output-path = "/tmp/colin-output"
 ```
 
 When using absolute paths, they are preserved as-is and not resolved relative to the project root.
@@ -180,7 +180,7 @@ A full configuration demonstrating all options:
 [project]
 name = "engineering-context"
 model-path = "context"
-target-path = "dist"
+output-path = "dist"
 
 [[providers.llm]]
 model = "anthropic:claude-sonnet-4-5"

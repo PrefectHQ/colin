@@ -1,4 +1,4 @@
 [project]
 name = "mcp-test"
 model-path = "models"
-target-path = "target"
+output-path = "output"

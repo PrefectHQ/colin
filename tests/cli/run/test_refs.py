@@ -9,38 +9,38 @@ from colin.cli import app
 
 
 def test_ref_content_propagates(
-    test_project: Path, target_dir: Path, mock_agent, cli: Callable[..., None]
+    test_project: Path, output_dir: Path, mock_agent, cli: Callable[..., None]
 ):
     """Content from referenced doc appears in output."""
-    cli("run", "--target", str(target_dir), "--quiet")
+    cli("run", "--output", str(output_dir), "--quiet")
 
-    welcome = (target_dir / "welcome.md").read_text()
+    welcome = (output_dir / "welcome.md").read_text()
     assert "Hello from greeting!" in welcome
 
 
 def test_dependency_order(
-    test_project: Path, target_dir: Path, mock_agent, cli: Callable[..., None]
+    test_project: Path, output_dir: Path, mock_agent, cli: Callable[..., None]
 ):
     """Documents compile in dependency order."""
-    cli("run", "--target", str(target_dir), "--quiet")
+    cli("run", "--output", str(output_dir), "--quiet")
 
-    summary = (target_dir / "summary.md").read_text()
+    summary = (output_dir / "summary.md").read_text()
     assert "Hello from greeting!" in summary
     assert "Welcome to Colin" in summary
 
 
 def test_all_outputs_created(
-    test_project: Path, target_dir: Path, mock_agent, cli: Callable[..., None]
+    test_project: Path, output_dir: Path, mock_agent, cli: Callable[..., None]
 ):
     """All documents are compiled to output."""
-    cli("run", "--target", str(target_dir), "--quiet")
+    cli("run", "--output", str(output_dir), "--quiet")
 
-    assert (target_dir / "greeting.md").exists()
-    assert (target_dir / "welcome.md").exists()
-    assert (target_dir / "summary.md").exists()
+    assert (output_dir / "greeting.md").exists()
+    assert (output_dir / "welcome.md").exists()
+    assert (output_dir / "summary.md").exists()
 
 
-def test_missing_ref_fails(test_project: Path, target_dir: Path, mock_agent):
+def test_missing_ref_fails(test_project: Path, output_dir: Path, mock_agent):
     """Referencing a non-existent document produces an error."""
     # Add a file with a bad ref
     models_dir = test_project / "models"
@@ -52,6 +52,6 @@ name: Bad
 """)
 
     with pytest.raises(SystemExit) as exc_info:
-        app(["run", "--target", str(target_dir), "--quiet"])
+        app(["run", "--output", str(output_dir), "--quiet"])
 
     assert exc_info.value.code == 1

@@ -1,0 +1,325 @@
+{
+  "version": "1",
+  "compiled_at": "2026-01-02T03:06:19.959501Z",
+  "documents": {
+    "project://metrics_api.md": {
+      "uri": "project://metrics_api.md",
+      "source_path": null,
+      "source_hash": "6c59620cc4cf19c1",
+      "output_hash": "6c59620cc4cf19c1",
+      "compiled_at": "2026-01-02T03:06:07.395052Z",
+      "refs": [],
+      "ref_versions": {},
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://data.md": {
+      "uri": "project://data.md",
+      "source_path": null,
+      "source_hash": "b996311f02a084a4",
+      "output_hash": "b996311f02a084a4",
+      "compiled_at": "2026-01-02T03:06:07.395329Z",
+      "refs": [],
+      "ref_versions": {},
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://goals.md": {
+      "uri": "project://goals.md",
+      "source_path": null,
+      "source_hash": "afc36dda79e5325c",
+      "output_hash": "afc36dda79e5325c",
+      "compiled_at": "2026-01-02T03:06:07.395423Z",
+      "refs": [],
+      "ref_versions": {},
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://analysis.md": {
+      "uri": "project://analysis.md",
+      "source_path": null,
+      "source_hash": "1c83964b28dc9be3",
+      "output_hash": "4d466e2c687603b7",
+      "compiled_at": "2026-01-02T03:06:10.109044Z",
+      "refs": [
+        {
+          "provider": "mcp",
+          "connection": "demo",
+          "method": "resource",
+          "args": {
+            "uri": "demo://greeting/Analyst"
+          }
+        },
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "data.md"
+          }
+        },
+        {
+          "provider": "mcp",
+          "connection": "demo",
+          "method": "prompt",
+          "args": {
+            "name": "summarize",
+            "arguments": {
+              "style": "detailed"
+            }
+          }
+        }
+      ],
+      "ref_versions": {
+        "{\"args\": {\"uri\": \"demo://greeting/Analyst\"}, \"connection\": \"demo\", \"method\": \"resource\", \"provider\": \"mcp\"}": "3638b16fbcc35c8d",
+        "{\"args\": {\"path\": \"data.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "b996311f02a084a4",
+        "{\"args\": {\"arguments\": {\"style\": \"detailed\"}, \"name\": \"summarize\"}, \"connection\": \"demo\", \"method\": \"prompt\", \"provider\": \"mcp\"}": "e31eb0daa2d308b8"
+      },
+      "llm_calls": {
+        "llm.extract:a04a1ce0a663bbd8": {
+          "call_id": "llm.extract:a04a1ce0a663bbd8",
+          "input_hash": "dbea804c2d8d39b0",
+          "output_hash": "2df0b07a9b7573f5",
+          "output": "# Top 3 User Pain Points\n\n- Export feature is slow with large datasets\n- Mobile app needs offline support\n- Onboarding was confusing at first",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:08.355381Z"
+        },
+        "llm.extract:f0a159c0a33ff8b0": {
+          "call_id": "llm.extract:f0a159c0a33ff8b0",
+          "input_hash": "dbea804c2d8d39b0",
+          "output_hash": "954c9fa11d110ec5",
+          "output": "# Extracted Information\n\n**Technical Performance Summary:**\n\nThe system demonstrates strong technical performance with a 99.95% uptime rate, low 0.3% error rate, and acceptable API response times at 245ms (p95).",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:09.242329Z"
+        },
+        "llm.extract:6a2d8ffcef130965": {
+          "call_id": "llm.extract:6a2d8ffcef130965",
+          "input_hash": "dbea804c2d8d39b0",
+          "output_hash": "f32c6a216cdaf5a1",
+          "output": "# What Users Are Happy About\n\n- Love the new dashboard, very intuitive\n- Search is fast and accurate",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:10.101838Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://goal_status.md": {
+      "uri": "project://goal_status.md",
+      "source_path": null,
+      "source_hash": "6502e516b975ca71",
+      "output_hash": "3d59e444d2010d1f",
+      "compiled_at": "2026-01-02T03:06:10.109656Z",
+      "refs": [
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "data.md"
+          }
+        },
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "goals.md"
+          }
+        }
+      ],
+      "ref_versions": {
+        "{\"args\": {\"path\": \"data.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "b996311f02a084a4",
+        "{\"args\": {\"path\": \"goals.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "afc36dda79e5325c"
+      },
+      "llm_calls": {
+        "llm.complete:86f052c8dce86446": {
+          "call_id": "llm.complete:86f052c8dce86446",
+          "input_hash": "86f052c8dce86446",
+          "output_hash": "7e709eee9431062e",
+          "output": "I don't see any data or goals provided in your message. To create a comparison table of metrics against goals, I would need:\n\n1. **Current metrics** - What are the actual performance numbers?\n2. **Stated goals** - What are the target numbers or objectives?\n3. **Time period** - What timeframe are we measuring?\n\nCould you please share:\n- The data/metrics you're referring to\n- The goals you want to compare against\n- Any relevant context (department, project, time period, etc.)\n\nOnce you provide this information, I'll be happy to create a markdown table showing the status (On Track/At Risk/Behind) and gaps for each goal.",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:09.288484Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://recommendations.md": {
+      "uri": "project://recommendations.md",
+      "source_path": null,
+      "source_hash": "ba2546b689d5b28b",
+      "output_hash": "8e8f036f11b64b3d",
+      "compiled_at": "2026-01-02T03:06:15.995349Z",
+      "refs": [
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "analysis.md"
+          }
+        },
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "goal_status.md"
+          }
+        }
+      ],
+      "ref_versions": {
+        "{\"args\": {\"path\": \"analysis.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "4d466e2c687603b7",
+        "{\"args\": {\"path\": \"goal_status.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "3d59e444d2010d1f"
+      },
+      "llm_calls": {
+        "llm.extract:e0803131adf1e50a": {
+          "call_id": "llm.extract:e0803131adf1e50a",
+          "input_hash": "61b2c33821269aa2",
+          "output_hash": "304b25407018d0cf",
+          "output": "# Goals at Risk or Behind\n\nBased on the provided data and Q1 2025 goals, the following goals are **at risk**:\n\n1. **Reduce p95 API latency to under 200ms**\n   - Current: 245ms\n   - Target: <200ms\n   - Gap: 45ms over target\n   - Status: **AT RISK**\n\n2. **Improve onboarding completion rate to 85%**\n   - Current: Not explicitly stated, but user feedback indicates \"Onboarding was confusing at first\"\n   - Target: 85%\n   - Status: **AT RISK** (implied by negative feedback)\n\n3. **Launch mobile offline mode**\n   - Current: Not launched\n   - Target: Q1 2025 launch\n   - User feedback: \"Mobile app needs offline support\"\n   - Status: **AT RISK** (dependent on development completion)\n\n## Goals On Track\n\n- **Increase DAU by 20%**: Current DAU is 45,000; needs to reach 54,000 (feasible given MAU of 180,000)\n- **NPS score above 50**: Mixed feedback suggests achievable\n- **Churn rate below 3%**: No current data provided\n- **Feature adoption above 75%**: Current adoption is 67%, close to target (achievable with 8% improvement)",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:12.878608Z"
+        },
+        "llm.complete:187cd23f719c8d93": {
+          "call_id": "llm.complete:187cd23f719c8d93",
+          "input_hash": "187cd23f719c8d93",
+          "output_hash": "b74bf99d7631ec59",
+          "output": "# I'd be happy to provide prioritized recommendations, but I don't see the pain points, goal gaps, or context from your analysis above.\n\nTo give you specific, actionable recommendations with clear impact projections, please share:\n\n1. **Pain points identified** - What challenges or problems were uncovered?\n2. **Goal gaps** - Where is performance falling short of targets?\n3. **Context** - What area/function/organization is this for? (e.g., sales, operations, customer service, product development)\n4. **Current state** - Any relevant metrics, timelines, or constraints?\n\n---\n\n## Example Framework (once you provide details):\n\n| Recommendation | What to Do | Why It Matters | Expected Impact |\n|---|---|---|---|\n| **#1 [Priority]** | Specific action/change | Links to [Pain Point X] and [Goal Y] | Quantified outcome (e.g., +20% efficiency) |\n| **#2** | Specific action/change | Links to [Pain Point X] | Quantified outcome |\n\nFeel free to paste the analysis, and I'll provide tailored recommendations.",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:15.994218Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    },
+    "project://executive_brief.md": {
+      "uri": "project://executive_brief.md",
+      "source_path": null,
+      "source_hash": "92e56951615636db",
+      "output_hash": "8b4f12d721e26049",
+      "compiled_at": "2026-01-02T03:06:19.957855Z",
+      "refs": [
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "recommendations.md"
+          }
+        },
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "goal_status.md"
+          }
+        },
+        {
+          "provider": "project",
+          "connection": "",
+          "method": "get",
+          "args": {
+            "path": "data.md"
+          }
+        }
+      ],
+      "ref_versions": {
+        "{\"args\": {\"path\": \"recommendations.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "8e8f036f11b64b3d",
+        "{\"args\": {\"path\": \"goal_status.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "3d59e444d2010d1f",
+        "{\"args\": {\"path\": \"data.md\"}, \"connection\": \"\", \"method\": \"get\", \"provider\": \"project\"}": "b996311f02a084a4"
+      },
+      "llm_calls": {
+        "llm.extract:c1d479a49a546605": {
+          "call_id": "llm.extract:c1d479a49a546605",
+          "input_hash": "71bc48f74c17274b",
+          "output_hash": "f44f80de7c607b91",
+          "output": "# Top 3 Priorities\n\n1. **Reduce API latency** – Decrease p95 API response time from 245ms to under 200ms to meet Q1 2025 performance targets.\n\n2. **Improve onboarding experience** – Address user confusion during onboarding to increase completion rates toward the 85% target.\n\n3. **Launch mobile offline mode** – Develop and ship offline functionality for the mobile app to meet user demand and Q1 2025 launch deadline.",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:17.383665Z"
+        },
+        "llm.extract:558e63b9325a6b67": {
+          "call_id": "llm.extract:558e63b9325a6b67",
+          "input_hash": "61b2c33821269aa2",
+          "output_hash": "2ff45681465be3a4",
+          "output": "# Executive Summary\n\nBased on Q4 2024 metrics against Q1 2025 objectives, the product is positioned with mixed progress potential: current Daily Active Users of 45,000 need to grow 20% to reach 90,000, while the Feature Adoption Rate at 67% is approaching the 75% target. Technical performance shows strong fundamentals with 99.95% uptime and a low 0.3% error rate, though API response time at 245ms requires optimization to meet the sub-200ms goal. The mobile offline mode launch and onboarding improvements present significant opportunities, with user feedback highlighting both strengths (intuitive dashboard, fast search) and critical gaps (confusing onboarding, missing offline capabilities) that directly align with stated Q1 objectives. Success will depend on prioritizing the mobile offline feature and onboarding redesign while maintaining current system reliability and driving DAU growth through feature adoption improvements.",
+          "model": "claude-haiku-4-5",
+          "cost_usd": 0.0,
+          "is_successful": true,
+          "error": null,
+          "created_at": "2026-01-02T03:06:19.956371Z"
+        }
+      },
+      "total_cost_usd": 0.0,
+      "artifacts": []
+    }
+  },
+  "cache": {
+    "llm.extract:3464e583c93cb5d2": {
+      "cache_key": "llm.extract:3464e583c93cb5d2",
+      "output": "\"# Top 3 User Pain Points\\n\\n- Export feature is slow with large datasets\\n- Mobile app needs offline support\\n- Onboarding was confusing at first\"",
+      "created_at": "2026-01-02T03:06:08.355420Z"
+    },
+    "llm.extract:299f95c8a5be9d0a": {
+      "cache_key": "llm.extract:299f95c8a5be9d0a",
+      "output": "\"# Extracted Information\\n\\n**Technical Performance Summary:**\\n\\nThe system demonstrates strong technical performance with a 99.95% uptime rate, low 0.3% error rate, and acceptable API response times at 245ms (p95).\"",
+      "created_at": "2026-01-02T03:06:09.242359Z"
+    },
+    "llm.complete:62fdbc21478f1947": {
+      "cache_key": "llm.complete:62fdbc21478f1947",
+      "output": "\"I don't see any data or goals provided in your message. To create a comparison table of metrics against goals, I would need:\\n\\n1. **Current metrics** - What are the actual performance numbers?\\n2. **Stated goals** - What are the target numbers or objectives?\\n3. **Time period** - What timeframe are we measuring?\\n\\nCould you please share:\\n- The data/metrics you're referring to\\n- The goals you want to compare against\\n- Any relevant context (department, project, time period, etc.)\\n\\nOnce you provide this information, I'll be happy to create a markdown table showing the status (On Track/At Risk/Behind) and gaps for each goal.\"",
+      "created_at": "2026-01-02T03:06:09.288527Z"
+    },
+    "llm.extract:73c70af4b502fe11": {
+      "cache_key": "llm.extract:73c70af4b502fe11",
+      "output": "\"# What Users Are Happy About\\n\\n- Love the new dashboard, very intuitive\\n- Search is fast and accurate\"",
+      "created_at": "2026-01-02T03:06:10.101873Z"
+    },
+    "llm.extract:299f0a323cf19579": {
+      "cache_key": "llm.extract:299f0a323cf19579",
+      "output": "\"# Goals at Risk or Behind\\n\\nBased on the provided data and Q1 2025 goals, the following goals are **at risk**:\\n\\n1. **Reduce p95 API latency to under 200ms**\\n   - Current: 245ms\\n   - Target: <200ms\\n   - Gap: 45ms over target\\n   - Status: **AT RISK**\\n\\n2. **Improve onboarding completion rate to 85%**\\n   - Current: Not explicitly stated, but user feedback indicates \\\"Onboarding was confusing at first\\\"\\n   - Target: 85%\\n   - Status: **AT RISK** (implied by negative feedback)\\n\\n3. **Launch mobile offline mode**\\n   - Current: Not launched\\n   - Target: Q1 2025 launch\\n   - User feedback: \\\"Mobile app needs offline support\\\"\\n   - Status: **AT RISK** (dependent on development completion)\\n\\n## Goals On Track\\n\\n- **Increase DAU by 20%**: Current DAU is 45,000; needs to reach 54,000 (feasible given MAU of 180,000)\\n- **NPS score above 50**: Mixed feedback suggests achievable\\n- **Churn rate below 3%**: No current data provided\\n- **Feature adoption above 75%**: Current adoption is 67%, close to target (achievable with 8% improvement)\"",
+      "created_at": "2026-01-02T03:06:12.878640Z"
+    },
+    "llm.complete:e92d739259038c1b": {
+      "cache_key": "llm.complete:e92d739259038c1b",
+      "output": "\"# I'd be happy to provide prioritized recommendations, but I don't see the pain points, goal gaps, or context from your analysis above.\\n\\nTo give you specific, actionable recommendations with clear impact projections, please share:\\n\\n1. **Pain points identified** - What challenges or problems were uncovered?\\n2. **Goal gaps** - Where is performance falling short of targets?\\n3. **Context** - What area/function/organization is this for? (e.g., sales, operations, customer service, product development)\\n4. **Current state** - Any relevant metrics, timelines, or constraints?\\n\\n---\\n\\n## Example Framework (once you provide details):\\n\\n| Recommendation | What to Do | Why It Matters | Expected Impact |\\n|---|---|---|---|\\n| **#1 [Priority]** | Specific action/change | Links to [Pain Point X] and [Goal Y] | Quantified outcome (e.g., +20% efficiency) |\\n| **#2** | Specific action/change | Links to [Pain Point X] | Quantified outcome |\\n\\nFeel free to paste the analysis, and I'll provide tailored recommendations.\"",
+      "created_at": "2026-01-02T03:06:15.994252Z"
+    },
+    "llm.extract:416b1f94514a052d": {
+      "cache_key": "llm.extract:416b1f94514a052d",
+      "output": "\"# Top 3 Priorities\\n\\n1. **Reduce API latency** \\u2013 Decrease p95 API response time from 245ms to under 200ms to meet Q1 2025 performance targets.\\n\\n2. **Improve onboarding experience** \\u2013 Address user confusion during onboarding to increase completion rates toward the 85% target.\\n\\n3. **Launch mobile offline mode** \\u2013 Develop and ship offline functionality for the mobile app to meet user demand and Q1 2025 launch deadline.\"",
+      "created_at": "2026-01-02T03:06:17.383693Z"
+    },
+    "llm.extract:f21ad52451a2c8f7": {
+      "cache_key": "llm.extract:f21ad52451a2c8f7",
+      "output": "\"# Executive Summary\\n\\nBased on Q4 2024 metrics against Q1 2025 objectives, the product is positioned with mixed progress potential: current Daily Active Users of 45,000 need to grow 20% to reach 90,000, while the Feature Adoption Rate at 67% is approaching the 75% target. Technical performance shows strong fundamentals with 99.95% uptime and a low 0.3% error rate, though API response time at 245ms requires optimization to meet the sub-200ms goal. The mobile offline mode launch and onboarding improvements present significant opportunities, with user feedback highlighting both strengths (intuitive dashboard, fast search) and critical gaps (confusing onboarding, missing offline capabilities) that directly align with stated Q1 objectives. Success will depend on prioritizing the mobile offline feature and onboarding redesign while maintaining current system reliability and driving DAU growth through feature adoption improvements.\"",
+      "created_at": "2026-01-02T03:06:19.956399Z"
+    }
+  }
+}

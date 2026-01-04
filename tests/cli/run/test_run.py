@@ -7,34 +7,34 @@ from tests.cli.conftest import strip_ansi
 
 
 def test_run_creates_output(
-    test_project: Path, target_dir: Path, mock_agent, cli: Callable[..., None]
+    test_project: Path, output_dir: Path, mock_agent, cli: Callable[..., None]
 ):
     """colin run creates compiled output files."""
-    cli("run", "--target", str(target_dir), "--quiet")
+    cli("run", "--output", str(output_dir), "--quiet")
 
-    assert (target_dir / "greeting.md").exists()
+    assert (output_dir / "greeting.md").exists()
 
 
-def test_clean_removes_target(test_project: Path, mock_agent, cli: Callable[..., None]):
-    """colin clean removes target/ contents after compilation."""
-    project_target = test_project / "target"
+def test_clean_removes_output(test_project: Path, mock_agent, cli: Callable[..., None]):
+    """colin clean removes output/ contents after compilation."""
+    project_output = test_project / "output"
 
     # Run to create output
     cli("run", "--quiet")
-    assert (project_target).exists()
+    assert (project_output).exists()
 
     # Clean
     cli("clean", "--yes")
-    assert not (project_target).exists()
+    assert not (project_output).exists()
 
 
-def test_clean_does_nothing_if_no_target(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
-    """colin clean does nothing if target doesn't exist."""
+def test_clean_does_nothing_if_no_output(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
+    """colin clean does nothing if output doesn't exist."""
     monkeypatch.chdir(tmp_path)
 
     cli("init")
 
-    # Clean should not error even if target doesn't exist
+    # Clean should not error even if output doesn't exist
     cli("clean", "--yes")
 
 

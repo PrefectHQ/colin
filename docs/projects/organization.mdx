@@ -4,7 +4,7 @@ sidebarTitle: Organization
 icon: folder-tree
 ---
 
-A Colin project is a directory containing a `colin.toml` configuration file and a `models/` directory with your source documents. When you compile, Colin reads from `models/` and writes to `target/`.
+A Colin project is a directory containing a `colin.toml` configuration file and a `models/` directory with your source documents. When you compile, Colin reads from `models/` and writes to `output/`.
 
 ## Project Structure
 
@@ -20,7 +20,7 @@ my-project/
 │   │   └── gadget.md
 │   └── team/
 │       └── overview.md
-└── target/             # Compiled output (generated)
+└── output/              # Compiled output (generated)
     ├── manifest.json
     ├── company.md
     ├── products/
@@ -30,7 +30,7 @@ my-project/
         └── overview.md
 ```
 
-Colin discovers all `.md` files in `models/` recursively, compiles them in dependency order, and mirrors the directory structure into `target/`.
+Colin discovers all `.md` files in `models/` recursively, compiles them in dependency order, and mirrors the directory structure into `output/`.
 
 ## Configuration
 
@@ -40,14 +40,14 @@ The `colin.toml` file defines project settings:
 [project]
 name = "my-context"
 model-path = "models"
-target-path = "target"
+output-path = "output"
 ```
 
 | Setting | Description | Default |
 | :------ | :---------- | :------ |
 | `name` | Project name for display | Directory name |
 | `model-path` | Source documents directory | `models` |
-| `target-path` | Compiled output directory (relative or absolute) | `target` |
+| `output-path` | Compiled output directory (relative or absolute) | `output` |
 
 ### LLM Provider
 
@@ -158,12 +158,12 @@ Choose clear, descriptive names that indicate document purpose:
 
 This convention makes dependency flow visible: sources feed context, context feeds outputs.
 
-## The Target Directory
+## The Output Directory
 
-The `target/` directory contains all compiled outputs:
+The `output/` directory contains all compiled outputs:
 
 ```
-target/
+output/
 ├── manifest.json       # Compilation metadata and cache
 ├── company.md          # Compiled documents mirror
 ├── products/           # source structure
@@ -183,7 +183,7 @@ Remove all compiled outputs with:
 colin clean
 ```
 
-This deletes the entire `target/` directory. The next `colin run` performs a full recompilation.
+This deletes the entire `output/` directory. The next `colin run` performs a full recompilation.
 
 ## Finding the Project
 
@@ -194,4 +194,4 @@ cd my-project/models/products
 colin run  # Finds colin.toml in my-project/
 ```
 
-If no `colin.toml` exists in the directory tree, Colin uses sensible defaults: `models/` for source, `target/` for output, and the current directory name as the project name.
+If no `colin.toml` exists in the directory tree, Colin uses sensible defaults: `models/` for source, `output/` for output, and the current directory name as the project name.

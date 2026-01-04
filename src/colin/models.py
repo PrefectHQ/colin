@@ -203,7 +203,7 @@ class DocumentMeta(BaseModel):
     """Relative output filename after rendering (e.g., 'greeting.md' or 'greeting.json')."""
 
     is_private: bool = False
-    """Whether this document is private (not published to target/)."""
+    """Whether this document is private (not published to output/)."""
 
     compiled_at: datetime | None = None
     """When this document was last compiled."""
@@ -332,7 +332,7 @@ class CompiledDocument(BaseModel):
     """Output filename (e.g., 'greeting.md' or 'config.json'). Set during compilation."""
 
     is_private: bool = False
-    """Whether this document is private (not published to target/)."""
+    """Whether this document is private (not published to output/)."""
 
     refs: list[Ref] = Field(default_factory=list)
     """Refs that were tracked during compilation."""

@@ -210,7 +210,7 @@ class TestLoadProject:
 [project]
 name = "test-project"
 model-path = "src/models"
-target-path = "dist"
+output-path = "dist"
 """)
 
         config = load_project(config_file)
@@ -218,7 +218,7 @@ target-path = "dist"
         assert config.name == "test-project"
         assert config.project_root == tmp_path
         assert config.model_path == tmp_path / "src/models"
-        assert config.target_path == tmp_path / "dist"
+        assert config.output_path == tmp_path / "dist"
         assert config.manifest_path == tmp_path / ".colin" / "manifest.json"
 
     def test_load_project_with_providers(self, tmp_path: Path) -> None:
@@ -296,41 +296,41 @@ name = "minimal"
         assert config.name == "minimal"
         assert config.project_root == tmp_path
         assert config.model_path == tmp_path / "models"
-        assert config.target_path == tmp_path / "target"
+        assert config.output_path == tmp_path / "output"
         assert config.manifest_path == tmp_path / ".colin" / "manifest.json"
         assert config.project_storage.provider == "file"
         assert config.artifacts_storage is None
         assert config.providers == {}
 
-    def test_load_project_with_absolute_target_path(self, tmp_path: Path) -> None:
-        """Load project with absolute target-path."""
-        absolute_target = tmp_path / "absolute_output"
+    def test_load_project_with_absolute_output_path(self, tmp_path: Path) -> None:
+        """Load project with absolute output-path."""
+        absolute_output = tmp_path / "absolute_output"
         config_file = tmp_path / "colin.toml"
         config_file.write_text(f"""\
 [project]
 name = "test-project"
-target-path = "{absolute_target}"
+output-path = "{absolute_output}"
 """)
 
         config = load_project(config_file)
 
         assert config.name == "test-project"
         assert config.project_root == tmp_path
-        assert config.target_path == absolute_target.resolve()
-        assert config.target_path.is_absolute()
+        assert config.output_path == absolute_output.resolve()
+        assert config.output_path.is_absolute()
         assert config.manifest_path == tmp_path / ".colin" / "manifest.json"
 
-    def test_save_project_preserves_absolute_target_path(self, tmp_path: Path) -> None:
-        """Saving project with absolute target-path preserves it."""
-        absolute_target = tmp_path / "absolute_output"
+    def test_save_project_preserves_absolute_output_path(self, tmp_path: Path) -> None:
+        """Saving project with absolute output-path preserves it."""
+        absolute_output = tmp_path / "absolute_output"
         config_file = tmp_path / "colin.toml"
 
-        # Create config with absolute target path
+        # Create config with absolute output path
         config = ProjectConfig(
             name="test-project",
             project_root=tmp_path,
             model_path=tmp_path / "models",
-            target_path=absolute_target.resolve(),
+            output_path=absolute_output.resolve(),
             manifest_path=tmp_path / ".colin" / "manifest.json",
         )
 
@@ -338,19 +338,19 @@ target-path = "{absolute_target}"
 
         # Reload and verify absolute path is preserved
         reloaded = load_project(config_file)
-        assert reloaded.target_path == absolute_target.resolve()
-        assert reloaded.target_path.is_absolute()
+        assert reloaded.output_path == absolute_output.resolve()
+        assert reloaded.output_path.is_absolute()
 
-    def test_save_project_preserves_relative_target_path(self, tmp_path: Path) -> None:
-        """Saving project with relative target-path preserves it."""
+    def test_save_project_preserves_relative_output_path(self, tmp_path: Path) -> None:
+        """Saving project with relative output-path preserves it."""
         config_file = tmp_path / "colin.toml"
 
-        # Create config with relative target path
+        # Create config with relative output path
         config = ProjectConfig(
             name="test-project",
             project_root=tmp_path,
             model_path=tmp_path / "models",
-            target_path=tmp_path / "dist",
+            output_path=tmp_path / "dist",
             manifest_path=tmp_path / ".colin" / "manifest.json",
         )
 
@@ -358,7 +358,7 @@ target-path = "{absolute_target}"
 
         # Reload and verify relative path is preserved
         reloaded = load_project(config_file)
-        assert reloaded.target_path == tmp_path / "dist"
+        assert reloaded.output_path == tmp_path / "dist"
         # Verify it's saved as relative in TOML
         content = config_file.read_text()
-        assert 'target-path = "dist"' in content
+        assert 'output-path = "dist"' in content

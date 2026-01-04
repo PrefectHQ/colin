@@ -18,7 +18,7 @@ colin run
 
 ## Output
 
-After compiling, check the `target/` directory. The compiled `classify.md` file will contain the classification result.
+After compiling, check the `output/` directory. The compiled `classify.md` file will contain the classification result.
 
 Set your API key before running:
 

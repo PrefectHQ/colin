@@ -78,7 +78,7 @@ class CompileEngine:
         # Project provider reads from .colin/compiled/, uses manifest for versions
         self._project_provider = ProjectProvider(
             base_path=config.build_path / "compiled",
-            target_path=config.target_path,
+            output_path=config.output_path,
             manifest=self.manifest,
         )
 
@@ -90,7 +90,7 @@ class CompileEngine:
         return Manifest()
 
     def _is_private(self, doc: ColinDocument) -> bool:
-        """Check if a document is private (not published to target/).
+        """Check if a document is private (not published to output/).
 
         Private detection order:
         1. Explicit frontmatter: colin.private = true/false (overrides all)
@@ -338,7 +338,7 @@ class CompileEngine:
         # Update manifest timestamp
         self.manifest.compiled_at = datetime.now(timezone.utc)
 
-        # Publish public outputs to target/
+        # Publish public outputs to output/
         await self._publish_outputs()
 
         return compiled
@@ -346,7 +346,7 @@ class CompileEngine:
     async def compile_uri(self, uri: str) -> CompiledDocument:
         """Compile a single document by URI.
 
-        Writes compiled output to .colin/compiled/ but does not publish to target/.
+        Writes compiled output to .colin/compiled/ but does not publish to output/.
         Use compile_all() to compile and publish all documents.
 
         Args:
@@ -653,24 +653,24 @@ class CompileEngine:
         )
         self.manifest.set_document(doc.uri, meta)
 
-    async def _publish_outputs(self, *, clean_target: bool = True) -> None:
-        """Publish public outputs from .colin/compiled/ to target/.
+    async def _publish_outputs(self, *, clean_output: bool = True) -> None:
+        """Publish public outputs from .colin/compiled/ to output/.
 
         Uses manifest metadata to copy files without re-rendering.
 
         Args:
-            clean_target: If True, remove target/ before publishing.
+            clean_output: If True, remove output/ before publishing.
         """
-        target_path = self.config.target_path
+        output_path = self.config.output_path
 
-        # Clean target directory
-        if clean_target and target_path.exists():
-            shutil.rmtree(target_path)
+        # Clean output directory
+        if clean_output and output_path.exists():
+            shutil.rmtree(output_path)
 
-        # Create target directory
-        target_path.mkdir(parents=True, exist_ok=True)
+        # Create output directory
+        output_path.mkdir(parents=True, exist_ok=True)
 
-        # Copy public files from .colin/compiled/ to target/
+        # Copy public files from .colin/compiled/ to output/
         build_compiled = self.config.build_path / "compiled"
         for doc_meta in self.manifest.documents.values():
             if doc_meta.is_private:
@@ -679,7 +679,7 @@ class CompileEngine:
                 continue
 
             src = build_compiled / doc_meta.output_path
-            dst = target_path / doc_meta.output_path
+            dst = output_path / doc_meta.output_path
 
             if src.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True)

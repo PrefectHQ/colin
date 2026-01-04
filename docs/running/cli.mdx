@@ -28,14 +28,14 @@ Add .md files to models/ and run `colin run`
 Customize the project during initialization:
 
 ```bash
-colin init --name my-context --models src/docs --target dist
+colin init --name my-context --models src/docs --output dist
 ```
 
 | Option | Description | Default |
 | :----- | :---------- | :------ |
 | `--name` | Project name | Directory name |
 | `--models` | Source documents directory | `models` |
-| `--target` | Compiled output directory | `target` |
+| `--output` | Compiled output directory | `output` |
 
 You can also initialize an existing directory:
 
@@ -63,7 +63,7 @@ colin run              # Compile changed documents
 colin run --no-cache   # Recompile everything
 colin run --dry-run    # Show what would compile
 colin run -q           # Suppress progress output
-colin run --target ./out  # Override output directory
+colin run --output ./out  # Override output directory
 ```
 
 ## clean
@@ -79,17 +79,17 @@ By default, clean prompts for confirmation:
 ```
 Config:  colin.toml
 Project: my-context
-Target:  target/
+Output:  output/
 
 Will remove:
-  target/manifest.json
-  target/compiled/company.md
-  target/compiled/products/overview.md
+  output/manifest.json
+  output/compiled/company.md
+  output/compiled/products/overview.md
 
 Continue? (y/N)
 ```
 
-Type `y` to proceed. The entire `target/` directory is deleted, including the manifest and all compiled documents.
+Type `y` to proceed. The entire `output/` directory is deleted, including the manifest and all compiled documents.
 
 ### Skip Confirmation
 

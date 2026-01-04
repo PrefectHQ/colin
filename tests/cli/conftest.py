@@ -48,11 +48,11 @@ def test_project(request: pytest.FixtureRequest, tmp_path: Path, monkeypatch) ->
 
 
 @pytest.fixture
-def target_dir(tmp_path: Path) -> Path:
-    """Return a clean target directory for compilation output."""
-    target = tmp_path / "target"
-    target.mkdir()
-    return target
+def output_dir(tmp_path: Path) -> Path:
+    """Return a clean output directory for compilation output."""
+    output = tmp_path / "output"
+    output.mkdir()
+    return output
 
 
 @pytest.fixture
