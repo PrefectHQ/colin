@@ -350,10 +350,22 @@ def _parse_vars(vars_data: dict[str, Any]) -> dict[str, VarConfig]:
 
     Returns:
         Dictionary mapping variable name to VarConfig.
+
+    Raises:
+        ValueError: If two variable names collide case-insensitively.
     """
     result: dict[str, VarConfig] = {}
+    seen_lower: dict[str, str] = {}  # lowercase -> original name
 
     for name, value in vars_data.items():
+        # Check for case-insensitive collision
+        lower_name = name.lower()
+        if lower_name in seen_lower:
+            raise ValueError(
+                f"Variable names '{seen_lower[lower_name]}' and '{name}' collide (case-insensitive)"
+            )
+        seen_lower[lower_name] = name
+
         if isinstance(value, (str, bool, int, float)):
             # Simple syntax: infer type from value
             if isinstance(value, bool):

@@ -306,6 +306,16 @@ class TestParseVars:
         assert result["debug"].type == "bool"
         assert result["api_key"].type == "secret"
 
+    def test_case_insensitive_collision_rejected(self) -> None:
+        """Variable names that collide case-insensitively are rejected."""
+        data = {
+            "apiKey": "value1",
+            "apikey": "value2",
+        }
+
+        with pytest.raises(ValueError, match="collide.*case-insensitive"):
+            _parse_vars(data)
+
 
 class TestLoadProject:
     """Tests for load_project function."""
