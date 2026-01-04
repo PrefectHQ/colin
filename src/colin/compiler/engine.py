@@ -597,7 +597,10 @@ class CompileEngine:
             raw_output = await template.render_async()
 
             # Extract sections from first pass
-            from colin.compiler.section_parser import parse_sections, remove_colin_markers
+            from colin.compiler.section_parser import (
+                parse_sections,
+                remove_section_and_defer_markers,
+            )
 
             first_pass_sections = parse_sections(raw_output)
             context.sections = first_pass_sections
@@ -635,8 +638,9 @@ class CompileEngine:
             else:
                 final_output = raw_output
 
-            # Remove all Colin markers before format rendering
-            clean_output = remove_colin_markers(final_output)
+            # Remove section and defer markers, but keep item markers for the renderer
+            # The markdown parser needs item markers to detect {% item %} arrays
+            clean_output = remove_section_and_defer_markers(final_output)
 
             # Apply format renderer (JSON, YAML, or markdown passthrough)
             renderer = get_renderer(doc.frontmatter.colin.output)
