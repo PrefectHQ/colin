@@ -67,6 +67,14 @@ class SectionsAccessor:
         """
         return self._get_section(name)
 
+    def keys(self):
+        """Return section names for iteration.
+
+        Returns:
+            Iterator of section names.
+        """
+        return self._sections.keys()
+
     def _get_section(self, name: str) -> Any:
         """Get section by name with format-aware parsing.
 

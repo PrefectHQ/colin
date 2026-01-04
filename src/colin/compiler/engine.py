@@ -17,6 +17,7 @@ from colin.compiler.cache import set_compile_context
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
+from colin.compiler.rendered import RenderedOutput
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
@@ -588,23 +589,64 @@ class CompileEngine:
 
         # Compile template with compile context set for caching
         template = env.from_string(doc.template_content)
+
         set_compile_context(context)
         try:
+            # FIRST PASS: Render template (defer blocks emit markers)
+            context.defer_blocks = {}  # Initialize defer block storage
             raw_output = await template.render_async()
+
+            # Extract sections from first pass
+            from colin.compiler.section_parser import (
+                parse_sections,
+                remove_section_and_defer_markers,
+            )
+
+            first_pass_sections = parse_sections(raw_output)
+            context.sections = first_pass_sections
+
+            # TWO-PASS RENDERING: If defer blocks exist, do second pass
+            if context.defer_blocks:
+                # Create RenderedOutput for current render (first pass)
+                from colin.compiler.rendered import RenderedOutput
+
+                rendered = RenderedOutput(
+                    content=raw_output,
+                    sections=first_pass_sections,
+                    output_format=doc.frontmatter.colin.output,
+                )
+
+                # Get previous rendered output from manifest
+                previous_rendered = await self._get_previous_rendered(
+                    doc.uri, doc.frontmatter.colin.output
+                )
+
+                # SECOND PASS: Render defer blocks with rendered/previous_rendered
+                # Note: We don't need to update env.globals anymore since we pass
+                # rendered/previous_rendered as parameters to the defer block callables
+                defer_outputs = {}
+                for defer_id, caller in context.defer_blocks.items():
+                    # Invoke caller with rendered and previous_rendered as parameters
+                    defer_content = await caller(rendered, previous_rendered)
+                    defer_outputs[defer_id] = defer_content
+
+                # Merge defer block outputs into first pass output
+                final_output = self._merge_defer_blocks(raw_output, defer_outputs)
+
+                # Re-extract sections (defer blocks might have added sections)
+                context.sections = parse_sections(final_output)
+            else:
+                final_output = raw_output
+
+            # Remove section and defer markers, but keep item markers for the renderer
+            # The markdown parser needs item markers to detect {% item %} arrays
+            clean_output = remove_section_and_defer_markers(final_output)
+
+            # Apply format renderer (JSON, YAML, or markdown passthrough)
+            renderer = get_renderer(doc.frontmatter.colin.output)
+            render_result = renderer.render(clean_output, doc.uri, doc.frontmatter)
         finally:
             set_compile_context(None)
-
-        # Extract sections from markers in rendered output
-        from colin.compiler.section_parser import parse_sections, remove_colin_markers
-
-        context.sections = parse_sections(raw_output)
-
-        # Remove all Colin markers before rendering (JSON/YAML parsers error on them)
-        clean_output = remove_colin_markers(raw_output)
-
-        # Apply format renderer (JSON, YAML, or markdown passthrough)
-        renderer = get_renderer(doc.frontmatter.colin.output)
-        render_result = renderer.render(clean_output, doc.uri, doc.frontmatter)
 
         # Hash the FINAL rendered content
         output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
@@ -641,6 +683,61 @@ class CompileEngine:
             or not artifact_path.exists()
         ):
             await self.artifact_storage.write(doc.output_path, doc.output)
+
+    async def _get_previous_rendered(self, uri: str, output_format: str) -> RenderedOutput | None:
+        """Get previous rendered output from manifest.
+
+        Args:
+            uri: Document URI.
+            output_format: Output format (for format-aware section parsing).
+
+        Returns:
+            Previous RenderedOutput if exists, None otherwise.
+        """
+        if self.manifest is None:
+            return None
+
+        doc_meta = self.manifest.get_document(uri)
+        if doc_meta is None or doc_meta.output_path is None:
+            return None
+
+        # Load previous output from artifact storage
+        try:
+            previous_content = await self.artifact_storage.read(doc_meta.output_path)
+            from colin.compiler.rendered import RenderedOutput
+
+            return RenderedOutput(
+                content=previous_content,
+                sections=doc_meta.sections,
+                output_format=output_format,
+            )
+        except FileNotFoundError:
+            return None
+        except Exception:
+            return None
+
+    def _merge_defer_blocks(self, output: str, defer_outputs: dict[str, str]) -> str:
+        """Replace defer markers with rendered defer block content.
+
+        Args:
+            output: First pass output with defer markers.
+            defer_outputs: Map of defer_id to rendered defer content.
+
+        Returns:
+            Output with defer markers replaced by rendered content.
+        """
+        from colin.compiler.extensions.defer_block import (
+            DEFER_END_MARKER,
+            DEFER_START_MARKER,
+        )
+
+        result = output
+        for defer_id, defer_content in defer_outputs.items():
+            marker_start = DEFER_START_MARKER.format(id=defer_id)
+            marker_end = DEFER_END_MARKER.format(id=defer_id)
+            pattern = f"{marker_start}{marker_end}"
+            result = result.replace(pattern, defer_content)
+        return result
 
     def _update_manifest(self, doc: CompiledDocument) -> None:
         """Update manifest with compilation result.

@@ -22,7 +22,7 @@ Acme Corp builds developer tools that streamline CI/CD pipelines.
 Founded in 2020, we serve over 500 enterprise customers.
 ```
 
-The frontmatter defines metadata about the document. The body contains Markdown content, optionally enhanced with Jinja templating for dynamic behavior.
+The frontmatter defines metadata about the document. The body contains Markdown content, optionally enhanced with Jinja templating for dynamic behavior. See [Templating](/templating/templating) for details on expressions, filters, LLM blocks, and other template features.
 
 ## Frontmatter
 
@@ -138,177 +138,21 @@ A document is considered stale and recompiles if **any** of these conditions are
 
 When a document recompiles, all documents that reference it also recompile to pick up the changes.
 
-## Jinja Templating
+## Document URIs
 
-The document body supports standard Jinja2 templating syntax. This enables dynamic content through expressions, filters, and control structures.
+Every document has a URI derived from its path relative to `models/`, without the `.md` extension:
 
-### Expressions
+| File | URI |
+| :--- | :-- |
+| `models/company.md` | `company` |
+| `models/products/main.md` | `products/main` |
+| `models/team/engineering/overview.md` | `team/engineering/overview` |
 
-Use double braces to output values:
-
-```markdown models/status.md
----
-name: Project Status
----
-
-# Project Status
-
-Last updated: {{ now().strftime('%Y-%m-%d') }}
-```
-
-### Control Structures
-
-Standard Jinja control flow works in documents:
-
-```markdown models/team-roster.md
----
-name: Team Roster
----
-
-# Team
-
-{% for member in ['Alice', 'Bob', 'Charlie'] %}
-- {{ member }}
-{% endfor %}
-```
-
-### Filters
-
-Filters transform values using the pipe syntax:
-
-```markdown models/summary.md
----
-name: Summary
----
-
-{{ ref('report').content | upper }}
-```
-
-Colin provides special LLM-powered filters like `extract()` for intelligent content transformation. See the [Context](/context/overview) documentation for details on available filters.
-
-## LLM Blocks
-
-For complex transformations, use `{% llm %}` blocks to invoke LLM processing:
-
-```markdown models/analysis.md
----
-name: Competitive Analysis
----
-
-# Analysis
-
-{% llm %}
-Compare these two products and identify key differentiators:
-
-Product A: {{ ref('product-a').content }}
-Product B: {{ ref('product-b').content }}
-
-Focus on pricing, features, and target market.
-{% endllm %}
-```
-
-The content inside the block becomes the prompt. Colin sends it to the configured LLM and replaces the block with the response. LLM calls are cached by input hash, so unchanged prompts return cached results on subsequent compiles.
-
-You can specify a model override:
+Reference documents using their URI with `ref()`:
 
 ```markdown
-{% llm model="anthropic:claude-sonnet-4-5" %}
-Summarize this content for an executive audience.
-{% endllm %}
+{{ ref('company').content }}
+{{ ref('products/main').content }}
 ```
 
-## Section Blocks
-
-Named sections let you mark and reference specific parts of a document from other templates. This is useful for creating modular documents where different sections can be accessed independently:
-
-```markdown models/plan.md
----
-name: Strategic Plan
----
-
-{% section strategy %}
-## Our Strategy
-Focus on growth through innovation and customer success.
-Target enterprise market with AI-powered solutions.
-{% endsection %}
-
-{% section "key metrics" %}
-## Key Metrics
-- Revenue: $1M ARR
-- Customers: 50 enterprise
-- Team size: 12
-{% endsection %}
-```
-
-Access sections from other documents using `ref()`:
-
-```markdown models/summary.md
----
-name: Executive Summary
----
-
-## Strategy Overview
-{{ ref('plan.md').sections.strategy }}
-
-## Performance
-{{ ref('plan.md').sections['key metrics'] }}
-```
-
-Section names support both identifiers (`strategy`) and quoted strings (`"key metrics"`). Use quoted strings for names with spaces or special characters.
-
-**Dot access**: `ref('doc').sections.name` (for simple identifiers)
-**Dict access**: `ref('doc').sections['name']` (for any name, including spaces)
-
-### Format-Aware Sections
-
-Sections automatically adapt to your output format:
-
-- **Markdown output**: Returns raw string content
-- **JSON/YAML output**: Parses markdown structure into data (headers → keys, lists → arrays)
-
-For a document with `colin.output: json`, section content is parsed:
-
-```markdown models/config.json.md
----
-colin:
-  output: json
----
-
-{% section database %}
-## host
-localhost
-
-## port
-5432
-{% endsection %}
-```
-
-Accessing `ref('config.json.md').sections.database` returns:
-```json
-{
-  "host": "localhost",
-  "port": 5432
-}
-```
-
-### Section Naming
-
-- **Duplicate names**: If multiple sections have the same name, the last one wins
-- **Empty sections**: Sections can be empty (useful for placeholders)
-- **Special characters**: Use quoted strings for names with spaces, hyphens, or other characters
-
-## Naming
-
-Document URIs derive from their file paths relative to the models directory. Subdirectories become part of the URI:
-
-| File Path | URI |
-| :-------- | :-- |
-| `models/overview.md` | `overview` |
-| `models/products/widget.md` | `products/widget` |
-| `models/team/engineering/leads.md` | `team/engineering/leads` |
-
-When referencing documents, use the URI without the `.md` extension:
-
-```markdown
-{{ ref('products/widget').content }}
-```
+Colin validates that referenced documents exist at compile time. See [References](/projects/references) for details on the `ref()` function and dependency tracking.

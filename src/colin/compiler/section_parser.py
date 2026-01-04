@@ -40,12 +40,43 @@ def parse_sections(content: str) -> dict[str, str]:
     return sections
 
 
+def remove_section_and_defer_markers(content: str) -> str:
+    """Remove section and defer markers, but keep item markers for renderers.
+
+    The markdown parser needs item markers to detect {% item %} arrays,
+    so we only strip section and defer markers before rendering.
+
+    Args:
+        content: The rendered template output with markers.
+
+    Returns:
+        Content with section and defer markers removed, item markers preserved.
+
+    Example:
+        >>> content = '''<!--COLIN:SECTION_START:strategy-->
+        ... ## Our Strategy
+        ... <!--COLIN:SECTION_END:strategy-->'''
+        >>> remove_section_and_defer_markers(content)
+        '## Our Strategy'
+    """
+    # Remove only SECTION and DEFER markers (keep ITEM markers for the renderer)
+    patterns = [
+        r"<!--COLIN:SECTION_START:[^>]+-->\n?",
+        r"<!--COLIN:SECTION_END:[^>]+-->\n?",
+        r"<!--COLIN:DEFER_START:[^>]+-->\n?",
+        r"<!--COLIN:DEFER_END:[^>]+-->\n?",
+    ]
+    for pattern in patterns:
+        content = re.sub(pattern, "", content)
+    return content
+
+
 def remove_colin_markers(content: str) -> str:
     """Remove all Colin internal markers from rendered content.
 
     Colin uses HTML comment markers for internal tracking (sections, items, etc.).
-    These must be stripped before passing content to format renderers (JSON/YAML)
-    since the markdown parser raises errors when seeing non-header content.
+    This function removes ALL markers and should only be called after rendering
+    is complete.
 
     Note: Item markers are consumed by the markdown parser's _parse_items(),
     but we strip them here too for defensive programming.
