@@ -1,0 +1,182 @@
+---
+title: Variables
+sidebarTitle: Variables
+icon: sliders
+---
+
+Project variables define typed configuration values that are accessible throughout your templates. Define them once in `colin.toml`, then reference them anywhere via `vars.*`.
+
+Variables separate configuration from content. Rather than hardcoding values like environment names, dates, or feature flags into your documents, declare them as variables. This makes documents portable across environments and easier to update.
+
+## Defining Variables
+
+Add variables to the `[vars]` section of your `colin.toml`. Colin supports two syntaxes depending on your needs.
+
+### Simple Syntax
+
+For straightforward cases, assign values directly. Colin infers the type from the value:
+
+```toml colin.toml
+[vars]
+environment = "production"
+debug = false
+max_items = 100
+rate = 3.14
+```
+
+This creates four variables with types inferred as string, bool, int, and float respectively.
+
+### Typed Syntax
+
+For more control, use subsections with explicit type declarations:
+
+```toml colin.toml
+[vars.report_date]
+type = "date"
+default = "2024-01-15"
+
+[vars.api_key]
+type = "secret"
+optional = true
+
+[vars.build_timestamp]
+type = "timestamp"
+```
+
+The typed syntax supports additional options:
+
+| Field | Description | Default |
+| :---- | :---------- | :------ |
+| `type` | Variable type (see below) | `string` |
+| `default` | Default value, can include Jinja expressions | None |
+| `optional` | If true, returns `None` when not provided | `false` |
+
+## Supported Types
+
+Colin converts variable values to appropriate Python types at resolution time:
+
+| Type | Python Type | Example Value |
+| :--- | :---------- | :------------ |
+| `string` | `str` | `"production"` |
+| `bool` | `bool` | `true`, `false` |
+| `int` | `int` | `42` |
+| `float` | `float` | `3.14` |
+| `date` | `datetime.date` | `"2024-01-15"` |
+| `timestamp` | `datetime.datetime` | `"2024-01-15T10:30:00"` |
+| `secret` | `pydantic.SecretStr` | `"sk-1234..."` |
+
+Date and timestamp types parse ISO 8601 formatted strings. The `date` type accepts `YYYY-MM-DD`, while `timestamp` accepts `YYYY-MM-DDTHH:MM:SS` with optional timezone.
+
+The `secret` type wraps values in Pydantic's `SecretStr`, which redacts the value in logs and string representations. This helps prevent accidental exposure but is not a substitute for proper secret management in production.
+
+## Template Usage
+
+Access variables in any template through the `vars` namespace:
+
+```markdown models/report.md
+---
+name: Status Report
+---
+
+# {{ vars.environment | title }} Status Report
+
+Generated: {{ vars.report_date.strftime('%B %d, %Y') }}
+
+{% if vars.debug %}
+## Debug Information
+Debug mode is enabled. Max items: {{ vars.max_items }}
+{% endif %}
+```
+
+### Working with Types
+
+Date and timestamp variables return Python objects, so you can call their methods directly:
+
+```markdown
+Report date: {{ vars.report_date.strftime('%B %d, %Y') }}
+Build time: {{ vars.build_timestamp.isoformat() }}
+```
+
+Secret variables require explicit access to reveal their value:
+
+```markdown
+API Key: {{ vars.api_key.get_secret_value() }}
+```
+
+Without `.get_secret_value()`, the output shows `**********` instead of the actual value.
+
+### Optional Variables
+
+Optional variables return `None` when not provided. Use conditionals to handle missing values:
+
+```markdown
+{% if vars.historical_date %}
+Historical analysis for {{ vars.historical_date }}
+{% else %}
+Current data analysis
+{% endif %}
+```
+
+## Providing Values
+
+Variables can be set through multiple sources. Colin resolves them in order of precedence, using the first value found.
+
+### Precedence Order
+
+1. **CLI `--var` flags** (highest priority)
+2. **Environment variables** (`COLIN_VAR_<NAME>`)
+3. **`colin.toml` defaults**
+4. **`None`** if optional
+5. **Error** if required and not provided
+
+### CLI Overrides
+
+Pass values at runtime with `--var`:
+
+```bash
+colin run --var report_date=2023-06-01 --var debug=true
+```
+
+Multiple `--var` flags can be combined. Values are always strings on the CLI; Colin converts them to the declared type.
+
+### Environment Variables
+
+Set variables through the environment using the `COLIN_VAR_` prefix:
+
+```bash
+export COLIN_VAR_API_KEY=sk-1234
+export COLIN_VAR_DEBUG=true
+colin run
+```
+
+Variable names are uppercased when looking up environment variables. A variable named `api_key` reads from `COLIN_VAR_API_KEY`.
+
+## Template-Side Defaults
+
+For dynamic defaults like the current date, use Jinja expressions directly in your templates rather than in `colin.toml`:
+
+```markdown models/report.md
+Report date: {{ vars.report_date or now().strftime('%Y-%m-%d') }}
+```
+
+This pattern gives you the flexibility of computed defaults while keeping variable definitions in `colin.toml` simple. If `report_date` is provided via CLI or environment variable, that value is used; otherwise, the expression after `or` provides the fallback.
+
+## Required Variables
+
+Variables without a default and not marked `optional` are required. Colin raises an error if they're missing:
+
+```toml colin.toml
+[vars.deployment_target]
+type = "string"
+# No default, not optional - must be provided
+```
+
+Running without this variable produces a clear error:
+
+```
+Required variable 'deployment_target' not provided.
+Set via --var deployment_target=value, COLIN_VAR_DEPLOYMENT_TARGET=value,
+or add a default in colin.toml
+```
+
+This ensures critical configuration is always explicitly provided rather than silently defaulting.

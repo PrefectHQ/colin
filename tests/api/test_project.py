@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from colin.api.project import ProjectConfig, _parse_providers, load_project, save_project
+from colin.api.project import (
+    ProjectConfig,
+    _parse_providers,
+    _parse_vars,
+    load_project,
+    save_project,
+)
 
 
 class TestParseProviders:
@@ -198,6 +204,107 @@ class TestParseProviders:
 
         with pytest.raises(ValueError, match="duplicate name"):
             _parse_providers(data)
+
+
+class TestParseVars:
+    """Tests for _parse_vars function."""
+
+    def test_simple_string_var(self) -> None:
+        """Simple string assignment creates string var with default."""
+        data = {"environment": "production"}
+
+        result = _parse_vars(data)
+
+        assert "environment" in result
+        assert result["environment"].type == "string"
+        assert result["environment"].default == "production"
+        assert result["environment"].optional is False
+
+    def test_simple_bool_var(self) -> None:
+        """Simple bool value creates bool var with default."""
+        data = {"debug": True}
+
+        result = _parse_vars(data)
+
+        assert result["debug"].type == "bool"
+        assert result["debug"].default is True
+
+    def test_simple_int_var(self) -> None:
+        """Simple int value creates int var with default."""
+        data = {"max_items": 100}
+
+        result = _parse_vars(data)
+
+        assert result["max_items"].type == "int"
+        assert result["max_items"].default == 100
+
+    def test_simple_float_var(self) -> None:
+        """Simple float value creates float var with default."""
+        data = {"rate": 3.14}
+
+        result = _parse_vars(data)
+
+        assert result["rate"].type == "float"
+        assert result["rate"].default == 3.14
+
+    def test_typed_var_with_default(self) -> None:
+        """Typed var with explicit type and default."""
+        data = {"date": {"type": "date", "default": "2024-01-15"}}
+
+        result = _parse_vars(data)
+
+        assert result["date"].type == "date"
+        assert result["date"].default == "2024-01-15"
+        assert result["date"].optional is False
+
+    def test_optional_var_without_default(self) -> None:
+        """Optional var can omit default."""
+        data = {"historical_date": {"type": "string", "optional": True}}
+
+        result = _parse_vars(data)
+
+        assert result["historical_date"].type == "string"
+        assert result["historical_date"].default is None
+        assert result["historical_date"].optional is True
+
+    def test_required_var_without_default(self) -> None:
+        """Required var has no default and not optional."""
+        data = {"api_key": {"type": "secret"}}
+
+        result = _parse_vars(data)
+
+        assert result["api_key"].type == "secret"
+        assert result["api_key"].default is None
+        assert result["api_key"].optional is False
+
+    def test_string_default_preserved_verbatim(self) -> None:
+        """String defaults are stored verbatim (no Jinja processing)."""
+        data = {"date": {"type": "string", "default": "{{ now().strftime('%Y-%m-%d') }}"}}
+
+        result = _parse_vars(data)
+
+        # Stored as literal string - no Jinja evaluation in defaults
+        assert result["date"].default == "{{ now().strftime('%Y-%m-%d') }}"
+
+    def test_empty_vars(self) -> None:
+        """Empty vars section creates empty dict."""
+        result = _parse_vars({})
+        assert result == {}
+
+    def test_multiple_vars(self) -> None:
+        """Multiple vars are all parsed."""
+        data = {
+            "env": "production",
+            "debug": False,
+            "api_key": {"type": "secret", "optional": True},
+        }
+
+        result = _parse_vars(data)
+
+        assert len(result) == 3
+        assert result["env"].type == "string"
+        assert result["debug"].type == "bool"
+        assert result["api_key"].type == "secret"
 
 
 class TestLoadProject:

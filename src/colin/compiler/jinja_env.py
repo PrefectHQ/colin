@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment
 
@@ -41,16 +41,18 @@ def bind_context_to_environment(
     env: Environment,
     context: CompileContext,
     provider_manager: ProviderManager,
+    vars: dict[str, Any] | None = None,
 ) -> Environment:
     """Bind compile context functions to the environment.
 
-    This adds the ref() function and LLM filters, and attaches
-    the context so the LLM block extension can access it.
+    This adds the ref() function, LLM filters, project variables,
+    and attaches the context so the LLM block extension can access it.
 
     Args:
         env: The Jinja environment.
         context: The compile context.
         provider_manager: Provider manager for accessing providers.
+        vars: Resolved project variables (name -> typed value).
 
     Returns:
         The environment with context bound.
@@ -64,6 +66,9 @@ def bind_context_to_environment(
     # Providers namespace - exposed as `colin.*` in templates
     colin = provider_manager.namespace()
     env.globals["colin"] = colin
+
+    # Project variables - exposed as `vars.*` in templates
+    env.globals["vars"] = vars or {}
 
     # Attach llm namespace for LLM block extension
     env.llm_namespace = colin.llm  # type: ignore[attr-defined]

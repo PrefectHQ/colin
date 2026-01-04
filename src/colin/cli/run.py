@@ -122,6 +122,7 @@ async def run(
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
     dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
+    var: Annotated[list[str], cyclopts.Parameter(name=["--var"])] = [],
 ) -> None:
     """Compile and run all models.
 
@@ -131,7 +132,20 @@ async def run(
         no_cache: Ignore cached results and recompile all documents.
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
+        var: Variable overrides in key=value format (can be repeated).
     """
+    # Parse --var key=value pairs into dict
+    vars_dict: dict[str, str] | None = None
+    if var:
+        vars_dict = {}
+        for item in var:
+            if "=" not in item:
+                err_console.print(
+                    f"[red]Error:[/] Invalid --var format: '{item}' (expected key=value)"
+                )
+                sys.exit(1)
+            key, value = item.split("=", 1)
+            vars_dict[key] = value
     try:
         # Get project info for display
         from colin.api.project import find_project_file, load_project
@@ -174,6 +188,7 @@ async def run(
                 force=no_cache,
                 dry_run=False,
                 state=state,
+                vars=vars_dict,
             )
             return
 
@@ -194,6 +209,7 @@ async def run(
                     force=no_cache,
                     dry_run=False,
                     state=state,
+                    vars=vars_dict,
                 )
             )
             while not task.done():

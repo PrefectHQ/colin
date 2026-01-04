@@ -60,6 +60,7 @@ class CompileEngine:
         artifact_storage: Storage,
         state: CompilationState | None = None,
         force: bool = False,
+        vars: dict[str, str] | None = None,
     ) -> None:
         """Initialize the compile engine.
 
@@ -68,11 +69,14 @@ class CompileEngine:
             artifact_storage: Storage for compiled outputs.
             state: Optional compilation state for progress tracking.
             force: Force recompile (ignore existing manifest).
+            vars: CLI-provided variable overrides (key=value parsed to dict).
         """
         self.config = config
         self.artifact_storage = artifact_storage
         self.state = state
         self.graph = DependencyGraph()
+        self._cli_vars = vars
+        self._resolved_vars: dict[str, Any] | None = None
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
 
@@ -89,6 +93,23 @@ class CompileEngine:
             content = self.config.manifest_path.read_text(encoding="utf-8")
             return Manifest.model_validate_json(content)
         return Manifest()
+
+    def _resolve_variables(self) -> dict[str, Any]:
+        """Resolve project variables once at compile start.
+
+        Returns cached result on subsequent calls.
+
+        Returns:
+            Dict mapping variable name to typed value.
+        """
+        if self._resolved_vars is not None:
+            return self._resolved_vars
+
+        self._resolved_vars = {
+            name: config.resolve(name, self._cli_vars.get(name) if self._cli_vars else None)
+            for name, config in self.config.vars.items()
+        }
+        return self._resolved_vars
 
     def _is_private(self, doc: ColinDocument) -> bool:
         """Check if a document is private (not published to output/).
@@ -580,11 +601,15 @@ class CompileEngine:
             doc_state=doc_state,
         )
 
-        # Bind context to environment
+        # Resolve project variables (cached after first call)
+        resolved_vars = self._resolve_variables()
+
+        # Bind context to environment with variables
         bind_context_to_environment(
             env,
             context,
             provider_manager=provider_manager,
+            vars=resolved_vars,
         )
 
         # Compile template with compile context set for caching

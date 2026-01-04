@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import tomli
 import tomli_w
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from colin.api.manifest import load_manifest
 from colin.settings import settings
 
 logger = logging.getLogger(__name__)
+
+VarType = Literal["string", "bool", "int", "float", "date", "timestamp", "secret"]
 
 PROJECT_FILE = "colin.toml"
 
@@ -35,6 +39,129 @@ class StorageConfig(BaseModel):
 
     provider: str = "file"
     config: dict[str, Any] = Field(default_factory=dict)
+
+
+class VarConfig(BaseModel):
+    """Configuration for a project variable.
+
+    Variables can be defined in colin.toml and accessed in templates via `vars.*`.
+    """
+
+    type: VarType = "string"
+    """Type of the variable (string, bool, int, float, date, timestamp, secret)."""
+
+    default: str | bool | int | float | None = None
+    """Default value."""
+
+    optional: bool = False
+    """If True and no default, the variable returns None instead of erroring."""
+
+    def resolve(self, name: str, cli_value: str | None = None) -> Any:
+        """Resolve this variable's value.
+
+        Precedence: CLI → env var → default → optional(None) → error
+
+        Args:
+            name: Variable name (for env var lookup and error messages).
+            cli_value: Value from --var CLI flag, if provided.
+
+        Returns:
+            Typed variable value.
+
+        Raises:
+            ValueError: If required variable not provided or type conversion fails.
+        """
+        raw = self._load_raw(name, cli_value)
+        return self._convert(name, raw)
+
+    def _load_raw(self, name: str, cli_value: str | None) -> str | bool | int | float | None:
+        """Load raw value from sources in precedence order.
+
+        Args:
+            name: Variable name.
+            cli_value: Value from --var CLI flag.
+
+        Returns:
+            Raw value from highest-precedence source, or None if optional.
+
+        Raises:
+            ValueError: If required variable not provided.
+        """
+        # CLI override (highest priority)
+        if cli_value is not None:
+            return cli_value
+
+        # Environment variable
+        env_name = f"COLIN_VAR_{name.upper()}"
+        if (env_val := os.environ.get(env_name)) is not None:
+            return env_val
+
+        # Default from config
+        if self.default is not None:
+            return self.default
+
+        # Optional returns None
+        if self.optional:
+            return None
+
+        # Required but missing
+        raise ValueError(
+            f"Required variable '{name}' not provided. "
+            f"Set via --var {name}=value, {env_name}=value, "
+            f"or add a default in colin.toml"
+        )
+
+    def _convert(
+        self, name: str, raw: str | bool | int | float | None
+    ) -> str | bool | int | float | date | datetime | SecretStr | None:
+        """Convert raw value to typed value.
+
+        Args:
+            name: Variable name (for error messages).
+            raw: Raw value to convert.
+
+        Returns:
+            Typed value.
+
+        Raises:
+            ValueError: If type conversion fails.
+        """
+        if raw is None:
+            return None
+
+        try:
+            match self.type:
+                case "string":
+                    return str(raw)
+                case "bool":
+                    if isinstance(raw, bool):
+                        return raw
+                    lower = str(raw).lower()
+                    if lower in ("true", "1", "yes", "on"):
+                        return True
+                    if lower in ("false", "0", "no", "off"):
+                        return False
+                    raise ValueError(f"Use true/false, yes/no, 1/0, or on/off (got '{raw}')")
+                case "int":
+                    return int(raw)
+                case "float":
+                    return float(raw)
+                case "date":
+                    if isinstance(raw, date) and not isinstance(raw, datetime):
+                        return raw
+                    if isinstance(raw, datetime):
+                        return raw.date()
+                    return datetime.fromisoformat(str(raw)).date()
+                case "timestamp":
+                    if isinstance(raw, datetime):
+                        return raw
+                    return datetime.fromisoformat(str(raw))
+                case "secret":
+                    return SecretStr(str(raw))
+                case _:
+                    raise ValueError(f"unknown type '{self.type}'")
+        except Exception as e:
+            raise ValueError(f"Variable '{name}' has invalid {self.type} value: {e}") from e
 
 
 class ProviderInstanceConfig(BaseModel):
@@ -109,6 +236,10 @@ class ProjectConfig(BaseModel):
     project_storage: StorageConfig = Field(default_factory=StorageConfig)
     artifacts_storage: StorageConfig | None = None
     providers: dict[str, ProviderInstanceConfig] = Field(default_factory=dict)
+
+    # Project variables
+    vars: dict[str, VarConfig] = Field(default_factory=dict)
+    """Project variables accessible in templates via `vars.*`."""
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -207,6 +338,45 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
     return result
 
 
+def _parse_vars(vars_data: dict[str, Any]) -> dict[str, VarConfig]:
+    """Parse [vars] configuration into VarConfig instances.
+
+    Supports two syntaxes:
+    - Simple: `name = "value"` creates a string var with default
+    - Typed: `[vars.name]` subsection with type, default, optional fields
+
+    Args:
+        vars_data: Raw vars section from TOML.
+
+    Returns:
+        Dictionary mapping variable name to VarConfig.
+    """
+    result: dict[str, VarConfig] = {}
+
+    for name, value in vars_data.items():
+        if isinstance(value, (str, bool, int, float)):
+            # Simple syntax: infer type from value
+            if isinstance(value, bool):
+                var_type: VarType = "bool"
+            elif isinstance(value, int):
+                var_type = "int"
+            elif isinstance(value, float):
+                var_type = "float"
+            else:
+                var_type = "string"
+            result[name] = VarConfig(type=var_type, default=value)
+        elif isinstance(value, dict):
+            # Typed syntax with subsection
+            result[name] = VarConfig.model_validate(value)
+        else:
+            raise ValueError(
+                f"Variable '{name}' must be a string, number, bool, or table, "
+                f"got {type(value).__name__}"
+            )
+
+    return result
+
+
 def load_project(path: Path) -> ProjectConfig:
     """Load project configuration from colin.toml.
 
@@ -270,6 +440,10 @@ def load_project(path: Path) -> ProjectConfig:
     providers_data = data.get("providers", {})
     providers = _parse_providers(providers_data)
 
+    # Parse project variables
+    vars_data = data.get("vars", {})
+    vars_config = _parse_vars(vars_data)
+
     return ProjectConfig(
         name=project.get("name", "colin-project"),
         project_root=project_root,
@@ -279,6 +453,7 @@ def load_project(path: Path) -> ProjectConfig:
         project_storage=project_storage,
         artifacts_storage=artifacts_storage,
         providers=providers,
+        vars=vars_config,
     )
 
 
@@ -391,6 +566,35 @@ def save_project(path: Path, config: ProjectConfig) -> None:
 
     if providers_data:
         data["providers"] = providers_data
+
+    # Serialize vars
+    if config.vars:
+        vars_data: dict[str, Any] = {}
+        for var_name, var_config in config.vars.items():
+            # Use simple syntax if only default is set (no special type, not optional)
+            if (
+                var_config.type == "string"
+                and not var_config.optional
+                and var_config.default is not None
+            ):
+                vars_data[var_name] = var_config.default
+            elif (
+                var_config.type in ("bool", "int", "float")
+                and not var_config.optional
+                and var_config.default is not None
+            ):
+                vars_data[var_name] = var_config.default
+            else:
+                # Use typed subsection syntax
+                var_entry: dict[str, Any] = {}
+                if var_config.type != "string":
+                    var_entry["type"] = var_config.type
+                if var_config.default is not None:
+                    var_entry["default"] = var_config.default
+                if var_config.optional:
+                    var_entry["optional"] = True
+                vars_data[var_name] = var_entry
+        data["vars"] = vars_data
 
     with open(path, "wb") as f:
         tomli_w.dump(data, f)
