@@ -142,6 +142,12 @@ class CompileEngine:
         if doc_meta is None or doc_meta.compiled_at is None:
             return (True, "never compiled")
 
+        # Compiled artifact missing - rebuild (handles deleted .colin/compiled/)
+        if doc_meta.output_path is not None:
+            compiled_path = self.config.build_path / "compiled" / doc_meta.output_path
+            if not compiled_path.exists():
+                return (True, "compiled artifact missing")
+
         # Time-based expiration (applies to both 'always' and 'auto')
         expires_duration = doc.frontmatter.colin.cache.expires
         if expires_duration is not None:
@@ -612,14 +618,19 @@ class CompileEngine:
         """Write pre-rendered output to storage with content-addressing.
 
         Content is already rendered during compilation. Only writes if
-        the output hash differs from existing file.
+        the output hash differs from existing file or artifact is missing.
 
         Args:
             doc: The compiled document (must have output_path and output set).
         """
-        # Content-addressed: only write if hash differs from existing
+        # Content-addressed: only write if hash differs or artifact missing
         existing_meta = self.manifest.get_document(doc.uri)
-        if existing_meta is None or existing_meta.output_hash != doc.output_hash:
+        artifact_path = self.config.build_path / "compiled" / doc.output_path
+        if (
+            existing_meta is None
+            or existing_meta.output_hash != doc.output_hash
+            or not artifact_path.exists()
+        ):
             await self.artifact_storage.write(doc.output_path, doc.output)
 
     def _update_manifest(self, doc: CompiledDocument) -> None:

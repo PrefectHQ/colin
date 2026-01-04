@@ -20,32 +20,36 @@ class TestStalenessDetection:
     @pytest.fixture
     def engine_setup(
         self, tmp_path: Path, mock_agent: MagicMock
-    ) -> tuple[CompileEngine, Path, Path]:
+    ) -> tuple[CompileEngine, Path, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
-        output_dir.mkdir(parents=True)
+        target_dir = tmp_path / "target"
+        target_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         config = ProjectConfig(
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            target_path=target_dir,
+            manifest_path=build_dir / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
 
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
         )
-        return engine, source_dir, output_dir
+        return engine, source_dir, compiled_dir, target_dir
 
     async def test_stale_when_never_compiled(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Document is stale if never compiled before."""
-        engine, source_dir, _ = engine_setup
+        engine, source_dir, _, _ = engine_setup
 
         (source_dir / "new.md").write_text("---\nname: New\n---\nContent")
 
@@ -55,10 +59,10 @@ class TestStalenessDetection:
         assert result[0].uri == "project://new.md"
 
     async def test_stale_when_source_changed(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Document is stale if source content changed."""
-        engine, source_dir, output_dir = engine_setup
+        engine, source_dir, _, _ = engine_setup
 
         (source_dir / "test.md").write_text("---\nname: Test\n---\nOriginal content")
         await engine.compile_all()
@@ -80,10 +84,10 @@ class TestStalenessDetection:
         assert "Modified content" in result[0].output
 
     async def test_fresh_when_source_unchanged(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Document is fresh if source unchanged and no refs changed."""
-        engine, source_dir, output_dir = engine_setup
+        engine, source_dir, _, _ = engine_setup
 
         (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
 
@@ -95,11 +99,34 @@ class TestStalenessDetection:
         result2 = await engine.compile_all()
         assert len(result2) == 0  # Skipped because fresh
 
+    async def test_stale_when_compiled_artifact_missing(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """Document is stale if compiled artifact is missing from cache."""
+        engine, source_dir, compiled_dir, _ = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+
+        # First compile
+        result1 = await engine.compile_all()
+        assert len(result1) == 1
+
+        # Delete the compiled artifact (simulates fresh clone with manifest but no cache)
+        compiled_path = compiled_dir / "test.md"
+        compiled_path.unlink()
+
+        # Second compile - should recompile because artifact is missing
+        result2 = await engine.compile_all()
+        assert len(result2) == 1  # Recompiled because artifact missing
+
+        # Verify artifact was recreated
+        assert compiled_path.exists()
+
     async def test_stale_when_ref_updated(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Document is stale if a referenced document was updated."""
-        engine, source_dir, output_dir = engine_setup
+        engine, source_dir, _, _ = engine_setup
 
         # Create base and derived documents
         (source_dir / "base.md").write_text("---\nname: Base\n---\nBase content")
@@ -123,10 +150,10 @@ class TestStalenessDetection:
         assert "Updated base content" in derived.output
 
     async def test_fresh_when_refs_unchanged(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """Document is fresh if all refs are unchanged."""
-        engine, source_dir, output_dir = engine_setup
+        engine, source_dir, _, _ = engine_setup
 
         # Create base and derived documents
         (source_dir / "base.md").write_text("---\nname: Base\n---\nBase content")
@@ -143,10 +170,10 @@ class TestStalenessDetection:
         assert len(result2) == 0  # Both fresh
 
     async def test_upstream_recompiled_triggers_downstream(
-        self, engine_setup: tuple[CompileEngine, Path, Path]
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
         """If upstream recompiles this run, downstream must also recompile."""
-        engine, source_dir, output_dir = engine_setup
+        engine, source_dir, _, _ = engine_setup
 
         # Create chain: a -> b -> c
         (source_dir / "a.md").write_text("---\nname: A\n---\nA content")
@@ -201,23 +228,27 @@ class TestCachePolicies:
     ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
-        output_dir.mkdir(parents=True)
+        target_dir = tmp_path / "target"
+        target_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         config = ProjectConfig(
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            target_path=target_dir,
+            manifest_path=build_dir / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
 
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
         )
-        return engine, source_dir, output_dir
+        return engine, source_dir, target_dir
 
     async def test_cache_never_always_rebuilds(
         self, engine_setup: tuple[CompileEngine, Path, Path]
@@ -827,23 +858,27 @@ class TestTimeBasedExpiration:
     ) -> tuple[CompileEngine, Path, Path]:
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        output_dir = tmp_path / "target"
-        output_dir.mkdir(parents=True)
+        target_dir = tmp_path / "target"
+        target_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
 
         config = ProjectConfig(
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
-            target_path=tmp_path / "target",
-            manifest_path=tmp_path / "target" / "manifest.json",
+            target_path=target_dir,
+            manifest_path=build_dir / "manifest.json",
         )
-        artifact_storage = FileStorage(base_path=output_dir)
+        artifact_storage = FileStorage(base_path=compiled_dir)
 
         engine = CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
         )
-        return engine, source_dir, output_dir
+        return engine, source_dir, target_dir
 
     async def test_expired_after_time_threshold(
         self, engine_setup: tuple[CompileEngine, Path, Path]
