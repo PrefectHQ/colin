@@ -279,6 +279,139 @@ Relative: {{ ref('_private.md').relative_path }}
         assert any("Cannot get relative_path for private file" in msg for msg in error_msgs)
 
 
+class TestPrivateNonMarkdownOutputs:
+    """Tests for privacy with JSON/YAML outputs referenced by output filename."""
+
+    async def test_private_json_output_path_raises(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """ref('_config.json').path raises for private JSON outputs."""
+        engine, source_dir, _, _ = engine_setup
+
+        (source_dir / "_config.md").write_text("""\
+---
+name: Config
+colin:
+  output: json
+---
+
+## key
+value
+""")
+        (source_dir / "consumer.md").write_text("""\
+---
+name: Consumer
+---
+
+Path: {{ ref('_config.json').path }}
+""")
+
+        with pytest.raises(MultipleCompilationErrors) as exc_info:
+            await engine.compile_all()
+
+        errors = exc_info.value.errors
+        assert "project://consumer.md" in errors
+        error_msgs = [str(e) for e in errors["project://consumer.md"]]
+        assert any("Cannot get path for private file" in msg for msg in error_msgs)
+
+    async def test_private_json_content_works(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """ref('_config.json').content works for private JSON outputs."""
+        engine, source_dir, _, target_dir = engine_setup
+
+        (source_dir / "_config.md").write_text("""\
+---
+name: Config
+colin:
+  output: json
+---
+
+## key
+value
+""")
+        (source_dir / "consumer.md").write_text("""\
+---
+name: Consumer
+---
+
+Content: {{ ref('_config.json').content }}
+""")
+
+        result = await engine.compile_all()
+
+        consumer = next(doc for doc in result if doc.uri == "project://consumer.md")
+        assert '"key": "value"' in consumer.output
+        assert (target_dir / "consumer.md").exists()
+        # Private JSON should NOT be in target
+        assert not (target_dir / "_config.json").exists()
+
+    async def test_private_yaml_output_path_raises(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """ref('_config.yaml').path raises for private YAML outputs."""
+        engine, source_dir, _, _ = engine_setup
+
+        (source_dir / "_config.md").write_text("""\
+---
+name: Config
+colin:
+  output: yaml
+---
+
+## key
+value
+""")
+        (source_dir / "consumer.md").write_text("""\
+---
+name: Consumer
+---
+
+Path: {{ ref('_config.yaml').path }}
+""")
+
+        with pytest.raises(MultipleCompilationErrors) as exc_info:
+            await engine.compile_all()
+
+        errors = exc_info.value.errors
+        assert "project://consumer.md" in errors
+        error_msgs = [str(e) for e in errors["project://consumer.md"]]
+        assert any("Cannot get path for private file" in msg for msg in error_msgs)
+
+    async def test_ref_json_output_finds_correct_metadata(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """ref('config.json') finds manifest metadata via output_path lookup."""
+        engine, source_dir, compiled_dir, target_dir = engine_setup
+
+        (source_dir / "config.md").write_text("""\
+---
+name: Config
+colin:
+  output: json
+---
+
+## host
+localhost
+""")
+
+        await engine.compile_all()
+
+        # Verify manifest has correct output_path
+        doc_meta = engine.manifest.get_document("project://config.md")
+        assert doc_meta is not None
+        assert doc_meta.output_path == "config.json"
+
+        # Verify lookup by output_path works
+        by_output = engine.manifest.get_document_by_output_path("config.json")
+        assert by_output is not None
+        assert by_output.uri == "project://config.md"
+
+        # Verify output exists in correct location
+        assert (target_dir / "config.json").exists()
+        assert (compiled_dir / "config.json").exists()
+
+
 class TestParentDirectoryDoesNotAffectPrivacy:
     """Tests that parent directories outside models root don't affect privacy."""
 
