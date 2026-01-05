@@ -1,0 +1,14 @@
+[project]
+name = "variables-example"
+
+[vars.env]
+type = "string"
+default = "dev"
+
+[vars.debug]
+type = "bool"
+default = false
+
+[vars.author]
+type = "string"
+# No default - must be provided via --var or COLIN_VAR_AUTHOR
