@@ -11,4 +11,4 @@ default = false
 
 [vars.author]
 type = "string"
-# No default - must be provided via --var or COLIN_VAR_AUTHOR
+prompt = "Who is the author?"
