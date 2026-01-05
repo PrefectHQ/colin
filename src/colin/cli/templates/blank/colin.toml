@@ -1,0 +1,4 @@
+[project]
+name = "{{ project_name }}"
+model-path = "models"
+output-path = "output"

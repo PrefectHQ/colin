@@ -29,6 +29,7 @@ class CompileResult:
         compiled: list[CompiledDocument],
         manifest: Manifest,
         project_name: str | None,
+        stale_config_count: int = 0,
     ) -> None:
         """Initialize compile result.
 
@@ -36,10 +37,12 @@ class CompileResult:
             compiled: List of compiled documents.
             manifest: Updated manifest.
             project_name: Name of the project.
+            stale_config_count: Documents compiled with a different config hash.
         """
         self.compiled = compiled
         self.manifest = manifest
         self.project_name = project_name
+        self.stale_config_count = stale_config_count
 
     @property
     def total_llm_calls(self) -> int:
@@ -131,13 +134,20 @@ async def compile_project(
         vars=vars,
     )
 
+    # Check for stale config before compilation
+    stale_config_count = engine.get_stale_config_count()
+
     compiled = await engine.compile_all()
 
     # Save manifest
     _save_manifest(config.manifest_path, engine.manifest)
 
+    # Recompute stale count after compilation (documents may have been recompiled)
+    stale_config_count = engine.get_stale_config_count()
+
     return CompileResult(
         compiled=compiled,
         manifest=engine.manifest,
         project_name=config.name,
+        stale_config_count=stale_config_count,
     )

@@ -1,0 +1,17 @@
+[project]
+name = "{{ project_name }}"
+model-path = "models"
+output-path = "output"
+
+[vars.project_name]
+type = "string"
+prompt = "Project name"
+
+[vars.description]
+type = "string"
+prompt = "What does this project do?"
+default = "A new Colin project"
+
+[vars.author]
+type = "string"
+prompt = "Author name"

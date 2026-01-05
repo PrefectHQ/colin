@@ -62,3 +62,6 @@ dmypy.json
 *.sqlite
 *.db
 *.ddb
+
+# Claude local
+CLAUDE.local.md
