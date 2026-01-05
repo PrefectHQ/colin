@@ -55,6 +55,9 @@ class VarConfig(BaseModel):
     optional: bool = False
     """If True and no default, the variable returns None instead of erroring."""
 
+    prompt: str | None = None
+    """Prompt text for interactive input when no value is provided."""
+
 
 class ProviderInstanceConfig(BaseModel):
     """Configuration for a provider instance."""

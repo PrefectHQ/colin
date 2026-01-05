@@ -1,13 +1,15 @@
 """Run, init, and clean commands."""
 
 import asyncio
+import os
 import sys
 from pathlib import Path
-from typing import Annotated, cast
+from typing import TYPE_CHECKING, Annotated, cast
 
 import cyclopts
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.prompt import Prompt
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
@@ -16,6 +18,9 @@ from rich.tree import Tree
 from colin import api
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
+
+if TYPE_CHECKING:
+    from colin.api.project import ProjectConfig
 
 console = Console()
 err_console = Console(stderr=True)
@@ -99,6 +104,44 @@ def render_state(state: CompilationState) -> RenderableType:
     return Group(*trees)
 
 
+def prompt_for_missing_vars(
+    config: "ProjectConfig",
+    vars_dict: dict[str, str] | None,
+    interactive: bool = True,
+) -> dict[str, str]:
+    """Prompt for variables that have prompt text but no value.
+
+    Args:
+        config: Project configuration with variable definitions.
+        vars_dict: CLI-provided variable values.
+        interactive: Whether interactive prompting is allowed.
+
+    Returns:
+        Updated variables dict with prompted values.
+    """
+    result = dict(vars_dict) if vars_dict else {}
+
+    # Collect variables that need prompting
+    to_prompt: list[tuple[str, str, str | None]] = []  # (name, prompt_text, default)
+    for name, var_config in config.vars.items():
+        if name in result or os.environ.get(f"COLIN_VAR_{name.upper()}"):
+            continue
+        if interactive and var_config.prompt:
+            default = str(var_config.default) if var_config.default is not None else None
+            to_prompt.append((name, var_config.prompt, default))
+
+    if to_prompt:
+        console.print()
+        console.print("[dim]Collecting unset variables:[/]")
+        for name, prompt_text, default in to_prompt:
+            value = Prompt.ask(f"  [bold]{name}[/] {prompt_text}", default=default)
+            if value:
+                result[name] = value
+        console.print()
+
+    return result
+
+
 def print_project_info(project_file: Path, project_name: str, output_dir: Path) -> None:
     """Print project info header used by multiple commands."""
     cwd = Path.cwd()
@@ -159,6 +202,13 @@ async def run(
         config = load_project(project_file)
         project_name = config.name
         output_dir = output or config.output_path
+
+        # Prompt for missing variables (if interactive and prompts configured)
+        vars_dict = prompt_for_missing_vars(
+            config,
+            vars_dict,
+            interactive=sys.stdin.isatty(),
+        )
 
         # Handle dry run
         if dry_run:
