@@ -132,17 +132,22 @@ class TestStrictRefValidation:
         assert len(context.refs) == 1
         assert context.refs[0].args["path"] == "stale.md"
 
-    async def test_ref_dependency_not_tracked_when_none_returned(
+    async def test_ref_dependency_tracked_when_none_returned(
         self, project_setup: tuple[CompileContext, Path, Path]
     ) -> None:
-        """Dependencies are NOT tracked when allow_stale returns None."""
+        """Dependencies ARE tracked when allow_stale returns None.
+
+        This ensures the document rebuilds when the missing target is added.
+        """
         context, source_dir, output_dir = project_setup
 
         result = await context.ref("never-existed.md", allow_stale=True)
         assert result is None
 
-        # No dependency should be tracked
-        assert len(context.refs) == 0
+        # Dependency is tracked with __missing__ version
+        assert len(context.refs) == 1
+        assert context.refs[0].args["path"] == "never-existed.md"
+        assert context.ref_versions[context.refs[0].key()] == "__missing__"
 
     async def test_ref_not_compiled_error_not_recorded_as_dependency(
         self, project_setup: tuple[CompileContext, Path, Path]
@@ -352,3 +357,49 @@ From A: {{ a.content if a else 'no A yet' }}
         # Should compile: C first (no edge to A), then A, then B
         result = await engine.compile_all()
         assert len(result) == 3
+
+    async def test_allow_stale_missing_target_triggers_rebuild_when_added(
+        self, engine_setup: tuple[CompileEngine, Path]
+    ) -> None:
+        """allow_stale refs to missing targets rebuild when target is added."""
+        engine, source_dir = engine_setup
+
+        # A refs B with allow_stale and depends_on to ensure ordering
+        # depends_on is needed because allow_stale removes the ordering edge
+        (source_dir / "a.md").write_text("""\
+---
+name: A
+colin:
+  depends_on:
+    - b.md
+---
+{% set b = ref('b.md', allow_stale=True) %}
+From B: {{ b.content if b else 'not available' }}
+""")
+
+        # First compile - B missing, A sees None
+        result1 = await engine.compile_all()
+        assert len(result1) == 1
+        a_doc = result1[0]
+        assert "not available" in a_doc.output
+
+        # Save manifest
+        engine.config.manifest_path.write_text(
+            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        )
+
+        # Now add B
+        (source_dir / "b.md").write_text("---\nname: B\n---\nContent from B!")
+
+        # Create new engine (simulating new compile run)
+        engine2 = CompileEngine(
+            config=engine.config,
+            artifact_storage=FileStorage(base_path=engine.config.build_path / "compiled"),
+        )
+
+        # Second compile - A should rebuild to pick up B
+        result2 = await engine2.compile_all()
+        # Both A and B should be in results (B is new, A is stale due to ref change)
+        assert len(result2) == 2
+        a_doc2 = next(d for d in result2 if d.uri == "project://a.md")
+        assert "Content from B!" in a_doc2.output

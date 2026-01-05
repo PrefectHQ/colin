@@ -166,13 +166,15 @@ class CompileContext:
         if is_first and self.doc_state is not None:
             with self.doc_state.child("ref", detail=path):
                 result = await fetch_stale_from_provider()
-                if result is not None:
-                    self.track(result.ref(), result.version)
+                # Track even if None - use sentinel so we rebuild when target appears
+                version = result.version if result else "__missing__"
+                self.track(project_ref, version)
                 return result
 
         result = await fetch_stale_from_provider()
-        if result is not None:
-            self.track(result.ref(), result.version)
+        # Track even if None - use sentinel so we rebuild when target appears
+        version = result.version if result else "__missing__"
+        self.track(project_ref, version)
         return result
 
     def track(self, ref: Ref, version: str) -> bool:
