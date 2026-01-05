@@ -165,6 +165,7 @@ async def run(
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
     dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
+    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
     var: Annotated[list[str], cyclopts.Parameter(name=["--var"])] = [],
 ) -> None:
     """Compile and run all models.
@@ -175,6 +176,7 @@ async def run(
         no_cache: Ignore cached results and recompile all documents.
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
+        no_interactive: Disable interactive prompts (for CI/automation).
         var: Variable overrides in key=value format (can be repeated).
     """
     # Parse --var key=value pairs into dict
@@ -204,10 +206,13 @@ async def run(
         output_dir = output or config.output_path
 
         # Prompt for missing variables (if interactive and prompts configured)
+        interactive = (
+            not no_interactive and not os.environ.get("COLIN_NO_INTERACTIVE") and sys.stdin.isatty()
+        )
         vars_dict = prompt_for_missing_vars(
             config,
             vars_dict,
-            interactive=sys.stdin.isatty(),
+            interactive=interactive,
         )
 
         # Handle dry run
@@ -312,6 +317,7 @@ def init(
     name: str | None = None,
     models: str = "models",
     output: str = "output",
+    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
 ) -> None:
     """Initialize a new Colin project.
 
@@ -322,7 +328,10 @@ def init(
         name: Project name (default: directory name).
         models: Path to models directory (default: "models").
         output: Path to output directory (default: "output").
+        no_interactive: Disable interactive prompts (for CI/automation).
     """
+    # no_interactive is not currently used but reserved for future prompting
+    _ = no_interactive
     project_dir = project.resolve()
 
     try:
@@ -355,12 +364,14 @@ def clean(
     project: Path = Path("."),
     *,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
+    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
 ) -> None:
     """Remove output directory (compiled outputs and manifest).
 
     Args:
         project: Project directory (default: current directory).
         yes: Skip confirmation prompt.
+        no_interactive: Disable interactive prompts (for CI/automation).
     """
     status_info = api.get_project_status(project)
     project_file = status_info["project_file"]
@@ -388,6 +399,14 @@ def clean(
 
     # Show what will be removed
     if not yes:
+        # Check if we can prompt
+        interactive = (
+            not no_interactive and not os.environ.get("COLIN_NO_INTERACTIVE") and sys.stdin.isatty()
+        )
+        if not interactive:
+            err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
+            sys.exit(1)
+
         print_project_info(project_file, status_info["project_name"], output_dir)
         console.print("[bold]Will remove:[/]")
         for rel in files_in_output:
