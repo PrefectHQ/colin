@@ -152,6 +152,19 @@ class ColinConfig(BaseModel):
     private: bool | None = None
     """Override private detection. None uses naming convention (_ prefix)."""
 
+    depends_on: list[str] = Field(default_factory=list)
+    """Explicit dependency hints for compilation ordering.
+
+    Use this when you have dynamic refs that can't be statically detected,
+    or when referencing outputs from {% file %} blocks.
+
+    Example:
+        colin:
+          depends_on:
+            - generator.md
+            - other-dep.md
+    """
+
     @field_validator("cache", mode="before")
     @classmethod
     def _normalize_cache(cls, v: Any) -> CacheConfig | dict[str, Any]:

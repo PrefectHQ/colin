@@ -9,12 +9,45 @@ class RefNotFoundError(ColinError):
     """Referenced document does not exist."""
 
 
+class RefNotCompiledError(ColinError):
+    """Referenced document has not been compiled yet.
+
+    This error occurs when ref() is called for a project document that
+    hasn't been compiled in this run and allow_stale=False (the default).
+    """
+
+    def __init__(self, target: str) -> None:
+        """Initialize with the target that wasn't compiled.
+
+        Args:
+            target: The ref target that wasn't compiled.
+        """
+        self.target = target
+        super().__init__(
+            f"ref('{target}') failed - document not compiled.\n"
+            f"Add 'depends_on: [{target}]' to ensure compilation order,\n"
+            f"or use ref('{target}', allow_stale=True) to accept stale/missing data."
+        )
+
+
 class RefError(ColinError):
     """Error loading or replaying a Ref."""
 
 
 class CyclicDependencyError(ColinError):
     """Dependency graph contains a cycle."""
+
+    def __init__(self, cycle_path: list[str]) -> None:
+        """Initialize with the cycle path.
+
+        Args:
+            cycle_path: List of URIs forming the cycle (last element connects back to first).
+        """
+        self.cycle_path = cycle_path
+        path_str = " → ".join(cycle_path + [cycle_path[0]])  # Show A → B → C → A
+        super().__init__(
+            f"Cycle detected: {path_str}\nUse allow_stale=True on one ref to break the cycle."
+        )
 
 
 class TemplateSyntaxError(ColinError):

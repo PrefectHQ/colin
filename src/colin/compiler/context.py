@@ -7,7 +7,7 @@ from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
 from colin.compiler.state import OperationState, Status
-from colin.exceptions import RefNotFoundError
+from colin.exceptions import RefNotCompiledError
 from colin.models import CompiledDocument, LLMCall, Ref
 from colin.resources import Resource
 
@@ -56,19 +56,22 @@ class CompileContext:
         self.defer_blocks: dict[str, Any] = {}  # defer_id -> callable
 
     @overload
-    async def ref(self, target: str) -> ProjectResource: ...
+    async def ref(self, target: str, *, allow_stale: bool = False) -> ProjectResource | None: ...
 
     @overload
-    async def ref(self, target: T) -> T: ...
+    async def ref(self, target: T, *, allow_stale: bool = False) -> T: ...
 
     @overload
-    async def ref(self, target: Coroutine[Any, Any, T]) -> T: ...
+    async def ref(self, target: Coroutine[Any, Any, T], *, allow_stale: bool = False) -> T: ...
 
-    async def ref(self, target: str | T | Coroutine[Any, Any, T]) -> ProjectResource | T:
+    async def ref(
+        self, target: str | T | Coroutine[Any, Any, T], *, allow_stale: bool = False
+    ) -> ProjectResource | T | None:
         """Track a dependency and return the resource.
 
         Usage in templates:
-            {{ ref("other-doc") }}                    # Project ref
+            {{ ref("other-doc") }}                    # Project ref (must be compiled)
+            {{ ref("other-doc", allow_stale=True) }} # Accept stale/missing data
             {{ ref(s3.get("bucket/key")) }}           # S3 resource, tracked
             {{ ref(mcp.github.resource("...")) }}    # MCP resource, tracked
 
@@ -81,12 +84,16 @@ class CompileContext:
                 - String path: relative path for project refs (e.g., "other-doc")
                 - Coroutine: async provider call (e.g., s3.get("..."))
                 - Resource: already-fetched resource to track
+            allow_stale: If True, accept stale data from previous compilation
+                when the target hasn't been compiled in this run. Returns None
+                if the target has never been compiled. Default False.
 
         Returns:
-            The same type passed in: ProjectResource for strings, T for Resource/Coroutine[T].
+            The resource: ProjectResource for strings (or None with allow_stale),
+            T for Resource/Coroutine[T].
 
         Raises:
-            RefNotFoundError: If the referenced document doesn't exist.
+            RefNotCompiledError: If the target hasn't been compiled and allow_stale=False.
         """
         # Import here to avoid circular imports
         from colin.providers.project import ProjectResource
@@ -134,13 +141,19 @@ class CompileContext:
                 op.status = Status.DONE
             return resource
 
-        # Fetch from storage via project provider
-        async def fetch_from_provider() -> ProjectResource:
+        # Document not in compiled_outputs - handle based on allow_stale
+        if not allow_stale:
+            # Strict mode: document must be compiled in this run
+            raise RefNotCompiledError(path)
+
+        # allow_stale=True: try to read stale data from storage
+        async def fetch_stale_from_provider() -> ProjectResource | None:
             try:
                 result = await self.project_provider.get(path)
-            except FileNotFoundError as e:
-                raise RefNotFoundError(f"Referenced document not found: {path!r}") from e
-            return result
+                return result
+            except FileNotFoundError:
+                # Document has never been compiled
+                return None
 
         project_ref = Ref(
             provider="project",
@@ -152,11 +165,14 @@ class CompileContext:
         is_first = project_ref.key() not in self.ref_versions
         if is_first and self.doc_state is not None:
             with self.doc_state.child("ref", detail=path):
-                result = await fetch_from_provider()
-                self.track(result.ref(), result.version)
+                result = await fetch_stale_from_provider()
+                if result is not None:
+                    self.track(result.ref(), result.version)
                 return result
-        result = await fetch_from_provider()
-        self.track(result.ref(), result.version)
+
+        result = await fetch_stale_from_provider()
+        if result is not None:
+            self.track(result.ref(), result.version)
         return result
 
     def track(self, ref: Ref, version: str) -> bool:

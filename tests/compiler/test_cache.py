@@ -1178,3 +1178,124 @@ class TestVariableStaleness:
         assert len(result2) == 1  # Only doc_a recompiled
         assert result2[0].uri == "project://doc_a.md"
         assert "Env: prod" in result2[0].output
+
+
+class TestIncrementalRefCompilation:
+    """Tests for ref() behavior during incremental compilation."""
+
+    @pytest.fixture
+    def engine_setup(
+        self, tmp_path: Path, mock_agent: MagicMock
+    ) -> tuple[CompileEngine, Path, Path, Path]:
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
+
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=build_dir / "manifest.json",
+        )
+        artifact_storage = FileStorage(base_path=compiled_dir)
+
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+        )
+        return engine, source_dir, compiled_dir, output_dir
+
+    async def test_ref_to_cached_dependency_works(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path], tmp_path: Path
+    ) -> None:
+        """Stale document can ref a cached (fresh) dependency.
+
+        This tests the critical incremental build scenario:
+        - First compile: A and B both compile, A refs B
+        - Second compile: Only A is stale (source changed), B is cached
+        - A should still be able to ref B from cache
+        """
+        engine, source_dir, compiled_dir, output_dir = engine_setup
+
+        # Create dependency B
+        (source_dir / "b.md").write_text("---\nname: B\n---\nContent from B")
+
+        # Create A which refs B
+        (source_dir / "a.md").write_text(
+            "---\nname: A\n---\nReferencing: {{ ref('b.md').content }}"
+        )
+
+        # First compile - both should compile
+        result1 = await engine.compile_all()
+        assert len(result1) == 2
+        a_doc = next(d for d in result1 if d.uri == "project://a.md")
+        assert "Content from B" in a_doc.output
+
+        # Save manifest
+        engine.config.manifest_path.write_text(
+            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        )
+
+        # Modify only A's source
+        (source_dir / "a.md").write_text("---\nname: A\n---\nUpdated: {{ ref('b.md').content }}")
+
+        # Create new engine (simulating new compile run)
+        engine2 = CompileEngine(
+            config=engine.config,
+            artifact_storage=FileStorage(base_path=compiled_dir),
+        )
+
+        # Second compile - only A should recompile, but should still ref B
+        result2 = await engine2.compile_all()
+        assert len(result2) == 1  # Only A recompiled
+        assert result2[0].uri == "project://a.md"
+        assert "Updated: Content from B" in result2[0].output
+
+    async def test_ref_to_cached_dependency_in_chain(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path], tmp_path: Path
+    ) -> None:
+        """Ref chain works with cached intermediate dependencies.
+
+        C refs B, B refs A. If only C is stale, C should be able to ref B
+        (cached) which includes A's content (also cached).
+        """
+        engine, source_dir, compiled_dir, output_dir = engine_setup
+
+        # Create chain: A <- B <- C
+        (source_dir / "a.md").write_text("---\nname: A\n---\nBase content")
+        (source_dir / "b.md").write_text("---\nname: B\n---\nFrom A: {{ ref('a.md').content }}")
+        (source_dir / "c.md").write_text("---\nname: C\n---\nFrom B: {{ ref('b.md').content }}")
+
+        # First compile
+        result1 = await engine.compile_all()
+        assert len(result1) == 3
+        c_doc = next(d for d in result1 if d.uri == "project://c.md")
+        assert "Base content" in c_doc.output
+
+        # Save manifest
+        engine.config.manifest_path.write_text(
+            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        )
+
+        # Modify only C's source
+        (source_dir / "c.md").write_text(
+            "---\nname: C\n---\nUpdated from B: {{ ref('b.md').content }}"
+        )
+
+        # Create new engine
+        engine2 = CompileEngine(
+            config=engine.config,
+            artifact_storage=FileStorage(base_path=compiled_dir),
+        )
+
+        # Second compile - only C should recompile
+        result2 = await engine2.compile_all()
+        assert len(result2) == 1
+        assert result2[0].uri == "project://c.md"
+        assert "Updated from B: From A: Base content" in result2[0].output

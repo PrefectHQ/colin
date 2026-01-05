@@ -85,14 +85,26 @@ class TestDependencyGraph:
 
         with pytest.raises(CyclicDependencyError) as exc_info:
             graph.topological_sort({"a", "b", "c"})
-        assert "Cyclic dependency" in str(exc_info.value)
+
+        # Should report the cycle path
+        err = exc_info.value
+        assert len(err.cycle_path) == 3
+        assert set(err.cycle_path) == {"a", "b", "c"}
+        # Message should show cycle with arrow and suggestion
+        assert "Cycle detected:" in str(err)
+        assert "→" in str(err)
+        assert "allow_stale" in str(err)
 
     def test_topological_sort_self_cycle(self) -> None:
         graph = DependencyGraph()
         graph.add_edge("a", "a")
 
-        with pytest.raises(CyclicDependencyError):
+        with pytest.raises(CyclicDependencyError) as exc_info:
             graph.topological_sort({"a"})
+
+        # Self-cycle should have path of length 1
+        err = exc_info.value
+        assert err.cycle_path == ["a"]
 
     def test_get_downstream_direct(self) -> None:
         graph = DependencyGraph()

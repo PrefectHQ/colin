@@ -101,11 +101,57 @@ class DependencyGraph:
             queue = next_queue
 
         if processed != len(uris):
-            # Cycle detected
+            # Cycle detected - find the actual cycle path
             remaining = uris - {uri for level in result for uri in level}
-            raise CyclicDependencyError(f"Cyclic dependency involving: {remaining}")
+            cycle_path = self._find_cycle(remaining)
+            raise CyclicDependencyError(cycle_path)
 
         return result
+
+    def _find_cycle(self, nodes: set[str]) -> list[str]:
+        """Find a cycle in the given set of nodes using DFS.
+
+        Args:
+            nodes: Set of URIs known to be part of a cycle.
+
+        Returns:
+            List of URIs forming the cycle (e.g., [A, B, C] for A → B → C → A).
+        """
+        # Use DFS with path tracking to find the cycle.
+        # path_set tracks the current DFS path for detecting back-edges (cycles).
+        path: list[str] = []
+        path_set: set[str] = set()
+
+        def dfs(node: str) -> list[str] | None:
+            if node in path_set:
+                # Found cycle - extract it from path
+                cycle_start = path.index(node)
+                return path[cycle_start:]
+
+            if node not in nodes:
+                return None
+
+            path.append(node)
+            path_set.add(node)
+
+            for dep in self.dependencies.get(node, []):
+                if dep in nodes:
+                    result = dfs(dep)
+                    if result is not None:
+                        return result
+
+            path.pop()
+            path_set.remove(node)
+            return None
+
+        # Start DFS from any node in the cycle
+        for start in nodes:
+            result = dfs(start)
+            if result is not None:
+                return result
+
+        # Fallback (shouldn't happen if nodes truly contain a cycle)
+        return list(nodes)
 
     def get_downstream(self, uri: str) -> set[str]:
         """Get all documents that transitively depend on uri.

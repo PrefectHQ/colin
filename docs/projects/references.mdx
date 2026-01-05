@@ -139,10 +139,12 @@ URIs are relative paths from your `models/` directory, without the `.md` extensi
 | `models/team/leads.md` | `ref('team/leads')` |
 | `models/reports/2024/q1.md` | `ref('reports/2024/q1')` |
 
-Colin validates that referenced documents exist at compile time. A reference to a non-existent document fails immediately with a clear error:
+Colin validates that referenced documents are compiled before they're used. A reference to a document that hasn't been compiled yet fails with a clear error:
 
 ```
-RefNotFoundError: Referenced document 'missing-doc' not found in project.
+RefNotCompiledError: ref('missing-doc') failed - document not compiled.
+Add 'depends_on: [missing-doc]' to ensure compilation order,
+or use ref('missing-doc', allow_stale=True) to accept stale/missing data.
 ```
 
 ## Referencing Provider Objects
