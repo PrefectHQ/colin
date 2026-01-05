@@ -66,9 +66,8 @@ class TestPromptForMissingVars:
 
         assert result == {"name": "user-input"}
         mock_ask.assert_called_once()
-        # Check prompt contains variable name and prompt text
+        # Check prompt contains prompt text
         call_args = mock_ask.call_args
-        assert "name" in call_args.args[0]
         assert "Enter name:" in call_args.args[0]
 
     def test_uses_default_in_prompt(self) -> None:
@@ -176,8 +175,8 @@ class TestPromptForMissingVars:
 
         assert result == {"first": "a", "second": "b", "third": "c"}
         assert mock_ask.call_count == 3
-        # Check prompts contain expected variable names in order
+        # Check prompts contain expected prompt text in order
         calls = [call.args[0] for call in mock_ask.call_args_list]
-        assert "first" in calls[0]
-        assert "second" in calls[1]
-        assert "third" in calls[2]
+        assert "First:" in calls[0]
+        assert "Second:" in calls[1]
+        assert "Third:" in calls[2]

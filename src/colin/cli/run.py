@@ -132,9 +132,9 @@ def prompt_for_missing_vars(
 
     if to_prompt:
         console.print()
-        console.print("[dim]Collecting unset variables:[/]")
+        console.print("[dim]Variables:[/]")
         for name, prompt_text, default in to_prompt:
-            value = Prompt.ask(f"  [bold]{name}[/] {prompt_text}", default=default)
+            value = Prompt.ask(f"  [bold]{prompt_text}[/]", default=default)
             if value:
                 result[name] = value
         console.print()
