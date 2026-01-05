@@ -172,6 +172,20 @@ In non-interactive environments (CI, pipes, redirected input), prompts are skipp
 
 This makes projects usable both interactively (prompting developers) and in automation (requiring explicit configuration).
 
+### Disabling Prompts
+
+Use the `--no-interactive` flag or `COLIN_NO_INTERACTIVE` environment variable to explicitly disable prompts:
+
+```bash
+# Flag
+colin run --no-interactive
+
+# Environment variable
+COLIN_NO_INTERACTIVE=1 colin run
+```
+
+When disabled, prompts are skipped and defaults are used. If a required variable has no default, Colin errors with instructions to provide the value.
+
 ## Recompilation
 
 Colin tracks which variables each document uses. When a variable's value changes on the next compile (via `--var` or environment), only documents that accessed that variable will recompile.
