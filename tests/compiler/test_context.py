@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from colin.compiler import CompileContext
-from colin.exceptions import RefNotFoundError
-from colin.models import LLMCall, Manifest, Ref
+from colin.exceptions import RefNotCompiledError
+from colin.models import CompiledDocument, Frontmatter, LLMCall, Manifest, Ref
 from colin.providers.project import ProjectProvider
 
 
@@ -30,10 +30,15 @@ class TestCompileContext:
         )
 
     async def test_ref_tracks_dependency(self, context: CompileContext, tmp_path: Path) -> None:
-        source_file = tmp_path / "context" / "other.md"
-        source_file.write_text("---\nname: Other\n---\nContent")
-        output_file = tmp_path / "target" / "other.md"
-        output_file.write_text("Compiled other")
+        # Add document to compiled_outputs (simulating it was compiled in this run)
+        context.compiled_outputs["other.md"] = CompiledDocument(
+            uri="project://other.md",
+            frontmatter=Frontmatter(),
+            output="Compiled other",
+            source_hash="abc",
+            output_hash="def",
+            output_path="other.md",
+        )
 
         await context.ref("other.md")
 
@@ -46,10 +51,15 @@ class TestCompileContext:
         assert ref.key() in context.ref_versions
 
     async def test_ref_returns_resource(self, context: CompileContext, tmp_path: Path) -> None:
-        source_file = tmp_path / "context" / "doc.md"
-        source_file.write_text("---\nname: Doc\ndescription: A doc\n---\nTemplate")
-        output_file = tmp_path / "target" / "doc.md"
-        output_file.write_text("Compiled content")
+        # Add document to compiled_outputs (simulating it was compiled in this run)
+        context.compiled_outputs["doc.md"] = CompiledDocument(
+            uri="project://doc.md",
+            frontmatter=Frontmatter(metadata={"name": "Doc", "description": "A doc"}),
+            output="Compiled content",
+            source_hash="abc",
+            output_hash="def",
+            output_path="doc.md",
+        )
 
         result = await context.ref("doc.md")
 
@@ -62,8 +72,9 @@ class TestCompileContext:
         # __str__ returns content for template use
         assert str(result) == "Compiled content"
 
-    async def test_ref_not_found(self, context: CompileContext) -> None:
-        with pytest.raises(RefNotFoundError):
+    async def test_ref_not_compiled(self, context: CompileContext) -> None:
+        # Without compiled_outputs or allow_stale, ref() raises RefNotCompiledError
+        with pytest.raises(RefNotCompiledError):
             await context.ref("nonexistent.md")
 
     async def test_add_llm_call_records_call(self, context: CompileContext) -> None:

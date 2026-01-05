@@ -301,10 +301,14 @@ class CompileEngine:
             # Check staleness
             is_stale, reason = await self._is_document_stale(doc, provider_manager, recompiled_uris)
             if not is_stale:
-                if doc_state:
-                    doc_state.mark_cached()
-                skipped_uris.add(uri)
-                return (uri, None, False)
+                # Load cached doc so downstream refs work
+                cached = await self._load_cached_document(doc)
+                if cached is not None:
+                    if doc_state:
+                        doc_state.mark_cached()
+                    return (uri, cached, False)
+                # Cache load failed - fall through to recompile
+                # (manifest may be out of sync with storage)
 
             try:
                 with doc_state if doc_state else _nullcontext():
@@ -329,20 +333,22 @@ class CompileEngine:
                 # Process results
                 for uri, result, was_recompiled in results:
                     if result is None:
-                        # Skipped - already handled above
-                        pass
+                        # Skipped (upstream failed or cache load failed)
+                        skipped_uris.add(uri)
                     elif isinstance(result, Exception):
                         errors.setdefault(uri, []).append(result)
-                    else:
+                    elif was_recompiled:
+                        # Freshly compiled - write output and update manifest
                         compiled.append(result)
                         compiled_outputs[result.output_path] = result
-                        if was_recompiled:
-                            recompiled_uris.add(uri)
-                        # Determine if private, write output, update manifest
+                        recompiled_uris.add(uri)
                         doc = doc_map[uri]
                         result.is_private = self._is_private(doc)
                         await self._write_output(result)
                         self._update_manifest(result)
+                    else:
+                        # Cached - just add to compiled_outputs for downstream refs
+                        compiled_outputs[result.output_path] = result
 
         # Raise collected errors if any
         if errors:
@@ -467,9 +473,15 @@ class CompileEngine:
         )
 
     def _build_dependency_graph(self, documents: list[ColinDocument]) -> None:
-        """Build dependency graph by parsing refs from templates.
+        """Build dependency graph from static refs and explicit depends_on hints.
 
-        Uses Jinja AST to extract ref() calls without executing templates.
+        Sources of dependencies:
+        1. Static refs extracted from Jinja AST (ref('literal.md') calls)
+        2. Explicit depends_on hints from frontmatter
+
+        Note: Empirical refs from manifest are NOT used for ordering - they are
+        only used for staleness detection. This ensures consistent behavior
+        regardless of manifest state.
 
         Args:
             documents: List of documents to analyze.
@@ -485,6 +497,7 @@ class CompileEngine:
         env = create_jinja_environment()
 
         for doc in documents:
+            # 1. Extract static refs from AST
             try:
                 ast = env.parse(doc.template_content)
                 refs = self._extract_refs_from_ast(ast)
@@ -495,6 +508,12 @@ class CompileEngine:
             except TemplateSyntaxError:
                 # If parsing fails, we'll catch actual errors during compilation
                 pass
+
+            # 2. Add explicit depends_on hints from frontmatter
+            for dep in doc.frontmatter.colin.depends_on:
+                # Resolve dependency path to URI
+                normalized_dep = self._normalize_uri(dep, output_path_to_uri)
+                self.graph.add_edge(doc.uri, normalized_dep)
 
     def _compute_output_path(self, doc: ColinDocument) -> str:
         """Compute the output path for a document based on its output format.
@@ -539,11 +558,14 @@ class CompileEngine:
     def _extract_refs_from_ast(self, ast: nodes.Template) -> list[str]:
         """Extract ref() URIs from Jinja AST.
 
+        Refs with allow_stale=True are excluded since they don't create
+        ordering dependencies (used to break cycles).
+
         Args:
             ast: Parsed Jinja template AST.
 
         Returns:
-            List of ref URIs found in the template.
+            List of ref URIs found in the template (excluding allow_stale refs).
         """
         refs: list[str] = []
 
@@ -551,10 +573,18 @@ class CompileEngine:
             if isinstance(node, nodes.Call):
                 # Check for ref('uri') pattern
                 if isinstance(node.node, nodes.Name) and node.node.name == "ref":
-                    if node.args and isinstance(node.args[0], nodes.Const):
-                        ref_uri = node.args[0].value
-                        if isinstance(ref_uri, str):
-                            refs.append(ref_uri)
+                    # Check for allow_stale=True - if set, don't add ordering edge
+                    has_allow_stale = any(
+                        kw.key == "allow_stale"
+                        and isinstance(kw.value, nodes.Const)
+                        and kw.value.value is True
+                        for kw in node.kwargs
+                    )
+                    if not has_allow_stale:
+                        if node.args and isinstance(node.args[0], nodes.Const):
+                            ref_uri = node.args[0].value
+                            if isinstance(ref_uri, str):
+                                refs.append(ref_uri)
 
             # Recurse into child nodes
             for child in node.iter_child_nodes():
@@ -676,6 +706,47 @@ class CompileEngine:
             llm_calls=context.llm_calls,
             total_cost_usd=context.total_cost,
             sections=context.sections,
+        )
+
+    async def _load_cached_document(self, doc: ColinDocument) -> CompiledDocument | None:
+        """Load a cached document from storage.
+
+        When a document is not stale, we need to load its compiled output
+        so downstream documents can ref() it.
+
+        Args:
+            doc: The source document (for frontmatter).
+
+        Returns:
+            The cached CompiledDocument, or None if not found in manifest/storage.
+        """
+        meta = self.manifest.get_document(doc.uri)
+        if meta is None or meta.output_path is None:
+            return None
+
+        try:
+            content = await self.artifact_storage.read(meta.output_path)
+        except FileNotFoundError:
+            return None
+
+        # Use manifest hash if available, otherwise compute from content
+        output_hash = meta.output_hash
+        if not output_hash:
+            output_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+
+        return CompiledDocument(
+            uri=doc.uri,
+            frontmatter=doc.frontmatter,
+            output=content,
+            source_hash=doc.source_hash,
+            output_hash=output_hash,
+            output_path=meta.output_path,
+            is_private=meta.is_private,
+            refs=meta.refs,
+            ref_versions=meta.ref_versions,
+            llm_calls=meta.llm_calls,
+            total_cost_usd=meta.total_cost_usd,
+            sections=meta.sections,
         )
 
     async def _write_output(self, doc: CompiledDocument) -> None:

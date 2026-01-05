@@ -1,7 +1,7 @@
 # Colin Architecture
 
 > **Status**: MVP in development
-> **Last Updated**: 2026-01-04
+> **Last Updated**: 2026-01-05
 
 Colin (**Co**ntext **Lin**eage) is a context engine for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and produces outputs your agents can use.
 
@@ -99,14 +99,14 @@ src/colin/
 
 ### ref() Call Flow
 
-The `ref()` function works uniformly on all Resource types. **Refs must specify the exact output filename including extension** (no magic `.md` suffix):
+The `ref()` function works uniformly on all Resource types. **Project refs require the target to be compiled first** (via dependency ordering or `depends_on` hints):
 
 ```
-ref("greeting.md")                              # Project ref to markdown output
+ref("greeting.md")                              # Project ref - target must be compiled first
 ref("config.json")                              # Project ref to JSON output
     │
     ├─ Looks up in compiled_outputs (in-memory, keyed by output_path)
-    ├─ Falls back to ProjectProvider (reads from .colin/compiled/)
+    ├─ If not found: raises RefNotCompiledError
     ├─ Tracks Ref + version for staleness
     └─ Returns ProjectResource:
        - .content: compiled output
@@ -116,7 +116,13 @@ ref("config.json")                              # Project ref to JSON output
        - .name, .description: from frontmatter
        - __str__() → .content
 
-ref(colin.s3.prod.get("config.json"))           # Provider resource
+ref("data.md", allow_stale=True)                # Accept stale data
+    │
+    ├─ If in compiled_outputs: returns as normal
+    ├─ If not: reads from .colin/compiled/ (previous run's output)
+    └─ Returns None if never compiled
+
+ref(colin.s3.prod.get("config.json"))           # Provider resource (no ordering needed)
     │
     ├─ Awaits the provider coroutine
     ├─ Tracks resource.ref() + resource.version
@@ -126,6 +132,37 @@ ref(colin.s3.prod.get("config.json"))           # Provider resource
 **Output path resolution**: Refs are matched to source documents via the manifest's output_path index. When you `ref("config.json")`, Colin finds the document whose `output_path == "config.json"` (source might be `config.md` with `colin.output: json`).
 
 Provider functions like `s3.get()` return Resource objects. Wrapping in `ref()` registers the dependency for staleness tracking. Without `ref()`, the resource is fetched but changes won't trigger recompilation.
+
+### Compilation Model
+
+Colin uses a **strict static compilation model** with two distinct data sources:
+
+- **Ordering** (what order to compile): Static AST refs + `depends_on` hints from frontmatter
+- **Staleness** (what needs rebuilding): Empirical refs from manifest (what was actually used last run)
+
+This separation ensures consistent compilation order regardless of manifest state (same behavior on fresh clone vs incremental build).
+
+**`depends_on` hints** are required when refs can't be statically extracted (dynamic refs, `{% file %}` outputs):
+
+```yaml
+---
+colin:
+  depends_on:
+    - generator.md
+    - data-source.md
+---
+{% set target = 'generator.md' %}
+{{ ref(target).content }}
+```
+
+**Cycles are illegal**. Use `allow_stale=True` on one side to break a cycle:
+
+```
+Cycle detected: A → B → C → A
+Use allow_stale=True on one ref to break the cycle.
+```
+
+See [ADR 020: Strict Compilation Model](decisions/020-strict-compilation-model.md) for details.
 
 ### LLM Caching Flow
 
@@ -189,6 +226,7 @@ See `docs/decisions/` for detailed ADRs:
 - **013-provider-template-functions**: Provider namespace + template functions
 - **017-resource-and-ref-architecture**: Refs as replay instructions, Resource/Ref split
 - **018-storage-architecture**: Two-layer storage, private files, cache vs published
+- **020-strict-compilation-model**: Static ordering with depends_on hints, allow_stale escape hatch
 
 ## Frontmatter Structure
 
