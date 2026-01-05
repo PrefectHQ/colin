@@ -482,12 +482,14 @@ def save_project(path: Path, config: ProjectConfig) -> None:
             if (
                 var_config.type == "string"
                 and not var_config.optional
+                and not var_config.prompt
                 and var_config.default is not None
             ):
                 vars_data[var_name] = var_config.default
             elif (
                 var_config.type in ("bool", "int", "float")
                 and not var_config.optional
+                and not var_config.prompt
                 and var_config.default is not None
             ):
                 vars_data[var_name] = var_config.default
@@ -500,6 +502,8 @@ def save_project(path: Path, config: ProjectConfig) -> None:
                     var_entry["default"] = var_config.default
                 if var_config.optional:
                     var_entry["optional"] = True
+                if var_config.prompt:
+                    var_entry["prompt"] = var_config.prompt
                 vars_data[var_name] = var_entry
         data["vars"] = vars_data
 
