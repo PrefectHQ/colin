@@ -33,6 +33,7 @@ from colin.models import (
 from colin.providers.manager import ProviderManager, create_provider_manager
 from colin.providers.project import ProjectProvider
 from colin.providers.storage.base import Storage
+from colin.providers.variable import VariableProvider
 from colin.renders import get_renderer
 
 if TYPE_CHECKING:
@@ -75,10 +76,14 @@ class CompileEngine:
         self.artifact_storage = artifact_storage
         self.state = state
         self.graph = DependencyGraph()
-        self._cli_vars = vars
-        self._resolved_vars: dict[str, Any] | None = None
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
+
+        # Variable provider resolves project variables from CLI/env/defaults
+        self._variable_provider = VariableProvider(
+            var_configs=config.vars,
+            cli_vars=vars or {},
+        )
 
         # Project provider reads from .colin/compiled/, uses manifest for versions
         self._project_provider = ProjectProvider(
@@ -93,23 +98,6 @@ class CompileEngine:
             content = self.config.manifest_path.read_text(encoding="utf-8")
             return Manifest.model_validate_json(content)
         return Manifest()
-
-    def _resolve_variables(self) -> dict[str, Any]:
-        """Resolve project variables once at compile start.
-
-        Returns cached result on subsequent calls.
-
-        Returns:
-            Dict mapping variable name to typed value.
-        """
-        if self._resolved_vars is not None:
-            return self._resolved_vars
-
-        self._resolved_vars = {
-            name: config.resolve(name, self._cli_vars.get(name) if self._cli_vars else None)
-            for name, config in self.config.vars.items()
-        }
-        return self._resolved_vars
 
     def _is_private(self, doc: ColinDocument) -> bool:
         """Check if a document is private (not published to output/).
@@ -329,6 +317,9 @@ class CompileEngine:
                 return (uri, e, False)
 
         async with create_provider_manager(self.config) as provider_manager:
+            # Register variable provider
+            provider_manager.register(self._variable_provider)
+
             for level in compile_order:
                 # Compile all documents in this level in parallel
                 results = await asyncio.gather(
@@ -392,6 +383,7 @@ class CompileEngine:
 
         # Compile
         async with create_provider_manager(self.config) as provider_manager:
+            provider_manager.register(self._variable_provider)
             result = await self._compile_document(doc, {}, provider_manager)
 
         # Write output with private detection and update manifest
@@ -601,15 +593,11 @@ class CompileEngine:
             doc_state=doc_state,
         )
 
-        # Resolve project variables (cached after first call)
-        resolved_vars = self._resolve_variables()
-
-        # Bind context to environment with variables
+        # Bind context to environment
         bind_context_to_environment(
             env,
             context,
             provider_manager=provider_manager,
-            vars=resolved_vars,
         )
 
         # Compile template with compile context set for caching

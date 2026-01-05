@@ -63,9 +63,8 @@ TOML has no `null` value, so Colin uses `optional = true` to indicate a variable
 | `float` | `float` | `3.14` |
 | `date` | `datetime.date` | `"2024-01-15"` |
 | `timestamp` | `datetime.datetime` | `"2024-01-15T10:30:00"` |
-| `secret` | `pydantic.SecretStr` | `"sk-1234..."` |
 
-Date and timestamp types parse ISO 8601 formatted strings. The `secret` type wraps values in Pydantic's `SecretStr`, which redacts the value in logs and string representations.
+Date and timestamp types parse ISO 8601 formatted strings.
 
 ## Providing Values
 
@@ -151,3 +150,9 @@ Report date: {{ vars.report_date or now().strftime('%Y-%m-%d') }}
 ```
 
 If `report_date` is provided via CLI or environment variable, that value is used; otherwise, the expression after `or` provides the fallback.
+
+## Recompilation
+
+Colin tracks which variables each document uses. When a variable's value changes on the next compile (via `--var` or environment), only documents that accessed that variable will recompile.
+
+For example, if `doc1.md` uses `vars.environment` and `doc2.md` uses `vars.debug`, changing `--var environment=staging` will only recompile `doc1.md`.

@@ -3,48 +3,55 @@
 from datetime import date, datetime
 
 import pytest
-from pydantic import SecretStr
 
 from colin.api.project import VarConfig
+from colin.providers.variable import VariableProvider
 
 
-class TestVarConfigResolve:
-    """Tests for VarConfig.resolve() method."""
+def make_provider(
+    name: str, config: VarConfig, cli_vars: dict[str, str] | None = None
+) -> VariableProvider:
+    """Create a VariableProvider with a single variable config."""
+    return VariableProvider(var_configs={name: config}, cli_vars=cli_vars or {})
+
+
+class TestVariableProviderResolve:
+    """Tests for VariableProvider.get() method."""
 
     def test_cli_override_takes_precedence(self) -> None:
         """CLI vars override defaults."""
-        config = VarConfig(type="string", default="dev")
-        result = config.resolve("env", cli_value="prod")
+        provider = make_provider("env", VarConfig(type="string", default="dev"), {"env": "prod"})
+        result = provider.get("env")
 
         assert result == "prod"
 
     def test_default_used_when_no_cli(self) -> None:
         """Default is used when no CLI override."""
-        config = VarConfig(type="string", default="dev")
-        result = config.resolve("env")
+        provider = make_provider("env", VarConfig(type="string", default="dev"))
+        result = provider.get("env")
 
         assert result == "dev"
 
     def test_optional_returns_none(self) -> None:
         """Optional var without default returns None."""
-        config = VarConfig(type="string", optional=True)
-        result = config.resolve("key")
+        provider = make_provider("key", VarConfig(type="string", optional=True))
+        result = provider.get("key")
 
         assert result is None
 
     def test_required_raises_error(self) -> None:
         """Required var without value raises error."""
-        config = VarConfig(type="string")
+        provider = make_provider("key", VarConfig(type="string"))
 
         with pytest.raises(ValueError, match="Required variable 'key'"):
-            config.resolve("key")
+            provider.get("key")
 
     def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Environment variable overrides default."""
         monkeypatch.setenv("COLIN_VAR_API_KEY", "sk-from-env")
 
-        config = VarConfig(type="string", default="default-key")
-        result = config.resolve("api_key")
+        provider = make_provider("api_key", VarConfig(type="string", default="default-key"))
+        result = provider.get("api_key")
 
         assert result == "sk-from-env"
 
@@ -52,8 +59,10 @@ class TestVarConfigResolve:
         """CLI takes precedence over environment variable."""
         monkeypatch.setenv("COLIN_VAR_API_KEY", "sk-from-env")
 
-        config = VarConfig(type="string", default="default-key")
-        result = config.resolve("api_key", cli_value="sk-from-cli")
+        provider = make_provider(
+            "api_key", VarConfig(type="string", default="default-key"), {"api_key": "sk-from-cli"}
+        )
+        result = provider.get("api_key")
 
         assert result == "sk-from-cli"
 
@@ -61,70 +70,70 @@ class TestVarConfigResolve:
         """Environment variable name is uppercased."""
         monkeypatch.setenv("COLIN_VAR_MY_VAR", "value")
 
-        config = VarConfig(type="string")
-        result = config.resolve("my_var")
+        provider = make_provider("my_var", VarConfig(type="string"))
+        result = provider.get("my_var")
 
         assert result == "value"
 
 
 class TestTypeConversion:
-    """Tests for VarConfig type conversion."""
+    """Tests for VariableProvider type conversion."""
 
     def test_bool_conversion_true(self) -> None:
         """Bool type converts various truthy strings."""
         for value in ["true", "True", "TRUE", "1", "yes", "YES", "on", "ON"]:
-            config = VarConfig(type="bool")
-            result = config.resolve("flag", cli_value=value)
+            provider = make_provider("flag", VarConfig(type="bool"), {"flag": value})
+            result = provider.get("flag")
             assert result is True, f"Failed for value: {value}"
 
     def test_bool_conversion_false(self) -> None:
         """Bool type converts various falsy strings."""
         for value in ["false", "False", "FALSE", "0", "no", "NO", "off", "OFF"]:
-            config = VarConfig(type="bool")
-            result = config.resolve("flag", cli_value=value)
+            provider = make_provider("flag", VarConfig(type="bool"), {"flag": value})
+            result = provider.get("flag")
             assert result is False, f"Failed for value: {value}"
 
     def test_bool_conversion_invalid(self) -> None:
         """Bool type rejects invalid strings."""
-        config = VarConfig(type="bool")
+        provider = make_provider("flag", VarConfig(type="bool"), {"flag": "maybe"})
 
         with pytest.raises(ValueError, match="'flag'.*invalid bool"):
-            config.resolve("flag", cli_value="maybe")
+            provider.get("flag")
 
     def test_bool_native_value(self) -> None:
         """Bool type preserves native bool from TOML."""
-        config = VarConfig(type="bool", default=True)
-        result = config.resolve("flag")
+        provider = make_provider("flag", VarConfig(type="bool", default=True))
+        result = provider.get("flag")
 
         assert result is True
 
     def test_int_conversion(self) -> None:
         """Int type converts to integer."""
-        config = VarConfig(type="int")
-        result = config.resolve("count", cli_value="42")
+        provider = make_provider("count", VarConfig(type="int"), {"count": "42"})
+        result = provider.get("count")
 
         assert result == 42
         assert isinstance(result, int)
 
     def test_int_conversion_invalid(self) -> None:
         """Int type rejects non-numeric strings."""
-        config = VarConfig(type="int")
+        provider = make_provider("count", VarConfig(type="int"), {"count": "abc"})
 
         with pytest.raises(ValueError, match="'count'.*invalid int"):
-            config.resolve("count", cli_value="abc")
+            provider.get("count")
 
     def test_float_conversion(self) -> None:
         """Float type converts to float."""
-        config = VarConfig(type="float")
-        result = config.resolve("rate", cli_value="3.14")
+        provider = make_provider("rate", VarConfig(type="float"), {"rate": "3.14"})
+        result = provider.get("rate")
 
         assert result == 3.14
         assert isinstance(result, float)
 
     def test_date_conversion(self) -> None:
         """Date type converts to date object."""
-        config = VarConfig(type="date")
-        result = config.resolve("target", cli_value="2024-01-15")
+        provider = make_provider("target", VarConfig(type="date"), {"target": "2024-01-15"})
+        result = provider.get("target")
 
         assert result == date(2024, 1, 15)
         assert isinstance(result, date)
@@ -132,15 +141,17 @@ class TestTypeConversion:
 
     def test_date_conversion_invalid(self) -> None:
         """Date type rejects invalid date strings."""
-        config = VarConfig(type="date")
+        provider = make_provider("target", VarConfig(type="date"), {"target": "not-a-date"})
 
         with pytest.raises(ValueError, match="'target'.*invalid date"):
-            config.resolve("target", cli_value="not-a-date")
+            provider.get("target")
 
     def test_timestamp_conversion(self) -> None:
         """Timestamp type converts to datetime object."""
-        config = VarConfig(type="timestamp")
-        result = config.resolve("created", cli_value="2024-01-15T10:30:00")
+        provider = make_provider(
+            "created", VarConfig(type="timestamp"), {"created": "2024-01-15T10:30:00"}
+        )
+        result = provider.get("created")
 
         assert isinstance(result, datetime)
         assert result.year == 2024
@@ -148,18 +159,12 @@ class TestTypeConversion:
 
     def test_timestamp_conversion_invalid(self) -> None:
         """Timestamp type rejects invalid timestamp strings."""
-        config = VarConfig(type="timestamp")
+        provider = make_provider(
+            "created", VarConfig(type="timestamp"), {"created": "not-a-timestamp"}
+        )
 
         with pytest.raises(ValueError, match="'created'.*invalid timestamp"):
-            config.resolve("created", cli_value="not-a-timestamp")
-
-    def test_secret_conversion(self) -> None:
-        """Secret type returns SecretStr."""
-        config = VarConfig(type="secret")
-        result = config.resolve("api_key", cli_value="sk-1234")
-
-        assert isinstance(result, SecretStr)
-        assert result.get_secret_value() == "sk-1234"
+            provider.get("created")
 
 
 class TestPrecedence:
@@ -170,17 +175,29 @@ class TestPrecedence:
         monkeypatch.setenv("COLIN_VAR_VAR1", "from-env")
 
         # CLI > env > default
-        var1 = VarConfig(type="string", default="default1")
-        assert var1.resolve("var1", cli_value="from-cli") == "from-cli"
+        provider1 = VariableProvider(
+            var_configs={"var1": VarConfig(type="string", default="default1")},
+            cli_vars={"var1": "from-cli"},
+        )
+        assert provider1.get("var1") == "from-cli"
 
         # env > default (no CLI)
-        var2 = VarConfig(type="string", default="default2")
-        assert var2.resolve("var2") == "default2"  # No env var set for var2
+        provider2 = VariableProvider(
+            var_configs={"var2": VarConfig(type="string", default="default2")},
+            cli_vars={},
+        )
+        assert provider2.get("var2") == "default2"  # No env var set for var2
 
         # default (no CLI, no env)
-        var3 = VarConfig(type="string", default="default3")
-        assert var3.resolve("var3") == "default3"
+        provider3 = VariableProvider(
+            var_configs={"var3": VarConfig(type="string", default="default3")},
+            cli_vars={},
+        )
+        assert provider3.get("var3") == "default3"
 
         # None (optional, no value)
-        var4 = VarConfig(type="string", optional=True)
-        assert var4.resolve("var4") is None
+        provider4 = VariableProvider(
+            var_configs={"var4": VarConfig(type="string", optional=True)},
+            cli_vars={},
+        )
+        assert provider4.get("var4") is None

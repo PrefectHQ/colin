@@ -269,11 +269,11 @@ class TestParseVars:
 
     def test_required_var_without_default(self) -> None:
         """Required var has no default and not optional."""
-        data = {"api_key": {"type": "secret"}}
+        data = {"api_key": {"type": "string"}}
 
         result = _parse_vars(data)
 
-        assert result["api_key"].type == "secret"
+        assert result["api_key"].type == "string"
         assert result["api_key"].default is None
         assert result["api_key"].optional is False
 
@@ -296,7 +296,7 @@ class TestParseVars:
         data = {
             "env": "production",
             "debug": False,
-            "api_key": {"type": "secret", "optional": True},
+            "api_key": {"type": "string", "optional": True},
         }
 
         result = _parse_vars(data)
@@ -304,7 +304,7 @@ class TestParseVars:
         assert len(result) == 3
         assert result["env"].type == "string"
         assert result["debug"].type == "bool"
-        assert result["api_key"].type == "secret"
+        assert result["api_key"].type == "string"
 
     def test_case_insensitive_collision_rejected(self) -> None:
         """Variable names that collide case-insensitively are rejected."""

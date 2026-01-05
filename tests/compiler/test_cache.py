@@ -962,3 +962,219 @@ Content
         # Second compile - should recompile due to time, not refs
         result2 = await engine.compile_all()
         assert len(result2) == 1
+
+
+class TestVariableStaleness:
+    """Tests for variable-based staleness detection."""
+
+    @pytest.fixture
+    def engine_setup(self, tmp_path: Path, mock_agent: MagicMock) -> tuple[Path, Path, Path, Path]:
+        """Set up directories for engine creation."""
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
+        return source_dir, output_dir, build_dir, compiled_dir
+
+    def make_engine(
+        self,
+        tmp_path: Path,
+        source_dir: Path,
+        output_dir: Path,
+        build_dir: Path,
+        compiled_dir: Path,
+        vars_config: dict | None = None,
+        cli_vars: dict[str, str] | None = None,
+    ) -> CompileEngine:
+        """Create an engine with optional variable configuration."""
+        from colin.api.project import VarConfig
+        from colin.providers.storage.file import FileStorage
+
+        var_configs = {}
+        if vars_config:
+            var_configs = {name: VarConfig(**cfg) for name, cfg in vars_config.items()}
+
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=build_dir / "manifest.json",
+            vars=var_configs,
+        )
+        artifact_storage = FileStorage(base_path=compiled_dir)
+
+        return CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+            vars=cli_vars,
+        )
+
+    def save_manifest(self, engine: CompileEngine) -> None:
+        """Save the engine's manifest to disk."""
+        content = engine.manifest.model_dump_json(indent=2)
+        engine.config.manifest_path.write_text(content, encoding="utf-8")
+
+    async def test_stale_when_used_variable_changes(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
+    ) -> None:
+        """Document is stale if a variable it uses has changed."""
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
+
+        # Create document that uses a variable
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nEnvironment: {{ vars.env }}")
+
+        # First compile with env=dev
+        engine1 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={"env": {"type": "string", "default": "dev"}},
+            cli_vars={"env": "dev"},
+        )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        assert "Environment: dev" in result1[0].output
+        self.save_manifest(engine1)
+
+        # Second compile with env=prod (different value)
+        engine2 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={"env": {"type": "string", "default": "dev"}},
+            cli_vars={"env": "prod"},
+        )
+        result2 = await engine2.compile_all()
+        assert len(result2) == 1  # Recompiled because var changed
+        assert "Environment: prod" in result2[0].output
+
+    async def test_fresh_when_used_variable_unchanged(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
+    ) -> None:
+        """Document is fresh if the variable it uses hasn't changed."""
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nEnvironment: {{ vars.env }}")
+
+        # First compile
+        engine1 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={"env": {"type": "string", "default": "dev"}},
+            cli_vars={"env": "dev"},
+        )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        self.save_manifest(engine1)
+
+        # Second compile with same variable value
+        engine2 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={"env": {"type": "string", "default": "dev"}},
+            cli_vars={"env": "dev"},
+        )
+        result2 = await engine2.compile_all()
+        assert len(result2) == 0  # Skipped because fresh
+
+    async def test_fresh_when_unused_variable_changes(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
+    ) -> None:
+        """Document is fresh if a variable it doesn't use changes."""
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
+
+        # Create document that does NOT use the 'unused' variable
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nEnvironment: {{ vars.env }}")
+
+        # First compile
+        engine1 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={
+                "env": {"type": "string", "default": "dev"},
+                "unused": {"type": "string", "default": "foo"},
+            },
+            cli_vars={"env": "dev", "unused": "foo"},
+        )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        self.save_manifest(engine1)
+
+        # Second compile with 'unused' variable changed (but 'env' unchanged)
+        engine2 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={
+                "env": {"type": "string", "default": "dev"},
+                "unused": {"type": "string", "default": "foo"},
+            },
+            cli_vars={"env": "dev", "unused": "bar"},  # Changed unused
+        )
+        result2 = await engine2.compile_all()
+        assert len(result2) == 0  # Skipped - only 'env' is tracked, not 'unused'
+
+    async def test_selective_recompile_based_on_variable_usage(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
+    ) -> None:
+        """Only documents using a changed variable are recompiled."""
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
+
+        # doc_a uses 'env', doc_b uses 'region'
+        (source_dir / "doc_a.md").write_text("---\nname: Doc A\n---\nEnv: {{ vars.env }}")
+        (source_dir / "doc_b.md").write_text("---\nname: Doc B\n---\nRegion: {{ vars.region }}")
+
+        # First compile
+        engine1 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={
+                "env": {"type": "string", "default": "dev"},
+                "region": {"type": "string", "default": "us-east"},
+            },
+            cli_vars={"env": "dev", "region": "us-east"},
+        )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 2
+        self.save_manifest(engine1)
+
+        # Second compile with only 'env' changed
+        engine2 = self.make_engine(
+            tmp_path,
+            source_dir,
+            output_dir,
+            build_dir,
+            compiled_dir,
+            vars_config={
+                "env": {"type": "string", "default": "dev"},
+                "region": {"type": "string", "default": "us-east"},
+            },
+            cli_vars={"env": "prod", "region": "us-east"},  # Only env changed
+        )
+        result2 = await engine2.compile_all()
+        assert len(result2) == 1  # Only doc_a recompiled
+        assert result2[0].uri == "project://doc_a.md"
+        assert "Env: prod" in result2[0].output
