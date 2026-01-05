@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import tomli
 import tomli_w
@@ -15,6 +15,8 @@ from colin.api.manifest import load_manifest
 from colin.settings import settings
 
 logger = logging.getLogger(__name__)
+
+VarType = Literal["string", "bool", "int", "float", "date", "timestamp"]
 
 PROJECT_FILE = "colin.toml"
 
@@ -35,6 +37,23 @@ class StorageConfig(BaseModel):
 
     provider: str = "file"
     config: dict[str, Any] = Field(default_factory=dict)
+
+
+class VarConfig(BaseModel):
+    """Configuration for a project variable.
+
+    Variables can be defined in colin.toml and accessed in templates via `vars.*`.
+    Resolution logic lives in VariableProvider.
+    """
+
+    type: VarType = "string"
+    """Type of the variable (string, bool, int, float, date, timestamp)."""
+
+    default: str | bool | int | float | None = None
+    """Default value."""
+
+    optional: bool = False
+    """If True and no default, the variable returns None instead of erroring."""
 
 
 class ProviderInstanceConfig(BaseModel):
@@ -109,6 +128,10 @@ class ProjectConfig(BaseModel):
     project_storage: StorageConfig = Field(default_factory=StorageConfig)
     artifacts_storage: StorageConfig | None = None
     providers: dict[str, ProviderInstanceConfig] = Field(default_factory=dict)
+
+    # Project variables
+    vars: dict[str, VarConfig] = Field(default_factory=dict)
+    """Project variables accessible in templates via `vars.*`."""
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -207,6 +230,57 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
     return result
 
 
+def _parse_vars(vars_data: dict[str, Any]) -> dict[str, VarConfig]:
+    """Parse [vars] configuration into VarConfig instances.
+
+    Supports two syntaxes:
+    - Simple: `name = "value"` creates a string var with default
+    - Typed: `[vars.name]` subsection with type, default, optional fields
+
+    Args:
+        vars_data: Raw vars section from TOML.
+
+    Returns:
+        Dictionary mapping variable name to VarConfig.
+
+    Raises:
+        ValueError: If two variable names collide case-insensitively.
+    """
+    result: dict[str, VarConfig] = {}
+    seen_lower: dict[str, str] = {}  # lowercase -> original name
+
+    for name, value in vars_data.items():
+        # Check for case-insensitive collision
+        lower_name = name.lower()
+        if lower_name in seen_lower:
+            raise ValueError(
+                f"Variable names '{seen_lower[lower_name]}' and '{name}' collide (case-insensitive)"
+            )
+        seen_lower[lower_name] = name
+
+        if isinstance(value, (str, bool, int, float)):
+            # Simple syntax: infer type from value
+            if isinstance(value, bool):
+                var_type: VarType = "bool"
+            elif isinstance(value, int):
+                var_type = "int"
+            elif isinstance(value, float):
+                var_type = "float"
+            else:
+                var_type = "string"
+            result[name] = VarConfig(type=var_type, default=value)
+        elif isinstance(value, dict):
+            # Typed syntax with subsection
+            result[name] = VarConfig.model_validate(value)
+        else:
+            raise ValueError(
+                f"Variable '{name}' must be a string, number, bool, or table, "
+                f"got {type(value).__name__}"
+            )
+
+    return result
+
+
 def load_project(path: Path) -> ProjectConfig:
     """Load project configuration from colin.toml.
 
@@ -270,6 +344,10 @@ def load_project(path: Path) -> ProjectConfig:
     providers_data = data.get("providers", {})
     providers = _parse_providers(providers_data)
 
+    # Parse project variables
+    vars_data = data.get("vars", {})
+    vars_config = _parse_vars(vars_data)
+
     return ProjectConfig(
         name=project.get("name", "colin-project"),
         project_root=project_root,
@@ -279,6 +357,7 @@ def load_project(path: Path) -> ProjectConfig:
         project_storage=project_storage,
         artifacts_storage=artifacts_storage,
         providers=providers,
+        vars=vars_config,
     )
 
 
@@ -391,6 +470,35 @@ def save_project(path: Path, config: ProjectConfig) -> None:
 
     if providers_data:
         data["providers"] = providers_data
+
+    # Serialize vars
+    if config.vars:
+        vars_data: dict[str, Any] = {}
+        for var_name, var_config in config.vars.items():
+            # Use simple syntax if only default is set (no special type, not optional)
+            if (
+                var_config.type == "string"
+                and not var_config.optional
+                and var_config.default is not None
+            ):
+                vars_data[var_name] = var_config.default
+            elif (
+                var_config.type in ("bool", "int", "float")
+                and not var_config.optional
+                and var_config.default is not None
+            ):
+                vars_data[var_name] = var_config.default
+            else:
+                # Use typed subsection syntax
+                var_entry: dict[str, Any] = {}
+                if var_config.type != "string":
+                    var_entry["type"] = var_config.type
+                if var_config.default is not None:
+                    var_entry["default"] = var_config.default
+                if var_config.optional:
+                    var_entry["optional"] = True
+                vars_data[var_name] = var_entry
+        data["vars"] = vars_data
 
     with open(path, "wb") as f:
         tomli_w.dump(data, f)

@@ -56,7 +56,8 @@
               "projects/references",
               "projects/organization",
               "projects/templating",
-              "projects/dependencies"
+              "projects/dependencies",
+              "projects/variables"
             ]
           },
           {

@@ -33,6 +33,7 @@ from colin.models import (
 from colin.providers.manager import ProviderManager, create_provider_manager
 from colin.providers.project import ProjectProvider
 from colin.providers.storage.base import Storage
+from colin.providers.variable import VariableProvider
 from colin.renders import get_renderer
 
 if TYPE_CHECKING:
@@ -60,6 +61,7 @@ class CompileEngine:
         artifact_storage: Storage,
         state: CompilationState | None = None,
         force: bool = False,
+        vars: dict[str, str] | None = None,
     ) -> None:
         """Initialize the compile engine.
 
@@ -68,6 +70,7 @@ class CompileEngine:
             artifact_storage: Storage for compiled outputs.
             state: Optional compilation state for progress tracking.
             force: Force recompile (ignore existing manifest).
+            vars: CLI-provided variable overrides (key=value parsed to dict).
         """
         self.config = config
         self.artifact_storage = artifact_storage
@@ -75,6 +78,12 @@ class CompileEngine:
         self.graph = DependencyGraph()
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
+
+        # Variable provider resolves project variables from CLI/env/defaults
+        self._variable_provider = VariableProvider(
+            var_configs=config.vars,
+            cli_vars=vars or {},
+        )
 
         # Project provider reads from .colin/compiled/, uses manifest for versions
         self._project_provider = ProjectProvider(
@@ -308,6 +317,9 @@ class CompileEngine:
                 return (uri, e, False)
 
         async with create_provider_manager(self.config) as provider_manager:
+            # Register variable provider
+            provider_manager.register(self._variable_provider)
+
             for level in compile_order:
                 # Compile all documents in this level in parallel
                 results = await asyncio.gather(
@@ -371,6 +383,7 @@ class CompileEngine:
 
         # Compile
         async with create_provider_manager(self.config) as provider_manager:
+            provider_manager.register(self._variable_provider)
             result = await self._compile_document(doc, {}, provider_manager)
 
         # Write output with private detection and update manifest

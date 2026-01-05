@@ -59,6 +59,7 @@ async def compile_project(
     force: bool = False,
     dry_run: bool = False,
     state: CompilationState | None = None,
+    vars: dict[str, str] | None = None,
 ) -> CompileResult | list[tuple[str, Path]]:
     """Compile all documents in a project.
 
@@ -68,6 +69,7 @@ async def compile_project(
         force: Force recompile all documents.
         dry_run: If True, return list of (uri, path) tuples instead of compiling.
         state: Optional compilation state for progress tracking.
+        vars: CLI-provided variable overrides (key=value parsed to dict).
 
     Returns:
         CompileResult with compiled documents and manifest, or list of (uri, path) if dry_run.
@@ -100,6 +102,7 @@ async def compile_project(
             project_storage=config.project_storage,
             artifacts_storage=config.artifacts_storage,
             providers=config.providers,
+            vars=config.vars,
         )
 
     # Handle dry run - discover models directly
@@ -125,6 +128,7 @@ async def compile_project(
         artifact_storage=artifact_storage,
         state=state,
         force=force,
+        vars=vars,
     )
 
     compiled = await engine.compile_all()
