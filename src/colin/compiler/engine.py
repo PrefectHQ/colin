@@ -171,14 +171,14 @@ class CompileEngine:
                 if doc_meta.compiled_at + threshold < now:
                     return (True, f"expired after {expires_duration}")
 
-        # Policy: always cache (only --no-cache or expiration rebuilds)
-        if policy == "always":
-            return (False, "cache=always (cached)")
-
-        # Policy: auto - check staleness conditions
-        # Source changed
+        # Source changed - check before policy-specific logic
+        # Both 'auto' and 'always' policies recompile on source changes
         if doc_meta.source_hash != doc.source_hash:
             return (True, "source changed")
+
+        # Policy: always cache (ignores ref changes, only source/expiration/--no-cache)
+        if policy == "always":
+            return (False, "cache=always (cached)")
 
         # Upstream dependency recompiled this run
         for ref in doc_meta.refs:

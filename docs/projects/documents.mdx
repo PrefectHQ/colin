@@ -65,8 +65,8 @@ The cache policy controls when a document gets recompiled:
 
 | Policy | Behavior | Rebuilds when |
 | :----- | :------- | :------------ |
-| `auto` | Smart caching (default) | Refs change or time expires |
-| `always` | Aggressive caching | `--no-cache` only |
+| `auto` | Smart caching (default) | Source or refs change, or time expires |
+| `always` | Aggressive caching | Source changes, time expires, or `--no-cache` |
 | `never` | No caching | Every run |
 
 ```yaml
