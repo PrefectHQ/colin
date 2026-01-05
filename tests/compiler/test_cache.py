@@ -298,10 +298,10 @@ Content
         result2 = await engine.compile_all()
         assert len(result2) == 0
 
-    async def test_cache_always_ignores_source_changes(
+    async def test_cache_always_respects_source_changes(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
-        """Documents with cache=always don't recompile even if source changes."""
+        """Documents with cache=always recompile when source file changes."""
         engine, source_dir, _ = engine_setup
 
         (source_dir / "test.md").write_text("""\
@@ -330,9 +330,55 @@ colin:
 Modified content
 """)
 
-        # Second compile - should skip even though source changed
+        # Second compile - should recompile because source changed
         result2 = await engine.compile_all()
-        assert len(result2) == 0
+        assert len(result2) == 1
+        assert "Modified content" in result2[0].output
+
+    async def test_cache_always_ignores_ref_changes(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """Documents with cache=always don't recompile when refs change."""
+        engine, source_dir, _ = engine_setup
+
+        # Create base document (auto policy)
+        (source_dir / "base.md").write_text("""\
+---
+name: Base
+---
+
+Base content
+""")
+
+        # Create derived document with cache=always
+        (source_dir / "derived.md").write_text("""\
+---
+name: Derived
+colin:
+  cache:
+    policy: always
+---
+
+{{ ref('base.md').content }}
+""")
+
+        # First compile - both documents
+        result1 = await engine.compile_all()
+        assert len(result1) == 2
+
+        # Modify the base document
+        (source_dir / "base.md").write_text("""\
+---
+name: Base
+---
+
+Modified base content
+""")
+
+        # Second compile - base recompiles, derived should NOT (cache=always ignores refs)
+        result2 = await engine.compile_all()
+        assert len(result2) == 1
+        assert result2[0].uri == "project://base.md"
 
     async def test_cache_auto_checks_staleness(
         self, engine_setup: tuple[CompileEngine, Path, Path]
