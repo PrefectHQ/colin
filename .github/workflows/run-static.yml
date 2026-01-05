@@ -4,6 +4,8 @@ env:
   # enable colored output
   # https://github.com/pytest-dev/pytest/issues/7443
   PY_COLORS: 1
+  # Skip no-commit-to-branch hook in CI (it's meant for local commits, not CI runs)
+  SKIP: no-commit-to-branch
 
 on:
   push:
