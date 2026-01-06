@@ -18,7 +18,7 @@ uv run pytest              # Run tests
 
 **CRITICAL**: These docs must be kept up to date with all work:
 
-### User-Facing Documentation (`README.md`)
+### User-Facing Documentation (`docs/`)
 
 **MANDATORY** for any user-facing changes:
 
@@ -30,10 +30,11 @@ uv run pytest              # Run tests
 
 **When updating user docs:**
 
-- Read the full README first to understand structure and voice
+- Read related docs first to understand structure and voice
 - Place new content where users would naturally look for it
 - Update related sections that reference affected functionality
 - Remove or update any content that becomes incorrect
+- Consider whether new pages are needed or existing pages should be restructured
 
 ### `docs/architecture.md`
 
