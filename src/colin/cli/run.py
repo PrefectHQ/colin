@@ -164,6 +164,7 @@ async def run(
     *,
     output: Annotated[Path | None, cyclopts.Parameter(name=["-o", "--output"])] = None,
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
+    ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
     dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
     no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
@@ -175,6 +176,7 @@ async def run(
         project: Project directory (default: current directory).
         output: Override output directory (default: from colin.toml).
         no_cache: Ignore cached results and recompile all documents.
+        ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
         no_interactive: Disable interactive prompts (for CI/automation).
@@ -224,6 +226,7 @@ async def run(
                     project_dir=project,
                     output_dir=output,
                     force=no_cache,
+                    ephemeral=ephemeral,
                     dry_run=True,
                 ),
             )
@@ -242,6 +245,7 @@ async def run(
                 project_dir=project,
                 output_dir=output,
                 force=no_cache,
+                ephemeral=ephemeral,
                 dry_run=False,
                 state=state,
                 vars=vars_dict,
@@ -275,6 +279,7 @@ async def run(
                     project_dir=project,
                     output_dir=output,
                     force=no_cache,
+                    ephemeral=ephemeral,
                     dry_run=False,
                     state=state,
                     vars=vars_dict,

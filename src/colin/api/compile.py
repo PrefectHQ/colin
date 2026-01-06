@@ -54,6 +54,7 @@ async def compile_project(
     *,
     output_dir: Path | None = None,
     force: bool = False,
+    ephemeral: bool = False,
     dry_run: bool = False,
     state: CompilationState | None = None,
     vars: dict[str, str] | None = None,
@@ -64,6 +65,7 @@ async def compile_project(
         project_dir: Project directory (must contain colin.toml).
         output_dir: Override output directory (default: from colin.toml).
         force: Force recompile all documents.
+        ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
         dry_run: If True, return list of (uri, path) tuples instead of compiling.
         state: Optional compilation state for progress tracking.
         vars: CLI-provided variable overrides (key=value parsed to dict).
@@ -112,9 +114,10 @@ async def compile_project(
                 uris.append((uri, config.output_path / str(relative)))
         return sorted(uris, key=lambda x: x[0])
 
-    # Ensure .colin/compiled/ directory exists
+    # Ensure .colin/compiled/ directory exists (skip in ephemeral mode)
     compiled_path = config.build_path / "compiled"
-    compiled_path.mkdir(parents=True, exist_ok=True)
+    if not ephemeral:
+        compiled_path.mkdir(parents=True, exist_ok=True)
 
     # Create artifact storage (FileStorage writes to .colin/compiled/)
     artifact_storage = FileStorage(base_path=compiled_path)
@@ -125,12 +128,14 @@ async def compile_project(
         artifact_storage=artifact_storage,
         state=state,
         force=force,
+        ephemeral=ephemeral,
         vars=vars,
     )
 
     compiled = await engine.compile_all()
 
-    # Save manifest
-    _save_manifest(config.manifest_path, engine.manifest)
+    # Save manifest (skip in ephemeral mode)
+    if not ephemeral:
+        _save_manifest(config.manifest_path, engine.manifest)
 
     return CompileResult(compiled=compiled, manifest=engine.manifest)

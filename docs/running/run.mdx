@@ -115,6 +115,38 @@ colin run --output ./output
 
 Compiled documents and the manifest write to the specified directory instead of the default.
 
+### Ephemeral Mode
+
+The `--ephemeral` flag prevents Colin from writing to the `.colin/` directory:
+
+```bash
+colin run --ephemeral
+```
+
+In ephemeral mode, Colin keeps all compiled outputs in memory and writes only to the `output/` directory. The manifest and compiled artifacts in `.colin/compiled/` are not updated. The run is "ephemeral" in that it leaves no trace in the build system.
+
+This is useful for:
+
+- **Testing**: Run compilations without leaving state behind
+- **CI pipelines**: Read-only builds that don't pollute the cache
+- **One-off compilations**: Quick runs without persisting manifest or artifacts
+- **Templates**: Generate output without leaving traces in the source directory
+
+Ephemeral mode can still read from existing cache, benefiting from previously compiled artifacts. To completely ignore the cache, combine with `--no-cache`:
+
+```bash
+colin run --no-cache --ephemeral
+```
+
+This provides full isolation: no reading from `.colin/`, no writing to `.colin/`, but still produces output.
+
+| Flags | Reads .colin/ | Writes .colin/ | Writes output/ |
+| :---- | :------------ | :------------- | :------------- |
+| (default) | ✓ | ✓ | ✓ |
+| `--no-cache` | ✗ | ✓ | ✓ |
+| `--ephemeral` | ✓ | ✗ | ✓ |
+| `--no-cache --ephemeral` | ✗ | ✗ | ✓ |
+
 ## Incremental Builds
 
 Colin tracks changes to enable efficient incremental compilation. When you run `colin run`, it compares each document's current state against what was recorded in the manifest from the last run.
