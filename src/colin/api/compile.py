@@ -28,18 +28,15 @@ class CompileResult:
         self,
         compiled: list[CompiledDocument],
         manifest: Manifest,
-        project_name: str | None,
     ) -> None:
         """Initialize compile result.
 
         Args:
             compiled: List of compiled documents.
             manifest: Updated manifest.
-            project_name: Name of the project.
         """
         self.compiled = compiled
         self.manifest = manifest
-        self.project_name = project_name
 
     @property
     def total_llm_calls(self) -> int:
@@ -136,8 +133,4 @@ async def compile_project(
     # Save manifest
     _save_manifest(config.manifest_path, engine.manifest)
 
-    return CompileResult(
-        compiled=compiled,
-        manifest=engine.manifest,
-        project_name=config.name,
-    )
+    return CompileResult(compiled=compiled, manifest=engine.manifest)

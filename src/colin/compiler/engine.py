@@ -92,12 +92,25 @@ class CompileEngine:
             manifest=self.manifest,
         )
 
+        # Compute config hash for staleness tracking and store on manifest
+        self._config_hash = self._compute_config_hash()
+        self.manifest.config_hash = self._config_hash
+        self.manifest.project_name = config.name
+
     def _load_manifest(self) -> Manifest:
         """Load manifest from config path if it exists."""
         if self.config.manifest_path.exists():
             content = self.config.manifest_path.read_text(encoding="utf-8")
             return Manifest.model_validate_json(content)
         return Manifest()
+
+    def _compute_config_hash(self) -> str:
+        """Compute hash of colin.toml for staleness tracking."""
+        config_path = self.config.project_root / "colin.toml"
+        if config_path.exists():
+            content = config_path.read_bytes()
+            return hashlib.sha256(content).hexdigest()[:16]
+        return ""
 
     def _is_private(self, doc: ColinDocument) -> bool:
         """Check if a document is private (not published to output/).
@@ -841,6 +854,7 @@ class CompileEngine:
             llm_calls=doc.llm_calls,
             total_cost_usd=doc.total_cost_usd,
             sections=doc.sections,
+            config_hash=self._config_hash,
         )
         self.manifest.set_document(doc.uri, meta)
 

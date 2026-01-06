@@ -239,6 +239,9 @@ class DocumentMeta(BaseModel):
     sections: dict[str, str] = Field(default_factory=dict)
     """Named sections extracted from the document (section_name -> raw_content)."""
 
+    config_hash: str | None = None
+    """Hash of colin.toml when this document was compiled."""
+
 
 class Manifest(BaseModel):
     """Root manifest structure, persisted as JSON."""
@@ -247,6 +250,12 @@ class Manifest(BaseModel):
 
     version: str = "1"
     """Manifest format version."""
+
+    project_name: str | None = None
+    """Project name from colin.toml."""
+
+    config_hash: str | None = None
+    """Hash of colin.toml at last compilation."""
 
     compiled_at: datetime | None = None
     """When the last compilation completed."""

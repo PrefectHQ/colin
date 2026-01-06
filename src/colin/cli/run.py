@@ -237,7 +237,7 @@ async def run(
 
         if quiet:
             # No output at all, just run compilation
-            await api.compile_project(
+            result = await api.compile_project(
                 project_dir=project,
                 output_dir=output,
                 force=no_cache,
@@ -245,6 +245,17 @@ async def run(
                 state=state,
                 vars=vars_dict,
             )
+            # Warn about stale config even in quiet mode
+            stale = sum(
+                1
+                for doc in result.manifest.documents.values()
+                if doc.config_hash and doc.config_hash != result.manifest.config_hash
+            )
+            if stale > 0:
+                err_console.print(
+                    f"[yellow]Warning:[/] {stale} document(s) "
+                    "compiled with old colin.toml. Run with --no-cache to recompile."
+                )
             return
 
         # Print project info before starting
@@ -273,8 +284,19 @@ async def run(
             # Final update before exiting Live context
             live.update(render_state(state), refresh=True)
 
-        # Re-raise any exception from the task
-        await task
+        # Get the result and check for stale config warning
+        result = await task
+        stale = sum(
+            1
+            for doc in result.manifest.documents.values()
+            if doc.config_hash and doc.config_hash != result.manifest.config_hash
+        )
+        if stale > 0:
+            console.print()
+            console.print(
+                f"[yellow]Warning:[/] {stale} document(s) "
+                "compiled with old colin.toml. Run with --no-cache to recompile."
+            )
 
     except MultipleCompilationErrors as e:
         err_console.print("\n[red bold]Compilation failed[/]\n")
