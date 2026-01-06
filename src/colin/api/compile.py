@@ -61,6 +61,9 @@ async def compile_project(
 ) -> CompileResult | list[tuple[str, Path]]:
     """Compile all documents in a project.
 
+    Note: This function only writes/overwrites files, never deletes. Use
+    `colin clean` to remove the output directory before a fresh build.
+
     Args:
         project_dir: Project directory (must contain colin.toml).
         output_dir: Override output directory (default: from colin.toml).

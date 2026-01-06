@@ -4,12 +4,11 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import Annotated, cast
 
 import cyclopts
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
-from rich.prompt import Prompt
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
@@ -19,9 +18,6 @@ from colin import api
 from colin.api.compile import CompileResult
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
-
-if TYPE_CHECKING:
-    from colin.api.project import ProjectConfig
 
 console = Console()
 err_console = Console(stderr=True)
@@ -59,9 +55,11 @@ def _make_label(icon: RenderableType, text: RenderableType | str) -> RenderableT
 
 
 def _format_uri(uri: str) -> str:
-    """Format a URI for display, stripping scheme prefix."""
+    """Format a URI for display, showing path from models/."""
     if uri.startswith("project://"):
-        return uri[len("project://") :]
+        path = uri[len("project://") :]
+        # Show as models/path for clarity
+        return f"models/{path}"
     return f"{uri}.md"
 
 
@@ -105,44 +103,6 @@ def render_state(state: CompilationState) -> RenderableType:
     return Group(*trees)
 
 
-def prompt_for_missing_vars(
-    config: "ProjectConfig",
-    vars_dict: dict[str, str] | None,
-    interactive: bool = True,
-) -> dict[str, str]:
-    """Prompt for variables that have prompt text but no value.
-
-    Args:
-        config: Project configuration with variable definitions.
-        vars_dict: CLI-provided variable values.
-        interactive: Whether interactive prompting is allowed.
-
-    Returns:
-        Updated variables dict with prompted values.
-    """
-    result = dict(vars_dict) if vars_dict else {}
-
-    # Collect variables that need prompting
-    to_prompt: list[tuple[str, str, str | None]] = []  # (name, prompt_text, default)
-    for name, var_config in config.vars.items():
-        if name in result or os.environ.get(f"COLIN_VAR_{name.upper()}"):
-            continue
-        if interactive and var_config.prompt:
-            default = str(var_config.default) if var_config.default is not None else None
-            to_prompt.append((name, var_config.prompt, default))
-
-    if to_prompt:
-        console.print()
-        console.print("[dim]Variables:[/]")
-        for name, prompt_text, default in to_prompt:
-            value = Prompt.ask(f"  [bold]{prompt_text}[/]", default=default)
-            if value:
-                result[name] = value
-        console.print()
-
-    return result
-
-
 def print_project_info(project_file: Path, project_name: str, output_dir: Path) -> None:
     """Print project info header used by multiple commands."""
     cwd = Path.cwd()
@@ -153,10 +113,74 @@ def print_project_info(project_file: Path, project_name: str, output_dir: Path) 
         config_display = project_file
         output_display = output_dir
 
-    console.print(f"[dim]Config:[/]  {config_display}")
-    console.print(f"[dim]Project:[/] {project_name}")
-    console.print(f"[dim]Output:[/]  {output_display}/")
+    console.print(f"[dim]Project:[/]    {project_name}")
+    console.print(f"[dim]Config:[/]     {config_display}")
+    console.print(f"[dim]Output dir:[/] {output_display}/")
     console.print()
+
+
+async def _compile_with_progress(
+    project_dir: Path,
+    output_dir: Path | None = None,
+    force: bool = False,
+    ephemeral: bool = False,
+    vars: dict[str, str] | None = None,
+    state: CompilationState | None = None,
+) -> CompileResult:
+    """Compile project with live progress display.
+
+    Args:
+        project_dir: Project directory to compile.
+        output_dir: Override output directory.
+        force: Force recompile.
+        ephemeral: Don't write to .colin/.
+        vars: Variable overrides.
+        state: Compilation state for tracking (created if None).
+
+    Returns:
+        CompileResult with compiled documents and manifest.
+    """
+    if state is None:
+        state = CompilationState()
+
+    console.print("[dim]Processing:[/]")
+    with Live(
+        console=console,
+        refresh_per_second=10,
+        auto_refresh=False,
+        vertical_overflow="ellipsis",
+    ) as live:
+        task = asyncio.create_task(
+            api.compile_project(
+                project_dir=project_dir,
+                output_dir=output_dir,
+                force=force,
+                ephemeral=ephemeral,
+                vars=vars,
+                state=state,
+            )
+        )
+        while not task.done():
+            live.update(render_state(state), refresh=True)
+            await asyncio.sleep(0.1)
+        # Final update
+        live.update(render_state(state), refresh=True)
+        result = await task
+
+    # Show output files
+    assert isinstance(result, CompileResult)
+    output_files = []
+    for doc in result.compiled:
+        if doc.frontmatter.colin.output.should_publish(doc.uri) and doc.output_path:
+            output_files.append(doc.output_path)
+
+    if output_files:
+        console.print()
+        console.print("[dim]Output:[/]")
+        for path in sorted(output_files):
+            console.print(f"[green]→[/green] {path}")
+
+    return result
 
 
 async def run(
@@ -167,7 +191,6 @@ async def run(
     ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
     dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
-    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
     var: Annotated[list[str], cyclopts.Parameter(name=["--var"])] = [],
 ) -> None:
     """Compile and run all models.
@@ -179,7 +202,6 @@ async def run(
         ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
-        no_interactive: Disable interactive prompts (for CI/automation).
         var: Variable overrides in key=value format (can be repeated).
     """
     # Parse --var key=value pairs into dict
@@ -207,16 +229,6 @@ async def run(
         config = load_project(project_file)
         project_name = config.name
         output_dir = output or config.output_path
-
-        # Prompt for missing variables (if interactive and prompts configured)
-        interactive = (
-            not no_interactive and not os.environ.get("COLIN_NO_INTERACTIVE") and sys.stdin.isatty()
-        )
-        vars_dict = prompt_for_missing_vars(
-            config,
-            vars_dict,
-            interactive=interactive,
-        )
 
         # Handle dry run
         if dry_run:
@@ -267,32 +279,15 @@ async def run(
         # Print project info before starting
         print_project_info(project_file, project_name, output_dir)
 
-        with Live(
-            # render_state(state),
-            console=console,
-            refresh_per_second=10,
-            auto_refresh=False,
-            vertical_overflow="ellipsis",
-        ) as live:
-            task = asyncio.create_task(
-                api.compile_project(
-                    project_dir=project,
-                    output_dir=output,
-                    force=no_cache,
-                    ephemeral=ephemeral,
-                    dry_run=False,
-                    state=state,
-                    vars=vars_dict,
-                )
-            )
-            while not task.done():
-                live.update(render_state(state), refresh=True)
-                await asyncio.sleep(0.1)
-            # Final update before exiting Live context
-            live.update(render_state(state), refresh=True)
-
-        # Get the result and check for stale config warning
-        result = await task
+        # Compile with progress display
+        result = await _compile_with_progress(
+            project_dir=project,
+            output_dir=output,
+            force=no_cache,
+            ephemeral=ephemeral,
+            vars=vars_dict,
+            state=state,
+        )
         assert isinstance(result, CompileResult)
         stale = sum(
             1
@@ -317,7 +312,13 @@ async def run(
             for j, err in enumerate(doc_errors):
                 is_last_err = j == len(doc_errors) - 1
                 prefix = "└──" if is_last_err else "├──"
-                err_console.print(f"  {prefix} [red]✗[/] {err}")
+                # Escape error message to prevent Rich markup interpretation
+                escaped_err = str(err).replace("[", r"\[")
+                # Indent continuation lines
+                lines = escaped_err.split("\n")
+                err_console.print(f"  {prefix} [red]✗[/] {lines[0]}")
+                for line in lines[1:]:
+                    err_console.print(f"        {line}")
             if not is_last_doc:
                 err_console.print()
         err_console.print()
@@ -341,51 +342,81 @@ async def run(
         sys.exit(1)
 
 
+# Default content for new projects
+_DEFAULT_COLIN_TOML = """\
+[project]
+name = "{name}"
+"""
+
+_DEFAULT_HELLO_MD = """\
+---
+colin: {}
+---
+# 👋 Welcome to Colin!
+
+This is your first model. Run `colin run` to compile it.
+"""
+
+
 def init(
     project: Path = Path("."),
     *,
     name: str | None = None,
-    models: str = "models",
-    output: str = "output",
-    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
 ) -> None:
     """Initialize a new Colin project.
 
-    Creates colin.toml and models directory.
+    Creates a minimal project with colin.toml and a sample model.
 
     Args:
         project: Project directory (default: current directory).
         name: Project name (default: directory name).
-        models: Path to models directory (default: "models").
-        output: Path to output directory (default: "output").
-        no_interactive: Disable interactive prompts (for CI/automation).
     """
-    # no_interactive is not currently used but reserved for future prompting
-    _ = no_interactive
     project_dir = project.resolve()
+    cwd = Path.cwd()
+
+    # Determine project name
+    project_name = name or project_dir.name
+
+    # Check if target already exists
+    if (project_dir / "colin.toml").exists():
+        err_console.print(f"[red]Error:[/] Project already exists: {project_dir / 'colin.toml'}")
+        sys.exit(1)
 
     try:
-        project_file, model_dir = api.init_project(
-            directory=project_dir,
-            name=name,
-            model_path_rel=models,
-            output_path_rel=output,
-        )
+        # Create directories
+        project_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / "models").mkdir(exist_ok=True)
 
-        cwd = Path.cwd()
+        # Write colin.toml
+        colin_toml = project_dir / "colin.toml"
+        colin_toml.write_text(_DEFAULT_COLIN_TOML.format(name=project_name))
+
+        # Write hello.md
+        hello_md = project_dir / "models" / "hello.md"
+        hello_md.write_text(_DEFAULT_HELLO_MD)
+
+        # Show what was created
         try:
-            project_display = project_file.relative_to(cwd)
-            model_display = model_dir.relative_to(cwd)
+            project_display = project_dir.relative_to(cwd)
         except ValueError:
-            project_display = project_file
-            model_display = model_dir
+            project_display = project_dir
 
-        console.print(f"[green]Created:[/] {project_display}")
-        console.print(f"[green]Created:[/] {model_display}/")
+        console.print("[dim]Created:[/]")
+        if project_dir != cwd:
+            console.print(f"[green]→[/green] {project_display}/colin.toml")
+            console.print(f"[green]→[/green] {project_display}/models/hello.md")
+        else:
+            console.print("[green]→[/green] colin.toml")
+            console.print("[green]→[/green] models/hello.md")
         console.print()
-        console.print("[dim]Add .md files to models/ and run `colin run`[/]")
 
-    except FileExistsError as e:
+        if project_dir == cwd:
+            run_cmd = "colin run"
+        else:
+            run_cmd = f"colin run {project_display}"
+        console.print(f"[dim]Run `{run_cmd}` to compile your project.[/]")
+
+    except OSError as e:
         err_console.print(f"[red]Error:[/] {e}")
         sys.exit(1)
 

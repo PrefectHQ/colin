@@ -867,7 +867,6 @@ class CompileEngine:
     async def _publish_outputs(
         self,
         *,
-        clean_output: bool = True,
         compiled_outputs: dict[str, CompiledDocument] | None = None,
     ) -> None:
         """Publish public outputs from .colin/compiled/ to output/.
@@ -876,17 +875,15 @@ class CompileEngine:
         Prefers in-memory compiled_outputs (freshly compiled this run) over
         cached files on disk to ensure ephemeral mode publishes fresh content.
 
+        Note: This method only writes/overwrites files, never deletes. Use
+        `colin clean` to remove output directory before a fresh build.
+
         Args:
-            clean_output: If True, remove output/ before publishing.
             compiled_outputs: In-memory compiled docs, preferred over disk cache.
         """
         output_path = self.config.output_path
 
-        # Clean output directory
-        if clean_output and output_path.exists():
-            shutil.rmtree(output_path)
-
-        # Create output directory
+        # Create output directory (never delete - use `colin clean` for that)
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Copy public files from .colin/compiled/ to output/
