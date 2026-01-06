@@ -61,3 +61,36 @@ def test_init_uses_directory_name_as_project_name(
 
     config_content = (tmp_path / "my-awesome-project" / "colin.toml").read_text()
     assert 'name = "my-awesome-project"' in config_content
+
+
+def test_init_custom_models_dir(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
+    """colin init respects --models option."""
+    monkeypatch.chdir(tmp_path)
+
+    cli("init", "--models", "src/docs")
+
+    assert (tmp_path / "src/docs").is_dir()
+    assert (tmp_path / "src/docs" / "hello.md").exists()
+    config_content = (tmp_path / "colin.toml").read_text()
+    assert 'models = "src/docs"' in config_content
+
+
+def test_init_custom_output_dir(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
+    """colin init respects --output option."""
+    monkeypatch.chdir(tmp_path)
+
+    cli("init", "--output", "dist")
+
+    config_content = (tmp_path / "colin.toml").read_text()
+    assert 'output = "dist"' in config_content
+
+
+def test_init_default_dirs_not_in_config(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
+    """colin init doesn't write default models/output to config."""
+    monkeypatch.chdir(tmp_path)
+
+    cli("init")
+
+    config_content = (tmp_path / "colin.toml").read_text()
+    assert "models" not in config_content
+    assert "output" not in config_content

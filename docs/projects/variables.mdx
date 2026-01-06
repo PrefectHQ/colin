@@ -34,10 +34,6 @@ For more control, use subsections with explicit type declarations:
 type = "date"
 default = "2024-01-15"
 
-[vars.author]
-type = "string"
-prompt = "Who is the author?"
-
 [vars.api_key]
 type = "string"
 optional = true
@@ -48,7 +44,6 @@ optional = true
 | `type` | Variable type (see below) | `string` |
 | `default` | Default value | None |
 | `optional` | If true, returns `None` when not provided | `false` |
-| `prompt` | Text to display when prompting for input | None |
 
 <Tip>
 TOML has no `null` value, so Colin uses `optional = true` to indicate a variable can be `None`. Without a default and without `optional = true`, a variable is required and Colin will error if it's not provided.
@@ -143,48 +138,6 @@ Report date: {{ vars.report_date or now().strftime('%Y-%m-%d') }}
 ```
 
 If `report_date` is provided via CLI or environment variable, that value is used; otherwise, the expression after `or` provides the fallback.
-
-## Interactive Prompts
-
-Variables can prompt for input when running interactively. Add a `prompt` field to display a message when no value is provided:
-
-```toml colin.toml
-[vars.author]
-type = "string"
-prompt = "Who is the author?"
-
-[vars.environment]
-type = "string"
-prompt = "Environment?"
-default = "dev"
-```
-
-When Colin runs in a terminal (TTY), it prompts for missing values. If a default exists, it's shown in brackets and used if you press Enter:
-
-```
-Who is the author?: Jane Doe
-Environment? [dev]:
-```
-
-In non-interactive environments (CI, pipes, redirected input), prompts are skipped:
-- If a default exists, it's used silently
-- If no default and not optional, Colin errors with instructions to set via `--var` or environment
-
-This makes projects usable both interactively (prompting developers) and in automation (requiring explicit configuration).
-
-### Disabling Prompts
-
-Use the `--no-interactive` flag or `COLIN_NO_INTERACTIVE` environment variable to explicitly disable prompts:
-
-```bash
-# Flag
-colin run --no-interactive
-
-# Environment variable
-COLIN_NO_INTERACTIVE=1 colin run
-```
-
-When disabled, prompts are skipped and defaults are used. If a required variable has no default, Colin errors with instructions to provide the value.
 
 ## Recompilation
 

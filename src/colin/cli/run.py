@@ -1,7 +1,6 @@
 """Run, init, and clean commands."""
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from typing import Annotated, cast
@@ -362,6 +361,8 @@ def init(
     project: Path = Path("."),
     *,
     name: str | None = None,
+    models: str = "models",
+    output: str = "output",
 ) -> None:
     """Initialize a new Colin project.
 
@@ -370,6 +371,8 @@ def init(
     Args:
         project: Project directory (default: current directory).
         name: Project name (default: directory name).
+        models: Source documents directory (default: models).
+        output: Compiled output directory (default: output).
     """
     project_dir = project.resolve()
     cwd = Path.cwd()
@@ -385,14 +388,22 @@ def init(
     try:
         # Create directories
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "models").mkdir(exist_ok=True)
+        (project_dir / models).mkdir(parents=True, exist_ok=True)
+
+        # Build colin.toml content
+        toml_lines = ["[project]", f'name = "{project_name}"']
+        if models != "models":
+            toml_lines.append(f'models = "{models}"')
+        if output != "output":
+            toml_lines.append(f'output = "{output}"')
+        toml_content = "\n".join(toml_lines) + "\n"
 
         # Write colin.toml
         colin_toml = project_dir / "colin.toml"
-        colin_toml.write_text(_DEFAULT_COLIN_TOML.format(name=project_name))
+        colin_toml.write_text(toml_content)
 
         # Write hello.md
-        hello_md = project_dir / "models" / "hello.md"
+        hello_md = project_dir / models / "hello.md"
         hello_md.write_text(_DEFAULT_HELLO_MD)
 
         # Show what was created
@@ -404,10 +415,10 @@ def init(
         console.print("[dim]Created:[/]")
         if project_dir != cwd:
             console.print(f"[green]→[/green] {project_display}/colin.toml")
-            console.print(f"[green]→[/green] {project_display}/models/hello.md")
+            console.print(f"[green]→[/green] {project_display}/{models}/hello.md")
         else:
             console.print("[green]→[/green] colin.toml")
-            console.print("[green]→[/green] models/hello.md")
+            console.print(f"[green]→[/green] {models}/hello.md")
         console.print()
 
         if project_dir == cwd:
@@ -425,14 +436,12 @@ def clean(
     project: Path = Path("."),
     *,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
-    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
 ) -> None:
     """Remove output directory (compiled outputs and manifest).
 
     Args:
         project: Project directory (default: current directory).
         yes: Skip confirmation prompt.
-        no_interactive: Disable interactive prompts (for CI/automation).
     """
     status_info = api.get_project_status(project)
     project_file = status_info["project_file"]
@@ -460,11 +469,7 @@ def clean(
 
     # Show what will be removed
     if not yes:
-        # Check if we can prompt
-        interactive = (
-            not no_interactive and not os.environ.get("COLIN_NO_INTERACTIVE") and sys.stdin.isatty()
-        )
-        if not interactive:
+        if not sys.stdin.isatty():
             err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
             sys.exit(1)
 

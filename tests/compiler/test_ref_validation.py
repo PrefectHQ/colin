@@ -59,6 +59,7 @@ class TestStrictRefValidation:
         )
 
         result = await context.ref("greeting.md")
+        assert result is not None
         assert result.content == "Hello, world!"
 
     async def test_ref_to_uncompiled_document_raises_error(

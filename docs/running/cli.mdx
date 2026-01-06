@@ -14,13 +14,14 @@ The `colin init` command creates a new project:
 colin init
 ```
 
-This creates `colin.toml` with default settings and an empty `models/` directory in the current location:
+This creates `colin.toml` and a sample model in the current directory:
 
 ```
-Created: colin.toml
-Created: models/
+Created:
+→ colin.toml
+→ models/hello.md
 
-Add .md files to models/ and run `colin run`
+Run `colin run` to compile your project.
 ```
 
 ### Options
@@ -37,7 +38,7 @@ colin init --name my-context --models src/docs --output dist
 | `--models` | Source documents directory | `models` |
 | `--output` | Compiled output directory | `output` |
 
-You can also initialize an existing directory:
+Non-default values are written to `colin.toml`. You can also initialize an existing directory:
 
 ```bash
 cd existing-project
