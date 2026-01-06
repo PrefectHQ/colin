@@ -271,14 +271,44 @@ name: My Document
 description: What this document provides
 
 colin:
-  output: markdown   # markdown, json, yaml
+  output:
+    format: markdown              # markdown, json, yaml
+    path: reports/summary.md      # custom output location (optional)
+    publish: true                 # copy to output/ (optional)
   cache:
-    policy: auto     # auto, always, never
-    expires: 1d      # optional time-based expiration
+    policy: auto                  # auto, always, never
+    expires: 1d                   # optional time-based expiration
 ---
 ```
 
-**Cache policies:**
+### Output Configuration
+
+**format** — Transformation to apply:
+- `markdown` — Pass through as markdown (default)
+- `json` — Convert markdown headings to JSON object
+- `yaml` — Convert markdown headings to YAML
+
+**path** — Custom output location relative to `output/`. Supports subdirectories. If omitted, uses the source filename with the format's extension.
+
+**publish** — Whether to copy the compiled artifact to `output/`. Set `false` to keep the file in `.colin/compiled/` only (useful for helper templates). Default is `true`.
+
+### Private Files
+
+Files can be kept out of `output/` in two ways:
+
+1. **Naming convention**: Prefix the filename or any parent directory with `_`. These files compile to `.colin/compiled/` but don't publish to `output/`.
+
+   ```
+   models/_helpers/formatting.md    → private
+   models/_config.md                → private
+   models/public.md                 → published
+   ```
+
+2. **Explicit config**: Set `publish: false` in frontmatter to override the naming convention.
+
+Private files are accessible via `ref().content` but `ref().path` raises an error—you can include their content, but you can't link to files that won't exist in `output/`.
+
+### Cache Policies
 
 - `auto` — Rebuild when any source changes (default)
 - `always` — Only rebuild with `--no-cache`

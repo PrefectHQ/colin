@@ -18,6 +18,23 @@ uv run pytest              # Run tests
 
 **CRITICAL**: These docs must be kept up to date with all work:
 
+### User-Facing Documentation (`README.md`)
+
+**MANDATORY** for any user-facing changes:
+
+- New features, configuration options, CLI changes, template syntax
+- Documentation must be holistically integrated, not appended
+- Restructure existing documentation if needed for clarity
+- Consider the complete user journey—how will users discover and learn this?
+- Pro forma documentation is unacceptable; every word must serve the user
+
+**When updating user docs:**
+
+- Read the full README first to understand structure and voice
+- Place new content where users would naturally look for it
+- Update related sections that reference affected functionality
+- Remove or update any content that becomes incorrect
+
 ### `docs/architecture.md`
 
 - Live updated architectural overview
