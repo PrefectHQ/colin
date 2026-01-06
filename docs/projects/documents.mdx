@@ -53,11 +53,72 @@ The `colin:` block in frontmatter controls document-specific compilation behavio
 ---
 name: Market Analysis
 colin:
+  output:
+    format: json
+    path: reports/market.json
+    publish: true
   cache:
     policy: auto
     expires: 1M
 ---
 ```
+
+### Output Configuration
+
+The `output` block controls how documents are transformed and where they're written:
+
+```yaml
+colin:
+  output:
+    format: json              # transformation (default: markdown)
+    path: reports/daily.json  # artifact location (optional)
+    publish: true             # copy to output/ (optional)
+```
+
+**`format`** — The renderer to use for transforming content:
+
+| Format | Output | Description |
+| :----- | :----- | :---------- |
+| `markdown` | `.md` | Default passthrough (no transformation) |
+| `json` | `.json` | Convert markdown structure to JSON |
+| `yaml` | `.yaml` | Convert markdown structure to YAML |
+
+See [Renderers](/renderers/renderers) for details on each format.
+
+**`path`** — Custom output location relative to `output/`. Supports subdirectories:
+
+```yaml
+colin:
+  output:
+    format: json
+    path: config/database.json  # writes to output/config/database.json
+```
+
+If omitted, Colin uses the source filename with the format's extension (e.g., `models/report.md` → `output/report.json`).
+
+**`publish`** — Whether to copy the compiled artifact to `output/`. Defaults to `true`. Set `false` to keep the file in `.colin/compiled/` only—useful for helper templates that other documents reference but shouldn't appear in final output.
+
+### Private Files
+
+Files can be excluded from `output/` in two ways:
+
+**Naming convention**: Prefix the filename or any parent directory with `_`. These files compile normally but don't publish:
+
+```
+models/_helpers/formatting.md    → private (underscore directory)
+models/_config.md                → private (underscore file)
+models/public.md                 → published
+```
+
+**Explicit config**: Set `publish: false` to make any file private, or `publish: true` to override the underscore convention:
+
+```yaml
+colin:
+  output:
+    publish: false  # keep out of output/ regardless of name
+```
+
+Private files are fully accessible via `ref().content`—you can include their content in other documents. However, `ref().path` raises an error because linking to files that won't exist in `output/` is a bug.
 
 ### Cache Policy
 

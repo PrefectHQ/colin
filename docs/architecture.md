@@ -129,7 +129,7 @@ ref(colin.s3.prod.get("config.json"))           # Provider resource (no ordering
     └─ Returns the S3Resource unchanged
 ```
 
-**Output path resolution**: Refs are matched to source documents via the manifest's output_path index. When you `ref("config.json")`, Colin finds the document whose `output_path == "config.json"` (source might be `config.md` with `colin.output: json`).
+**Output path resolution**: Refs are matched to source documents via the manifest's output_path index. When you `ref("config.json")`, Colin finds the document whose `output_path == "config.json"` (source might be `config.md` with `colin.output.format: json`).
 
 Provider functions like `s3.get()` return Resource objects. Wrapping in `ref()` registers the dependency for staleness tracking. Without `ref()`, the resource is fetched but changes won't trigger recompilation.
 
@@ -205,11 +205,11 @@ project/
 Files can be marked as private (compiled but not published to output):
 
 - **Naming convention**: Any path segment starting with `_` marks the file as private (`_helpers.md`, `_partials/intro.md`)
-- **Frontmatter override**: `colin.private: true/false` overrides the naming convention
+- **Frontmatter override**: `colin.output.publish: true/false` overrides the naming convention
 
 Private files are accessible via `ref().content` but `ref().path` raises an error (linking to files that won't exist in output is a bug).
 
-See [ADR 018: Storage Architecture](decisions/018-storage-architecture.md) for details.
+See [ADR 018: Storage Architecture](decisions/018-storage-architecture.md) and [ADR 021: Output Configuration](decisions/021-output-config.md) for details.
 
 ## Key Design Decisions
 
@@ -227,6 +227,7 @@ See `docs/decisions/` for detailed ADRs:
 - **017-resource-and-ref-architecture**: Refs as replay instructions, Resource/Ref split
 - **018-storage-architecture**: Two-layer storage, private files, cache vs published
 - **020-strict-compilation-model**: Static ordering with depends_on hints, allow_stale escape hatch
+- **021-output-config**: Output configuration (format, path, publish)
 
 ## Frontmatter Structure
 
@@ -235,9 +236,14 @@ Colin config is namespaced under `colin:` to avoid collision with document metad
 ```yaml
 ---
 colin:
-  output: markdown    # Colin config
-name: my-doc          # Document metadata
-description: ...      # Passed through to output
+  output:
+    format: markdown          # Output format (markdown, json, yaml)
+    path: reports/summary.md  # Custom output path (optional)
+    publish: true             # Publish to output/ (optional, default based on _ prefix)
+  cache:
+    policy: auto              # Cache policy (auto, always, never)
+name: my-doc                  # Document metadata
+description: ...              # Passed through to output
 ---
 ```
 

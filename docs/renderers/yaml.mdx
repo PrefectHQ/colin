@@ -4,12 +4,13 @@ sidebarTitle: YAML
 icon: file-code
 ---
 
-The YAML renderer produces structured YAML output from your templates. Enable it by setting `output: yaml` in your document frontmatter:
+The YAML renderer produces structured YAML output from your templates. Enable it in document frontmatter:
 
 ```yaml
 ---
 colin:
-  output: yaml
+  output:
+    format: yaml
 ---
 ```
 
@@ -24,13 +25,14 @@ The YAML renderer uses the same parsing logic as the [JSON renderer](/renderers/
 - Nested headers create nested mappings
 - `{% item %}` blocks create sequence elements
 
-The only difference is the output format. This makes switching between JSON and YAML trivial—just change the `output` setting.
+The only difference is the output format. This makes switching between JSON and YAML trivial—just change the `format` setting.
 
 <CodeGroup>
 ```markdown Template
 ---
 colin:
-  output: yaml
+  output:
+    format: yaml
 ---
 
 ## name
@@ -63,7 +65,8 @@ Both `json` and `yaml` fences work in either renderer. This means you can write 
 ````markdown Template
 ---
 colin:
-  output: yaml
+  output:
+    format: yaml
 ---
 
 ## config

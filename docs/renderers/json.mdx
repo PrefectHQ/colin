@@ -4,12 +4,13 @@ sidebarTitle: JSON
 icon: brackets-curly
 ---
 
-The JSON renderer produces structured JSON output from your templates. Enable it by setting `output: json` in your document frontmatter:
+The JSON renderer produces structured JSON output from your templates. Enable it in document frontmatter:
 
 ```yaml
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 ```
 
@@ -23,7 +24,8 @@ The simplest approach is writing JSON directly. If your entire document is valid
 ```markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 {"name": "Alice", "role": "admin"}
@@ -48,7 +50,8 @@ The recommended approach is wrapping your JSON in a code fence. Colin validates 
 ````markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ```json
@@ -91,7 +94,8 @@ Colin solves this by parsing markdown structure into JSON. You write readable ma
 ```markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## name
@@ -123,7 +127,8 @@ Each header becomes an object key. Text content under the header becomes a strin
 ```markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## title
@@ -149,7 +154,8 @@ Markdown lists under a header become JSON arrays:
 ```markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## languages
@@ -173,7 +179,8 @@ Text under headers is parsed as strings. For numbers, booleans, or complex objec
 ````markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## name
@@ -213,7 +220,8 @@ Deeper header levels create nested objects. An `##` header containing `###` head
 ```markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## user
@@ -270,7 +278,8 @@ Colin provides a custom `{% item %}...{% enditem %}` block for creating array el
 ```markdown Template
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 {% for user in users %}

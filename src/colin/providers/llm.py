@@ -90,6 +90,11 @@ class LLMProvider(Provider):
                 )
             # Use ref() to get compiled content
             resource = await compile_ctx.ref(self.instructions_ref)
+            if resource is None:
+                raise RuntimeError(
+                    f"Cannot resolve instructions_ref '{self.instructions_ref}': "
+                    "resource not found."
+                )
             return resource.content
 
         return None

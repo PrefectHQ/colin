@@ -357,7 +357,8 @@ async def test_defer_block_format_aware_sections(tmp_path: Path, mock_agent: Mag
     (models_dir / "config.json.md").write_text(
         """---
 colin:
-  output: json
+  output:
+    format: json
 ---
 {% section database %}
 ## host

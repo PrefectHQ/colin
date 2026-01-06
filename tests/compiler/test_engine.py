@@ -185,7 +185,8 @@ Just this one.
 ---
 name: Bad
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 {"foo": "bar",}
@@ -210,7 +211,8 @@ colin:
 ---
 name: Config
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## host
@@ -251,7 +253,8 @@ Config content: {{ ref('config.json').content }}
 ---
 name: Config
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## key
@@ -265,6 +268,85 @@ value
         assert config.output_path == "config.json"
         assert (output_dir / "config.json").exists()
 
+    async def test_custom_output_path(self, engine_setup: tuple[CompileEngine, Path, Path]) -> None:
+        """output.path specifies custom output location."""
+        engine, source_dir, output_dir = engine_setup
+
+        (source_dir / "report.md").write_text("""\
+---
+name: Report
+colin:
+  output:
+    format: json
+    path: reports/daily.json
+---
+
+## status
+ok
+""")
+
+        result = await engine.compile_all()
+
+        doc = next(doc for doc in result if doc.uri == "project://report.md")
+        assert doc.output_path == "reports/daily.json"
+        assert (output_dir / "reports" / "daily.json").exists()
+        # Original filename should NOT exist
+        assert not (output_dir / "report.json").exists()
+
+    async def test_custom_output_path_in_subdirectory(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """output.path works with nested subdirectories."""
+        engine, source_dir, output_dir = engine_setup
+
+        (source_dir / "data.md").write_text("""\
+---
+name: Data
+colin:
+  output:
+    format: yaml
+    path: config/env/production.yaml
+---
+
+## host
+prod.example.com
+""")
+
+        result = await engine.compile_all()
+
+        doc = next(doc for doc in result if doc.uri == "project://data.md")
+        assert doc.output_path == "config/env/production.yaml"
+        assert (output_dir / "config" / "env" / "production.yaml").exists()
+
+    async def test_custom_output_path_overrides_format_extension(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """output.path is used exactly as specified, even if extension differs from format."""
+        engine, source_dir, output_dir = engine_setup
+
+        # Path says .txt but format is json - path wins
+        (source_dir / "weird.md").write_text("""\
+---
+name: Weird
+colin:
+  output:
+    format: json
+    path: output.txt
+---
+
+## key
+value
+""")
+
+        result = await engine.compile_all()
+
+        doc = next(doc for doc in result if doc.uri == "project://weird.md")
+        assert doc.output_path == "output.txt"
+        assert (output_dir / "output.txt").exists()
+        # Content should still be JSON
+        content = (output_dir / "output.txt").read_text()
+        assert '"key": "value"' in content
+
     async def test_hash_consistency_between_document_and_manifest(
         self, engine_setup: tuple[CompileEngine, Path, Path]
     ) -> None:
@@ -275,7 +357,8 @@ value
 ---
 name: Test
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## key
@@ -316,7 +399,8 @@ value
 ---
 name: Config
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## key

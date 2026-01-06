@@ -112,26 +112,19 @@ class CompileEngine:
             return hashlib.sha256(content).hexdigest()[:16]
         return ""
 
-    def _is_private(self, doc: ColinDocument) -> bool:
-        """Check if a document is private (not published to output/).
+    def _should_publish(self, doc: ColinDocument) -> bool:
+        """Check if a document should be published to output/.
 
-        Private detection order:
-        1. Explicit frontmatter: colin.private = true/false (overrides all)
-        2. Naming convention: any path segment starting with _ means private
+        Delegates to OutputConfig.should_publish() which handles both
+        explicit publish values and _ prefix naming convention.
 
         Args:
             doc: The document to check.
 
         Returns:
-            True if the document is private.
+            True if the document should be published.
         """
-        # Frontmatter override takes precedence
-        if doc.frontmatter.colin.private is not None:
-            return doc.frontmatter.colin.private
-
-        # Naming convention: any _ segment under models root marks as private
-        relative = Path(doc.uri.split("://", 1)[1])
-        return any(part.startswith("_") for part in relative.parts)
+        return doc.frontmatter.colin.output.should_publish(doc.uri)
 
     async def _is_document_stale(
         self,
@@ -356,9 +349,9 @@ class CompileEngine:
                         compiled_outputs[result.output_path] = result
                         recompiled_uris.add(uri)
                         doc = doc_map[uri]
-                        result.is_private = self._is_private(doc)
+                        publish = self._should_publish(doc)
                         await self._write_output(result)
-                        self._update_manifest(result)
+                        self._update_manifest(result, publish=publish)
                     else:
                         # Cached - just add to compiled_outputs for downstream refs
                         compiled_outputs[result.output_path] = result
@@ -405,10 +398,10 @@ class CompileEngine:
             provider_manager.register(self._variable_provider)
             result = await self._compile_document(doc, {}, provider_manager)
 
-        # Write output with private detection and update manifest
-        result.is_private = self._is_private(doc)
+        # Write output and update manifest with publish status
+        publish = self._should_publish(doc)
         await self._write_output(result)
-        self._update_manifest(result)
+        self._update_manifest(result, publish=publish)
 
         return result
 
@@ -529,7 +522,10 @@ class CompileEngine:
                 self.graph.add_edge(doc.uri, normalized_dep)
 
     def _compute_output_path(self, doc: ColinDocument) -> str:
-        """Compute the output path for a document based on its output format.
+        """Compute the output path for a document based on its output config.
+
+        Uses explicit output.path if set, otherwise derives from source filename
+        with the renderer's extension.
 
         Args:
             doc: The document to compute output path for.
@@ -537,10 +533,11 @@ class CompileEngine:
         Returns:
             The output filename (e.g., 'config.json' for json output).
         """
+        output_config = doc.frontmatter.colin.output
+        renderer = get_renderer(output_config.format)
         # Extract path from URI (project://path.md -> path.md)
-        path = doc.uri.split("://", 1)[1] if "://" in doc.uri else doc.uri
-        renderer = get_renderer(doc.frontmatter.colin.output)
-        return renderer._get_output_filename(path)
+        uri_path = doc.uri.split("://", 1)[1] if "://" in doc.uri else doc.uri
+        return renderer._get_output_filename(uri_path, output_config)
 
     def _normalize_uri(
         self, ref_target: str, output_path_to_uri: dict[str, str] | None = None
@@ -669,12 +666,12 @@ class CompileEngine:
                 rendered = RenderedOutput(
                     content=raw_output,
                     sections=first_pass_sections,
-                    output_format=doc.frontmatter.colin.output,
+                    output_format=doc.frontmatter.colin.output.format,
                 )
 
                 # Get previous rendered output from manifest
                 previous_rendered = await self._get_previous_rendered(
-                    doc.uri, doc.frontmatter.colin.output
+                    doc.uri, doc.frontmatter.colin.output.format
                 )
 
                 # SECOND PASS: Render defer blocks with rendered/previous_rendered
@@ -699,8 +696,9 @@ class CompileEngine:
             clean_output = remove_section_and_defer_markers(final_output)
 
             # Apply format renderer (JSON, YAML, or markdown passthrough)
-            renderer = get_renderer(doc.frontmatter.colin.output)
-            render_result = renderer.render(clean_output, doc.uri, doc.frontmatter)
+            output_config = doc.frontmatter.colin.output
+            renderer = get_renderer(output_config.format)
+            render_result = renderer.render(clean_output, doc.uri, output_config)
         finally:
             set_compile_context(None)
 
@@ -754,7 +752,6 @@ class CompileEngine:
             source_hash=doc.source_hash,
             output_hash=output_hash,
             output_path=meta.output_path,
-            is_private=meta.is_private,
             refs=meta.refs,
             ref_versions=meta.ref_versions,
             llm_calls=meta.llm_calls,
@@ -836,18 +833,19 @@ class CompileEngine:
             result = result.replace(pattern, defer_content)
         return result
 
-    def _update_manifest(self, doc: CompiledDocument) -> None:
+    def _update_manifest(self, doc: CompiledDocument, *, publish: bool) -> None:
         """Update manifest with compilation result.
 
         Args:
             doc: The compiled document.
+            publish: Whether this document should be published to output/.
         """
         meta = DocumentMeta(
             uri=doc.uri,
             source_hash=doc.source_hash,
             output_hash=doc.output_hash,
             output_path=doc.output_path,
-            is_private=doc.is_private,
+            is_published=publish,
             compiled_at=datetime.now(timezone.utc),
             refs=doc.refs,
             ref_versions=doc.ref_versions,
@@ -878,7 +876,7 @@ class CompileEngine:
         # Copy public files from .colin/compiled/ to output/
         build_compiled = self.config.build_path / "compiled"
         for doc_meta in self.manifest.documents.values():
-            if doc_meta.is_private:
+            if not doc_meta.is_published:
                 continue
             if doc_meta.output_path is None:
                 continue

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from colin.models import Frontmatter
+    from colin.models import OutputConfig
 
 
 @dataclass
@@ -49,7 +49,7 @@ class Renderer:
         self,
         content: str,
         uri: str,
-        frontmatter: Frontmatter | None = None,
+        output_config: OutputConfig | None = None,
     ) -> RenderResult:
         """Transform content to final format.
 
@@ -59,18 +59,27 @@ class Renderer:
         Args:
             content: Raw template output.
             uri: Document URI for filename generation.
-            frontmatter: Document frontmatter for validation/config.
+            output_config: Output configuration (format, path, publish).
 
         Returns:
             RenderResult with filename and rendered content.
         """
         return RenderResult(
-            filename=self._get_output_filename(uri),
+            filename=self._get_output_filename(uri, output_config),
             content=content,
         )
 
-    def _get_output_filename(self, uri: str) -> str:
-        """Get output filename from URI, applying this renderer's extension."""
+    def _get_output_filename(self, uri: str, output_config: OutputConfig | None = None) -> str:
+        """Get output filename from URI or explicit path.
+
+        If output_config.path is set, uses that directly.
+        Otherwise derives from URI with this renderer's extension.
+        """
+        # Use explicit path if provided
+        if output_config is not None and output_config.path is not None:
+            return output_config.path
+
+        # Default: derive from URI with renderer's extension
         path_part = uri.replace("project://", "")
         stem = Path(path_part).stem
         # Preserve directory structure

@@ -114,26 +114,27 @@ class TestPrivateNamingConvention:
         public_meta = engine.manifest.get_document("project://public.md")
 
         assert private_meta is not None
-        assert private_meta.is_private is True
+        assert private_meta.is_published is False
 
         assert public_meta is not None
-        assert public_meta.is_private is False
+        assert public_meta.is_published is True
 
 
 class TestPrivateFrontmatterOverride:
     """Tests for frontmatter overriding naming convention."""
 
-    async def test_frontmatter_private_true_overrides_public_name(
+    async def test_frontmatter_publish_false_overrides_public_name(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
-        """Frontmatter colin.private: true makes a normally public file private."""
+        """Frontmatter colin.output.publish: false makes a normally public file private."""
         engine, source_dir, compiled_dir, output_dir = engine_setup
 
         (source_dir / "secret.md").write_text("""\
 ---
 name: Secret
 colin:
-  private: true
+  output:
+    publish: false
 ---
 
 Secret content
@@ -147,19 +148,20 @@ Secret content
 
         meta = engine.manifest.get_document("project://secret.md")
         assert meta is not None
-        assert meta.is_private is True
+        assert meta.is_published is False
 
-    async def test_frontmatter_private_false_overrides_underscore_prefix(
+    async def test_frontmatter_publish_true_overrides_underscore_prefix(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:
-        """Frontmatter colin.private: false makes a _ prefixed file public."""
+        """Frontmatter colin.output.publish: true makes a _ prefixed file public."""
         engine, source_dir, compiled_dir, output_dir = engine_setup
 
         (source_dir / "_actually_public.md").write_text("""\
 ---
 name: Actually Public
 colin:
-  private: false
+  output:
+    publish: true
 ---
 
 Public content despite underscore
@@ -173,7 +175,7 @@ Public content despite underscore
 
         meta = engine.manifest.get_document("project://_actually_public.md")
         assert meta is not None
-        assert meta.is_private is False
+        assert meta.is_published is True
 
 
 class TestPrivateRefBehavior:
@@ -292,7 +294,8 @@ class TestPrivateNonMarkdownOutputs:
 ---
 name: Config
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## key
@@ -324,7 +327,8 @@ Path: {{ ref('_config.json').path }}
 ---
 name: Config
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## key
@@ -356,7 +360,8 @@ Content: {{ ref('_config.json').content }}
 ---
 name: Config
 colin:
-  output: yaml
+  output:
+    format: yaml
 ---
 
 ## key
@@ -388,7 +393,8 @@ Path: {{ ref('_config.yaml').path }}
 ---
 name: Config
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## host
@@ -452,4 +458,4 @@ class TestParentDirectoryDoesNotAffectPrivacy:
 
         meta = engine.manifest.get_document("project://public.md")
         assert meta is not None
-        assert meta.is_private is False
+        assert meta.is_published is True
