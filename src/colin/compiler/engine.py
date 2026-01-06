@@ -873,11 +873,12 @@ class CompileEngine:
         """Publish public outputs from .colin/compiled/ to output/.
 
         Uses manifest metadata to copy files without re-rendering.
-        In ephemeral mode, uses compiled_outputs dict when files aren't on disk.
+        Prefers in-memory compiled_outputs (freshly compiled this run) over
+        cached files on disk to ensure ephemeral mode publishes fresh content.
 
         Args:
             clean_output: If True, remove output/ before publishing.
-            compiled_outputs: In-memory compiled docs (used as fallback in ephemeral mode).
+            compiled_outputs: In-memory compiled docs, preferred over disk cache.
         """
         output_path = self.config.output_path
 
@@ -900,8 +901,8 @@ class CompileEngine:
             dst = output_path / doc_meta.output_path
             dst.parent.mkdir(parents=True, exist_ok=True)
 
-            if src.exists():
-                shutil.copy2(src, dst)
-            elif compiled_outputs and doc_meta.output_path in compiled_outputs:
-                # Ephemeral mode: write directly from in-memory compiled output
+            if compiled_outputs and doc_meta.output_path in compiled_outputs:
+                # Prefer in-memory compiled output (freshly compiled this run)
                 dst.write_text(compiled_outputs[doc_meta.output_path].output, encoding="utf-8")
+            elif src.exists():
+                shutil.copy2(src, dst)

@@ -252,3 +252,34 @@ output = "output"
 
         # Private file should NOT be in output
         assert not (output_dir / "_private.md").exists()
+
+    async def test_ephemeral_publishes_fresh_content_over_stale_cache(self, tmp_path: Path) -> None:
+        """Ephemeral mode should publish freshly compiled content, not stale cache."""
+        # Set up directories
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output"
+
+        # Create initial model
+        (source_dir / "test.md").write_text("Original content")
+
+        # Create colin.toml
+        (tmp_path / "colin.toml").write_text("""
+[project]
+name = "test"
+models = "models"
+output = "output"
+""")
+
+        # First, compile normally to populate cache
+        await compile_project(tmp_path, ephemeral=False)
+        assert (output_dir / "test.md").read_text() == "Original content"
+
+        # Now edit the source file
+        (source_dir / "test.md").write_text("Updated content")
+
+        # Compile in ephemeral mode - should publish fresh content, not stale cache
+        await compile_project(tmp_path, ephemeral=True)
+
+        # Output should have the NEW content, not the stale cached version
+        assert (output_dir / "test.md").read_text() == "Updated content"
