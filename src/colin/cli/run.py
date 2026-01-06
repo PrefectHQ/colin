@@ -252,7 +252,7 @@ async def run(
 
         if quiet:
             # No output at all, just run compilation
-            await api.compile_project(
+            result = await api.compile_project(
                 project_dir=project,
                 output_dir=output,
                 force=no_cache,
