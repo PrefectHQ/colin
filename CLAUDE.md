@@ -14,8 +14,6 @@ uv run pytest              # Run tests
 
 **All must pass** - this is enforced by CI.
 
-**CRITICAL**: if (and only if) you are on a gitbutler/* branch, you should NEVER use any git commands yourself; this branch is managed by GitButler.
-
 ## Documentation Requirements
 
 **CRITICAL**: These docs must be kept up to date with all work:

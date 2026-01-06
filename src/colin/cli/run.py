@@ -1,18 +1,12 @@
 """Run, init, and clean commands."""
 
 import asyncio
-import contextlib
-import importlib.resources
 import os
-import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, cast
 
 import cyclopts
-import tomli
-import tomli_w
-from jinja2 import Environment
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.prompt import Prompt
@@ -27,15 +21,6 @@ from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedErr
 
 if TYPE_CHECKING:
     from colin.api.project import ProjectConfig
-
-BUILTIN_TEMPLATES = ("blank", "basic", "quickstart")
-
-
-@contextlib.contextmanager
-def _null_context(value: Path):
-    """Context manager that just yields the value unchanged."""
-    yield value
-
 
 console = Console()
 err_console = Console(stderr=True)
@@ -338,261 +323,53 @@ async def run(
         sys.exit(1)
 
 
-def _resolve_template(template: str) -> Path:
-    """Resolve a template name or path to an actual directory.
-
-    Args:
-        template: Either a built-in template name or a path to a directory.
-
-    Returns:
-        Path to the template directory.
-
-    Raises:
-        ValueError: If the template cannot be found.
-    """
-    template_path = Path(template)
-
-    # If it exists as a directory, use it directly
-    if template_path.is_dir():
-        return template_path.resolve()
-
-    # Otherwise, look for a built-in template
-    if template not in BUILTIN_TEMPLATES:
-        available = ", ".join(BUILTIN_TEMPLATES)
-        raise ValueError(
-            f"Template '{template}' not found. "
-            f"Built-in templates: {available}. "
-            f"Or provide a path to a template directory."
-        )
-
-    # Load from package resources
-    templates_pkg = importlib.resources.files("colin.cli.templates")
-    template_dir = templates_pkg / template
-
-    # Convert to a real path (may extract if in a zip)
-    with importlib.resources.as_file(template_dir) as path:
-        if not path.is_dir():
-            raise ValueError(f"Built-in template '{template}' is missing or invalid")
-        # Return a copy since as_file context may clean up
-        return path
-
-
-def _prompt_for_template_vars(
-    colin_toml: Path,
-    project_name: str,
-    interactive: bool,
-) -> dict[str, str]:
-    """Read template's colin.toml and prompt for variables with prompts defined.
-
-    Args:
-        colin_toml: Path to the template's colin.toml.
-        project_name: Default project name (from directory).
-        interactive: Whether to prompt interactively.
-
-    Returns:
-        Dictionary of variable values.
-    """
-    result: dict[str, str] = {"project_name": project_name}
-
-    if not colin_toml.exists():
-        return result
-
-    with open(colin_toml, "rb") as f:
-        data = tomli.load(f)
-
-    vars_config = data.get("vars", {})
-
-    to_prompt: list[tuple[str, str, str | None]] = []
-    for name, config in vars_config.items():
-        if not isinstance(config, dict):
-            continue
-        prompt_text = config.get("prompt")
-        if not prompt_text:
-            continue
-        default = config.get("default")
-        if default is not None:
-            default = str(default)
-        # Use project_name as default for project_name var
-        if name == "project_name" and default is None:
-            default = project_name
-        to_prompt.append((name, prompt_text, default))
-
-    if to_prompt and interactive:
-        console.print()
-        for name, prompt_text, default in to_prompt:
-            value = Prompt.ask(f"  [bold]{prompt_text}[/]", default=default)
-            if value:
-                result[name] = value
-        console.print()
-    elif to_prompt:
-        # Non-interactive: use defaults
-        for name, _, default in to_prompt:
-            if default:
-                result[name] = default
-
-    return result
-
-
-def _copy_template(
-    template_dir: Path,
-    target_dir: Path,
-    variables: dict[str, str],
-) -> list[Path]:
-    """Copy template files to target, rendering Jinja expressions in config files.
-
-    Only .toml files are rendered with Jinja substitution. Model files (.md)
-    contain colin runtime syntax and are copied as-is.
-
-    Args:
-        template_dir: Source template directory.
-        target_dir: Target project directory.
-        variables: Variables for Jinja rendering.
-
-    Returns:
-        List of created files/directories.
-    """
-    created: list[Path] = []
-    env = Environment(autoescape=False)
-
-    # Build Jinja context - support both {{ project_name }} and {{ vars.project_name }}
-    jinja_context = dict(variables)
-    jinja_context["vars"] = variables
-
-    for src_path in template_dir.rglob("*"):
-        rel_path = src_path.relative_to(template_dir)
-        dest_path = target_dir / rel_path
-
-        if src_path.is_dir():
-            dest_path.mkdir(parents=True, exist_ok=True)
-            created.append(dest_path)
-        elif src_path.is_file():
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Only render .toml files with Jinja - model files contain colin
-            # runtime syntax that should be preserved
-            if src_path.suffix == ".toml":
-                content = src_path.read_text()
-                template = env.from_string(content)
-                rendered = template.render(**jinja_context)
-                dest_path.write_text(rendered)
-            else:
-                # Copy other files as-is
-                shutil.copy2(src_path, dest_path)
-
-            created.append(dest_path)
-
-    return created
-
-
-def _update_colin_toml_paths(
-    colin_toml: Path,
-    models: str | None,
-    output: str | None,
-) -> None:
-    """Update model-path and output-path in colin.toml.
-
-    Args:
-        colin_toml: Path to colin.toml file.
-        models: New model-path value, or None to keep existing.
-        output: New output-path value, or None to keep existing.
-    """
-    with open(colin_toml, "rb") as f:
-        data = tomli.load(f)
-
-    if "project" not in data:
-        data["project"] = {}
-
-    if models:
-        data["project"]["model-path"] = models
-    if output:
-        data["project"]["output-path"] = output
-
-    with open(colin_toml, "wb") as f:
-        tomli_w.dump(data, f)
-
-
 def init(
     project: Path = Path("."),
     *,
     name: str | None = None,
-    template: Annotated[str, cyclopts.Parameter(name=["-t", "--template"])] = "basic",
-    models: str | None = None,
-    output: str | None = None,
+    models: str = "models",
+    output: str = "output",
     no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
 ) -> None:
     """Initialize a new Colin project.
 
-    Creates a project from a template, prompting for variables if needed.
+    Creates colin.toml and models directory.
 
     Args:
         project: Project directory (default: current directory).
         name: Project name (default: directory name).
-        template: Template to use (built-in: blank, basic, quickstart; or a path).
-        models: Override model path from template.
-        output: Override output path from template.
+        models: Path to models directory (default: "models").
+        output: Path to output directory (default: "output").
         no_interactive: Disable interactive prompts (for CI/automation).
     """
+    # no_interactive is not currently used but reserved for future prompting
+    _ = no_interactive
     project_dir = project.resolve()
-    project_name = name or project_dir.name
 
-    # Check if project already exists
-    colin_toml = project_dir / "colin.toml"
-    if colin_toml.exists():
-        err_console.print(f"[red]Error:[/] Project already exists: {colin_toml}")
-        sys.exit(1)
-
-    # Resolve template
     try:
-        template_dir = _resolve_template(template)
-    except ValueError as e:
+        project_file, model_dir = api.init_project(
+            directory=project_dir,
+            name=name,
+            model_path_rel=models,
+            output_path_rel=output,
+        )
+
+        cwd = Path.cwd()
+        try:
+            project_display = project_file.relative_to(cwd)
+            model_display = model_dir.relative_to(cwd)
+        except ValueError:
+            project_display = project_file
+            model_display = model_dir
+
+        console.print(f"[green]Created:[/] {project_display}")
+        console.print(f"[green]Created:[/] {model_display}/")
+        console.print()
+        console.print("[dim]Add .md files to models/ and run `colin run`[/]")
+
+    except FileExistsError as e:
         err_console.print(f"[red]Error:[/] {e}")
         sys.exit(1)
-
-    # Determine if interactive
-    interactive = (
-        not no_interactive and not os.environ.get("COLIN_NO_INTERACTIVE") and sys.stdin.isatty()
-    )
-
-    # Prompt for template variables
-    template_colin_toml = template_dir / "colin.toml"
-    variables = _prompt_for_template_vars(template_colin_toml, project_name, interactive)
-
-    # Copy template to target
-    project_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use as_file context for package resources
-    with (
-        importlib.resources.as_file(importlib.resources.files("colin.cli.templates") / template)
-        if template in BUILTIN_TEMPLATES
-        else _null_context(template_dir) as tpl_path
-    ):
-        created = _copy_template(tpl_path, project_dir, variables)
-
-    # Apply --models and --output overrides after template copy
-    if models or output:
-        _update_colin_toml_paths(project_dir / "colin.toml", models, output)
-
-    # Display results
-    cwd = Path.cwd()
-    console.print()
-    for path in sorted(created):
-        if path.is_file():
-            try:
-                display = path.relative_to(cwd)
-            except ValueError:
-                display = path
-            console.print(f"[green]Created:[/] {display}")
-
-    console.print()
-    # Show appropriate run command based on where project was created
-    if project_dir == cwd:
-        console.print("[dim]Run `colin run` to compile your project[/]")
-    else:
-        try:
-            rel_path = project_dir.relative_to(cwd)
-            console.print(f"[dim]Run `colin run {rel_path}` to compile your project[/]")
-        except ValueError:
-            console.print(f"[dim]Run `colin run {project_dir}` to compile your project[/]")
 
 
 def clean(
