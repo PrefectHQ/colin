@@ -16,6 +16,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from colin import api
+from colin.api.compile import CompileResult
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
@@ -246,6 +247,7 @@ async def run(
                 vars=vars_dict,
             )
             # Warn about stale config even in quiet mode
+            assert isinstance(result, CompileResult)
             stale = sum(
                 1
                 for doc in result.manifest.documents.values()
@@ -286,6 +288,7 @@ async def run(
 
         # Get the result and check for stale config warning
         result = await task
+        assert isinstance(result, CompileResult)
         stale = sum(
             1
             for doc in result.manifest.documents.values()

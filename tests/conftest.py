@@ -55,7 +55,8 @@ def sample_model_file(project_dir: Path) -> Path:
     path.write_text("""\
 ---
 colin:
-  output: markdown
+  output:
+    format: markdown
 name: sample
 description: A sample document
 ---

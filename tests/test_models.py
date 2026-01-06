@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from colin.models import (
     CacheConfig,
     ColinConfig,
@@ -11,6 +14,7 @@ from colin.models import (
     Frontmatter,
     LLMCall,
     Manifest,
+    OutputConfig,
     Ref,
 )
 
@@ -44,10 +48,74 @@ class TestLLMCall:
         assert call.created_at.tzinfo is not None
 
 
+class TestOutputConfig:
+    def test_defaults(self) -> None:
+        config = OutputConfig()
+        assert config.format == "markdown"
+        assert config.path is None
+        assert config.publish is None
+
+    def test_should_publish_explicit_true_overrides_underscore(self) -> None:
+        """Explicit publish=True makes even underscore-prefixed files public."""
+        config = OutputConfig(publish=True)
+        assert config.should_publish("project://_private.md") is True
+
+    def test_should_publish_explicit_false_overrides_public_name(self) -> None:
+        """Explicit publish=False makes even normal files private."""
+        config = OutputConfig(publish=False)
+        assert config.should_publish("project://public.md") is False
+
+    def test_should_publish_underscore_file_is_private(self) -> None:
+        """Files with _ prefix default to private (not published)."""
+        config = OutputConfig()
+        assert config.should_publish("project://_helper.md") is False
+
+    def test_should_publish_normal_file_is_public(self) -> None:
+        """Files without _ prefix default to public (published)."""
+        config = OutputConfig()
+        assert config.should_publish("project://public.md") is True
+
+    def test_should_publish_underscore_directory_is_private(self) -> None:
+        """Files in _ prefixed directories are private."""
+        config = OutputConfig()
+        assert config.should_publish("project://_partials/intro.md") is False
+
+    def test_should_publish_nested_underscore_directory_is_private(self) -> None:
+        """Files in nested _ prefixed directories are private."""
+        config = OutputConfig()
+        assert config.should_publish("project://chapters/_drafts/chapter1.md") is False
+
+    def test_should_publish_handles_uri_without_scheme(self) -> None:
+        """should_publish handles paths without scheme prefix."""
+        config = OutputConfig()
+        assert config.should_publish("_private.md") is False
+        assert config.should_publish("public.md") is True
+
+    def test_path_validation_rejects_absolute_path(self) -> None:
+        """Absolute paths are rejected."""
+        with pytest.raises(ValidationError, match="must be relative"):
+            OutputConfig(path="/etc/passwd")
+
+    def test_path_validation_rejects_parent_escape(self) -> None:
+        """Paths with .. are rejected."""
+        with pytest.raises(ValidationError, match="cannot contain"):
+            OutputConfig(path="../escape.json")
+
+        with pytest.raises(ValidationError, match="cannot contain"):
+            OutputConfig(path="foo/../../../escape.json")
+
+    def test_path_validation_accepts_relative_subdirs(self) -> None:
+        """Relative paths with subdirectories are accepted."""
+        config = OutputConfig(path="reports/daily/summary.json")
+        assert config.path == "reports/daily/summary.json"
+
+
 class TestColinConfig:
     def test_defaults(self) -> None:
         config = ColinConfig()
-        assert config.output == "markdown"
+        assert config.output.format == "markdown"
+        assert config.output.path is None
+        assert config.output.publish is None
         assert config.cache.policy == "auto"
         assert config.cache.expires is None
         assert config.storage is None
@@ -66,9 +134,6 @@ class TestColinConfig:
         assert config.cache.expires == "1cM"
 
     def test_cache_expires_validation(self) -> None:
-        import pytest
-        from pydantic import ValidationError
-
         with pytest.raises(ValidationError):
             CacheConfig(expires="invalid")
 
@@ -82,8 +147,8 @@ class TestColinConfig:
             CacheConfig(expires="")  # Empty string
 
     def test_custom_values(self) -> None:
-        config = ColinConfig(output="skill")
-        assert config.output == "skill"
+        config = ColinConfig(output=OutputConfig(format="skill"))
+        assert config.output.format == "skill"
 
     def test_cache_shorthand_syntax(self) -> None:
         """Accept 'cache: never' as shorthand for 'cache: {policy: never}'."""
@@ -102,15 +167,19 @@ class TestColinConfig:
 class TestFrontmatter:
     def test_defaults(self) -> None:
         fm = Frontmatter()
-        assert fm.colin.output == "markdown"
+        assert fm.colin.output.format == "markdown"
+        assert fm.colin.output.path is None
+        assert fm.colin.output.publish is None
+        assert fm.colin.cache.policy == "auto"
         assert fm.metadata == {}
 
     def test_with_metadata(self) -> None:
         fm = Frontmatter(
-            colin=ColinConfig(output="skill"),
+            colin=ColinConfig(output=OutputConfig(format="skill")),
             metadata={"name": "test", "description": "A test document"},
         )
-        assert fm.colin.output == "skill"
+        assert fm.colin.output.format == "skill"
+        assert fm.colin.output.path is None
         assert fm.metadata["name"] == "test"
 
 

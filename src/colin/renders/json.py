@@ -9,7 +9,7 @@ from colin.renders.base import Renderer, RenderResult
 from colin.renders.markdown_parser import parse_markdown_to_structure
 
 if TYPE_CHECKING:
-    from colin.models import Frontmatter
+    from colin.models import OutputConfig
 
 
 class JSONRenderer(Renderer):
@@ -32,14 +32,14 @@ class JSONRenderer(Renderer):
         self,
         content: str,
         uri: str,
-        frontmatter: Frontmatter | None = None,
+        output_config: OutputConfig | None = None,
     ) -> RenderResult:
         """Transform markdown content to JSON.
 
         Args:
             content: Raw template output (markdown-structured content).
             uri: Document URI for filename generation.
-            frontmatter: Document frontmatter (unused currently).
+            output_config: Output configuration (format, path, publish).
 
         Returns:
             RenderResult with JSON content.
@@ -55,6 +55,6 @@ class JSONRenderer(Renderer):
         json_content = json.dumps(structure, indent=2, ensure_ascii=False)
 
         return RenderResult(
-            filename=self._get_output_filename(uri),
+            filename=self._get_output_filename(uri, output_config),
             content=json_content,
         )

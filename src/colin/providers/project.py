@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class ProjectResource(Resource):
     """Resource returned by ProjectProvider.
 
-    Path properties error on private files since they aren't published to output/.
+    Path properties error on private (unpublished) files since they aren't in output/.
     """
 
     def __init__(
@@ -29,7 +29,7 @@ class ProjectResource(Resource):
         ref: Ref,
         relative_path: str,
         output_path: Path,
-        is_private: bool = False,
+        publish: bool = True,
         name: str | None = None,
         description: str | None = None,
         output_hash: str | None = None,
@@ -43,7 +43,7 @@ class ProjectResource(Resource):
             ref: The Ref for this resource.
             relative_path: Relative path within project (e.g., "greeting.md").
             output_path: Absolute path to output directory.
-            is_private: Whether this resource is private.
+            publish: Whether this resource is published to output/.
             name: Resource name (defaults to filename).
             description: Resource description.
             output_hash: Hash of compiled output (used as version).
@@ -53,7 +53,7 @@ class ProjectResource(Resource):
         super().__init__(content, ref)
         self._relative_path = Path(relative_path)
         self._output_path = output_path
-        self._is_private = is_private
+        self._publish = publish
         self.name = name or self._relative_path.name
         self.description = description
         self._output_hash = output_hash
@@ -63,8 +63,8 @@ class ProjectResource(Resource):
 
     @property
     def path(self) -> Path:
-        """Absolute path in output/. Errors on private files."""
-        if self._is_private:
+        """Absolute path in output/. Errors on private (unpublished) files."""
+        if not self._publish:
             raise ValueError(
                 f"Cannot get path for private file '{self._relative_path}'. "
                 "Private files are not published to output/. Use .content instead."
@@ -73,8 +73,8 @@ class ProjectResource(Resource):
 
     @property
     def relative_path(self) -> Path:
-        """Relative path within output/. Errors on private files."""
-        if self._is_private:
+        """Relative path within output/. Errors on private (unpublished) files."""
+        if not self._publish:
             raise ValueError(
                 f"Cannot get relative_path for private file '{self._relative_path}'. "
                 "Private files are not published to output/. Use .content instead."
@@ -169,7 +169,7 @@ class ProjectProvider(Provider):
 
         # Get metadata from manifest
         output_hash = self._get_output_hash(path)
-        is_private = self._is_private(path)
+        publish = self._should_publish(path)
         sections = self._get_sections(path)
         output_format = self._get_output_format(path)
 
@@ -185,7 +185,7 @@ class ProjectProvider(Provider):
             ref=ref,
             relative_path=path,
             output_path=self.output_path or self.base_path,
-            is_private=is_private,
+            publish=publish,
             name=path.split("/")[-1],
             output_hash=output_hash,
             output_format=output_format,
@@ -239,18 +239,18 @@ class ProjectProvider(Provider):
             return None
         return doc_meta.output_hash
 
-    def _is_private(self, path: str) -> bool:
-        """Check if a path is private using manifest (authoritative source).
+    def _should_publish(self, path: str) -> bool:
+        """Check if a path should be published using manifest (authoritative source).
 
         The manifest is populated during compilation with the authoritative
-        privacy status. If the manifest or document is missing, assume public.
+        publish status. If the manifest or document is missing, assume published.
         """
         if self.manifest is None:
-            return False
+            return True
         doc_meta = self.manifest.get_document_by_output_path(path)
         if doc_meta is None:
-            return False
-        return doc_meta.is_private
+            return True
+        return doc_meta.is_published
 
     def _get_sections(self, path: str) -> dict[str, str]:
         """Get sections from manifest for a document by output_path."""

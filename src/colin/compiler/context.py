@@ -116,6 +116,7 @@ class CompileContext:
         if compiled is not None:
             name_val = compiled.frontmatter.metadata.get("name")
             desc_val = compiled.frontmatter.metadata.get("description")
+            output_config = compiled.frontmatter.colin.output
 
             project_ref = Ref(
                 provider="project",
@@ -128,11 +129,11 @@ class CompileContext:
                 ref=project_ref,
                 relative_path=path,
                 output_path=self.project_provider.output_path or self.project_provider.base_path,
-                is_private=compiled.is_private,
+                publish=output_config.should_publish(compiled.uri),
                 name=name_val if isinstance(name_val, str) else path.split("/")[-1],
                 description=desc_val if isinstance(desc_val, str) else None,
                 output_hash=compiled.output_hash,
-                output_format=compiled.frontmatter.colin.output,
+                output_format=output_config.format,
                 sections=compiled.sections,
             )
             is_first = self.track(resource.ref(), resource.version)

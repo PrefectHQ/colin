@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pydantic_core
@@ -93,6 +94,73 @@ class CacheConfig(BaseModel):
     """Time-based expiration threshold (e.g., '1h', '1d', '7d')."""
 
 
+class OutputConfig(BaseModel):
+    """Configuration for document output behavior.
+
+    Controls how a document is transformed and where its artifact is written.
+
+    Attributes:
+        format: Output format name (e.g., 'markdown', 'json', 'yaml', 'skill').
+            Determines the renderer used to transform content.
+        path: Relative path for the output artifact (e.g., 'reports/summary.json').
+            Supports subdirectories. If None, uses source filename with format's extension.
+        publish: Whether to copy the artifact to output/ directory.
+            False means the file stays in .colin/compiled/ only (private document).
+            Default is None, which uses the _ prefix naming convention.
+    """
+
+    format: str = "markdown"
+    """Output format (e.g., 'markdown', 'json', 'yaml')."""
+
+    path: str | None = None
+    """Relative output path. None uses source filename with format's extension."""
+
+    publish: bool | None = None
+    """Copy to output/? None uses _ prefix convention (default: True if no _ prefix)."""
+
+    @field_validator("path")
+    @classmethod
+    def _validate_path(cls, v: str | None) -> str | None:
+        """Validate path is relative and doesn't escape output directory."""
+        if v is None:
+            return v
+
+        p = Path(v)
+
+        # Reject absolute paths
+        if p.is_absolute():
+            raise ValueError(f"output.path must be relative, got absolute path: {v}")
+
+        # Reject paths that escape via ..
+        if ".." in p.parts:
+            raise ValueError(f"output.path cannot contain '..': {v}")
+
+        return v
+
+    def should_publish(self, uri: str) -> bool:
+        """Determine if document should be published to output/.
+
+        Resolution order:
+        1. Explicit publish value if set
+        2. Naming convention: any path segment starting with _ means private
+
+        Args:
+            uri: Document URI (e.g., 'project://path/to/file.md').
+                The path part must be relative to models directory.
+
+        Returns:
+            True if document should be published to output/.
+        """
+        # Explicit value takes precedence
+        if self.publish is not None:
+            return self.publish
+
+        # Naming convention: any _ segment marks as private (not published)
+        path_part = uri.split("://", 1)[1] if "://" in uri else uri
+        relative = Path(path_part)
+        return not any(part.startswith("_") for part in relative.parts)
+
+
 class LLMCall(BaseModel):
     """Record of a single LLM invocation."""
 
@@ -140,17 +208,14 @@ class CacheEntry(BaseModel):
 class ColinConfig(BaseModel):
     """Colin-specific configuration from the colin: block in frontmatter."""
 
-    output: str = "markdown"
-    """Output format (e.g., 'markdown', 'skill')."""
+    output: OutputConfig = Field(default_factory=OutputConfig)
+    """Output configuration (format, path, publish)."""
 
     cache: CacheConfig = Field(default_factory=CacheConfig)
     """Cache configuration (policy and expiration). Accepts shorthand: 'auto', 'always', 'never'."""
 
     storage: str | None = None
     """Storage backend (future feature)."""
-
-    private: bool | None = None
-    """Override private detection. None uses naming convention (_ prefix)."""
 
     depends_on: list[str] = Field(default_factory=list)
     """Explicit dependency hints for compilation ordering.
@@ -215,8 +280,8 @@ class DocumentMeta(BaseModel):
     output_path: str | None = None
     """Relative output filename after rendering (e.g., 'greeting.md' or 'greeting.json')."""
 
-    is_private: bool = False
-    """Whether this document is private (not published to output/)."""
+    is_published: bool = True
+    """Whether this document is published to output/. False = private document."""
 
     compiled_at: datetime | None = None
     """When this document was last compiled."""
@@ -355,9 +420,6 @@ class CompiledDocument(BaseModel):
 
     output_path: str
     """Output filename (e.g., 'greeting.md' or 'config.json'). Set during compilation."""
-
-    is_private: bool = False
-    """Whether this document is private (not published to output/)."""
 
     refs: list[Ref] = Field(default_factory=list)
     """Refs that were tracked during compilation."""
