@@ -124,12 +124,13 @@ Sections adapt to your output format automatically:
 - **Markdown output**: Returns raw string content
 - **JSON/YAML output**: Parses markdown structure into data (headers become keys, lists become arrays)
 
-For a document configured with `colin.output: json`:
+For a document configured with JSON output:
 
 ```jinja models/config.json.md
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 {% section database %}

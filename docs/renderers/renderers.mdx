@@ -16,12 +16,13 @@ Colin includes three built-in renderers:
 
 ## Configuration
 
-Specify the output format in document frontmatter using the `output` field:
+Specify the output format in document frontmatter:
 
 ```yaml
 ---
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## name
@@ -34,6 +35,17 @@ John Doe
 ```
 
 This produces `document.json` with content `{"name": "John Doe", "age": 30}`.
+
+You can also specify a custom output path:
+
+```yaml
+colin:
+  output:
+    format: json
+    path: config/user.json  # writes to output/config/user.json
+```
+
+See [Document Settings](/projects/documents#output-configuration) for full output configuration options.
 
 ## How Renderers Work
 

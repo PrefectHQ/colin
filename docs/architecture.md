@@ -129,7 +129,7 @@ ref(colin.s3.prod.get("config.json"))           # Provider resource (no ordering
     └─ Returns the S3Resource unchanged
 ```
 
-**Output path resolution**: Refs are matched to source documents via the manifest's output_path index. When you `ref("config.json")`, Colin finds the document whose `output_path == "config.json"` (source might be `config.md` with `colin.output: json`).
+**Output path resolution**: Refs are matched to source documents via the manifest's output_path index. When you `ref("config.json")`, Colin finds the document whose `output_path == "config.json"` (source might be `config.md` with `colin.output.format: json`).
 
 Provider functions like `s3.get()` return Resource objects. Wrapping in `ref()` registers the dependency for staleness tracking. Without `ref()`, the resource is fetched but changes won't trigger recompilation.
 
