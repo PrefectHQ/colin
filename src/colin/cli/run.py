@@ -4,12 +4,11 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import Annotated, cast
 
 import cyclopts
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
-from rich.prompt import Prompt
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
@@ -19,9 +18,6 @@ from colin import api
 from colin.api.compile import CompileResult
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
-
-if TYPE_CHECKING:
-    from colin.api.project import ProjectConfig
 
 console = Console()
 err_console = Console(stderr=True)
@@ -105,44 +101,6 @@ def render_state(state: CompilationState) -> RenderableType:
         trees.append(doc_tree)
 
     return Group(*trees)
-
-
-def prompt_for_missing_vars(
-    config: "ProjectConfig",
-    vars_dict: dict[str, str] | None,
-    interactive: bool = True,
-) -> dict[str, str]:
-    """Prompt for variables that have prompt text but no value.
-
-    Args:
-        config: Project configuration with variable definitions.
-        vars_dict: CLI-provided variable values.
-        interactive: Whether interactive prompting is allowed.
-
-    Returns:
-        Updated variables dict with prompted values.
-    """
-    result = dict(vars_dict) if vars_dict else {}
-
-    # Collect variables that need prompting
-    to_prompt: list[tuple[str, str, str | None]] = []  # (name, prompt_text, default)
-    for name, var_config in config.vars.items():
-        if name in result or os.environ.get(f"COLIN_VAR_{name.upper()}"):
-            continue
-        if interactive and var_config.prompt:
-            default = str(var_config.default) if var_config.default is not None else None
-            to_prompt.append((name, var_config.prompt, default))
-
-    if to_prompt:
-        console.print()
-        console.print("[dim]Variables:[/]")
-        for name, prompt_text, default in to_prompt:
-            value = Prompt.ask(f"  [bold]{prompt_text}[/]", default=default)
-            if value:
-                result[name] = value
-        console.print()
-
-    return result
 
 
 def print_project_info(project_file: Path, project_name: str, output_dir: Path) -> None:
@@ -233,7 +191,6 @@ async def run(
     ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
     dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
-    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
     var: Annotated[list[str], cyclopts.Parameter(name=["--var"])] = [],
 ) -> None:
     """Compile and run all models.
@@ -245,7 +202,6 @@ async def run(
         ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
         dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
-        no_interactive: Disable interactive prompts (for CI/automation).
         var: Variable overrides in key=value format (can be repeated).
     """
     # Parse --var key=value pairs into dict
@@ -273,16 +229,6 @@ async def run(
         config = load_project(project_file)
         project_name = config.name
         output_dir = output or config.output_path
-
-        # Prompt for missing variables (if interactive and prompts configured)
-        interactive = (
-            not no_interactive and not os.environ.get("COLIN_NO_INTERACTIVE") and sys.stdin.isatty()
-        )
-        vars_dict = prompt_for_missing_vars(
-            config,
-            vars_dict,
-            interactive=interactive,
-        )
 
         # Handle dry run
         if dry_run:
