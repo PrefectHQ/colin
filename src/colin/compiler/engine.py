@@ -61,6 +61,7 @@ class CompileEngine:
         artifact_storage: Storage,
         state: CompilationState | None = None,
         force: bool = False,
+        ephemeral: bool = False,
         vars: dict[str, str] | None = None,
     ) -> None:
         """Initialize the compile engine.
@@ -70,11 +71,13 @@ class CompileEngine:
             artifact_storage: Storage for compiled outputs.
             state: Optional compilation state for progress tracking.
             force: Force recompile (ignore existing manifest).
+            ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
             vars: CLI-provided variable overrides (key=value parsed to dict).
         """
         self.config = config
         self.artifact_storage = artifact_storage
         self.state = state
+        self.ephemeral = ephemeral
         self.graph = DependencyGraph()
         # Load manifest from config path (or empty if force/not exists)
         self.manifest = Manifest() if force else self._load_manifest()
@@ -364,7 +367,7 @@ class CompileEngine:
         self.manifest.compiled_at = datetime.now(timezone.utc)
 
         # Publish public outputs to output/
-        await self._publish_outputs()
+        await self._publish_outputs(compiled_outputs=compiled_outputs)
 
         return compiled
 
@@ -764,10 +767,15 @@ class CompileEngine:
 
         Content is already rendered during compilation. Only writes if
         the output hash differs from existing file or artifact is missing.
+        Skips writing in ephemeral mode.
 
         Args:
             doc: The compiled document (must have output_path and output set).
         """
+        # Skip writes in ephemeral mode
+        if self.ephemeral:
+            return
+
         # Content-addressed: only write if hash differs or artifact missing
         existing_meta = self.manifest.get_document(doc.uri)
         artifact_path = self.config.build_path / "compiled" / doc.output_path
@@ -856,13 +864,20 @@ class CompileEngine:
         )
         self.manifest.set_document(doc.uri, meta)
 
-    async def _publish_outputs(self, *, clean_output: bool = True) -> None:
+    async def _publish_outputs(
+        self,
+        *,
+        clean_output: bool = True,
+        compiled_outputs: dict[str, CompiledDocument] | None = None,
+    ) -> None:
         """Publish public outputs from .colin/compiled/ to output/.
 
         Uses manifest metadata to copy files without re-rendering.
+        In ephemeral mode, uses compiled_outputs dict when files aren't on disk.
 
         Args:
             clean_output: If True, remove output/ before publishing.
+            compiled_outputs: In-memory compiled docs (used as fallback in ephemeral mode).
         """
         output_path = self.config.output_path
 
@@ -883,7 +898,10 @@ class CompileEngine:
 
             src = build_compiled / doc_meta.output_path
             dst = output_path / doc_meta.output_path
+            dst.parent.mkdir(parents=True, exist_ok=True)
 
             if src.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
+            elif compiled_outputs and doc_meta.output_path in compiled_outputs:
+                # Ephemeral mode: write directly from in-memory compiled output
+                dst.write_text(compiled_outputs[doc_meta.output_path].output, encoding="utf-8")
