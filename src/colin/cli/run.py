@@ -1,7 +1,6 @@
 """Run, init, and clean commands."""
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from typing import Annotated, cast
@@ -425,14 +424,12 @@ def clean(
     project: Path = Path("."),
     *,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
-    no_interactive: Annotated[bool, cyclopts.Parameter(name=["--no-interactive"])] = False,
 ) -> None:
     """Remove output directory (compiled outputs and manifest).
 
     Args:
         project: Project directory (default: current directory).
         yes: Skip confirmation prompt.
-        no_interactive: Disable interactive prompts (for CI/automation).
     """
     status_info = api.get_project_status(project)
     project_file = status_info["project_file"]
@@ -460,11 +457,7 @@ def clean(
 
     # Show what will be removed
     if not yes:
-        # Check if we can prompt
-        interactive = (
-            not no_interactive and not os.environ.get("COLIN_NO_INTERACTIVE") and sys.stdin.isatty()
-        )
-        if not interactive:
+        if not sys.stdin.isatty():
             err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
             sys.exit(1)
 
