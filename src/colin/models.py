@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pydantic_core
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 # Re-export duration utilities for backwards compatibility
 from colin.utilities.temporal import (  # noqa: F401
@@ -306,6 +306,17 @@ class DocumentMeta(BaseModel):
 
     config_hash: str | None = None
     """Hash of colin.toml when this document was compiled."""
+
+    model_config = {"extra": "ignore"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_is_private(cls, data: Any) -> Any:
+        """Migrate old is_private field to is_published."""
+        if isinstance(data, dict) and "is_private" in data:
+            # Old manifest format: is_private -> is_published (inverted)
+            data["is_published"] = not data.pop("is_private")
+        return data
 
 
 class Manifest(BaseModel):

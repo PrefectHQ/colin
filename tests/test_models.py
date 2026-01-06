@@ -197,6 +197,29 @@ class TestDocumentMeta:
         assert meta.ref_versions == {}
         assert meta.llm_calls == {}
 
+    def test_is_published_defaults_true(self) -> None:
+        meta = DocumentMeta(uri="test", source_hash="abc")
+        assert meta.is_published is True
+
+    def test_migrate_is_private_true(self) -> None:
+        """Old manifests with is_private=True should become is_published=False."""
+        data = {"uri": "test", "source_hash": "abc", "is_private": True}
+        meta = DocumentMeta.model_validate(data)
+        assert meta.is_published is False
+
+    def test_migrate_is_private_false(self) -> None:
+        """Old manifests with is_private=False should become is_published=True."""
+        data = {"uri": "test", "source_hash": "abc", "is_private": False}
+        meta = DocumentMeta.model_validate(data)
+        assert meta.is_published is True
+
+    def test_ignores_unknown_fields(self) -> None:
+        """DocumentMeta should ignore unknown fields from old manifests."""
+        data = {"uri": "test", "source_hash": "abc", "unknown_field": "value"}
+        meta = DocumentMeta.model_validate(data)
+        assert meta.uri == "test"
+        assert not hasattr(meta, "unknown_field")
+
 
 class TestManifest:
     def test_empty_manifest(self) -> None:
