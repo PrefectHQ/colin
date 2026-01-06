@@ -69,13 +69,9 @@ output = "output"
 
     async def test_ephemeral_still_writes_output(self, tmp_path: Path) -> None:
         """Ephemeral mode should still write to output/ directory."""
-        # Set up directories
+        # Set up directories - no .colin/ needed
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        build_dir = tmp_path / ".colin"
-        build_dir.mkdir()
-        compiled_dir = build_dir / "compiled"
-        compiled_dir.mkdir()
         output_dir = tmp_path / "output"
 
         # Create a simple model
@@ -99,13 +95,9 @@ output = "output"
 
     async def test_ephemeral_refs_work_in_memory(self, tmp_path: Path) -> None:
         """Refs should work in ephemeral mode using in-memory compiled outputs."""
-        # Set up directories
+        # Set up directories - no .colin/ needed
         source_dir = tmp_path / "models"
         source_dir.mkdir()
-        build_dir = tmp_path / ".colin"
-        build_dir.mkdir()
-        compiled_dir = build_dir / "compiled"
-        compiled_dir.mkdir()
         output_dir = tmp_path / "output"
 
         # Create models with ref
@@ -231,3 +223,32 @@ output = "output"
         # Output should still exist
         assert output_dir.exists()
         assert (output_dir / "test.md").exists()
+
+    async def test_ephemeral_private_files_not_published(self, tmp_path: Path) -> None:
+        """Private files (underscore-prefixed) should not be published in ephemeral mode."""
+        # Set up directories - no .colin/ needed
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output"
+
+        # Create public and private models
+        (source_dir / "public.md").write_text("Public content")
+        (source_dir / "_private.md").write_text("Private content")
+
+        # Create colin.toml
+        (tmp_path / "colin.toml").write_text("""
+[project]
+name = "test"
+models = "models"
+output = "output"
+""")
+
+        # Compile in ephemeral mode
+        await compile_project(tmp_path, ephemeral=True)
+
+        # Public file should be in output
+        assert (output_dir / "public.md").exists()
+        assert (output_dir / "public.md").read_text() == "Public content"
+
+        # Private file should NOT be in output
+        assert not (output_dir / "_private.md").exists()
