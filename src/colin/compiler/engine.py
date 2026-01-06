@@ -92,8 +92,10 @@ class CompileEngine:
             manifest=self.manifest,
         )
 
-        # Compute config hash for staleness tracking
+        # Compute config hash for staleness tracking and store on manifest
         self._config_hash = self._compute_config_hash()
+        self.manifest.config_hash = self._config_hash
+        self.manifest.project_name = config.name
 
     def _load_manifest(self) -> Manifest:
         """Load manifest from config path if it exists."""
@@ -109,19 +111,6 @@ class CompileEngine:
             content = config_path.read_bytes()
             return hashlib.sha256(content).hexdigest()[:16]
         return ""
-
-    def get_stale_config_count(self) -> int:
-        """Count documents compiled with a different config hash.
-
-        Returns:
-            Number of documents in manifest with a config_hash that differs
-            from the current colin.toml hash.
-        """
-        count = 0
-        for doc_meta in self.manifest.documents.values():
-            if doc_meta.config_hash is not None and doc_meta.config_hash != self._config_hash:
-                count += 1
-        return count
 
     def _is_private(self, doc: ColinDocument) -> bool:
         """Check if a document is private (not published to output/).

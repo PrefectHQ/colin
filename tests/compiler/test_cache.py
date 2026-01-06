@@ -1347,6 +1347,15 @@ class TestIncrementalRefCompilation:
         assert "Updated from B: From A: Base content" in result2[0].output
 
 
+def _stale_config_count(manifest: Manifest) -> int:
+    """Helper to count documents with stale config hash."""
+    return sum(
+        1
+        for doc in manifest.documents.values()
+        if doc.config_hash is not None and doc.config_hash != manifest.config_hash
+    )
+
+
 class TestConfigHashStaleness:
     """Tests for config hash tracking to detect colin.toml changes."""
 
@@ -1420,7 +1429,7 @@ class TestConfigHashStaleness:
         )
 
         # No stale config documents
-        assert engine2.get_stale_config_count() == 0
+        assert _stale_config_count(engine2.manifest) == 0
 
     async def test_stale_config_count_after_config_change(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
@@ -1448,7 +1457,7 @@ class TestConfigHashStaleness:
         )
 
         # Both documents are stale
-        assert engine2.get_stale_config_count() == 2
+        assert _stale_config_count(engine2.manifest) == 2
 
     async def test_stale_config_clears_after_recompile(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
@@ -1474,7 +1483,7 @@ class TestConfigHashStaleness:
             artifact_storage=FileStorage(base_path=compiled_dir),
         )
 
-        assert engine2.get_stale_config_count() == 1
+        assert _stale_config_count(engine2.manifest) == 1
 
         # Modify source to trigger recompile
         (source_dir / "test.md").write_text("---\nname: Test\n---\nNew content")
@@ -1482,7 +1491,7 @@ class TestConfigHashStaleness:
         await engine2.compile_all()
 
         # After recompile, document has new config hash
-        assert engine2.get_stale_config_count() == 0
+        assert _stale_config_count(engine2.manifest) == 0
 
     async def test_stale_config_ignores_none_hash(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
@@ -1499,4 +1508,4 @@ class TestConfigHashStaleness:
         engine.manifest.set_document("project://old.md", old_meta)
 
         # Should not count as stale (None != current_hash, but we skip None)
-        assert engine.get_stale_config_count() == 0
+        assert _stale_config_count(engine.manifest) == 0

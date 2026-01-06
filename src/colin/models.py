@@ -251,6 +251,12 @@ class Manifest(BaseModel):
     version: str = "1"
     """Manifest format version."""
 
+    project_name: str | None = None
+    """Project name from colin.toml."""
+
+    config_hash: str | None = None
+    """Hash of colin.toml at last compilation."""
+
     compiled_at: datetime | None = None
     """When the last compilation completed."""
 

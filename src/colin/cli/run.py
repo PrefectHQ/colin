@@ -246,9 +246,14 @@ async def run(
                 vars=vars_dict,
             )
             # Warn about stale config even in quiet mode
-            if result.stale_config_count > 0:
+            stale = sum(
+                1
+                for doc in result.manifest.documents.values()
+                if doc.config_hash and doc.config_hash != result.manifest.config_hash
+            )
+            if stale > 0:
                 err_console.print(
-                    f"[yellow]Warning:[/] {result.stale_config_count} document(s) "
+                    f"[yellow]Warning:[/] {stale} document(s) "
                     "compiled with old colin.toml. Run with --no-cache to recompile."
                 )
             return
@@ -281,10 +286,15 @@ async def run(
 
         # Get the result and check for stale config warning
         result = await task
-        if result.stale_config_count > 0:
+        stale = sum(
+            1
+            for doc in result.manifest.documents.values()
+            if doc.config_hash and doc.config_hash != result.manifest.config_hash
+        )
+        if stale > 0:
             console.print()
             console.print(
-                f"[yellow]Warning:[/] {result.stale_config_count} document(s) "
+                f"[yellow]Warning:[/] {stale} document(s) "
                 "compiled with old colin.toml. Run with --no-cache to recompile."
             )
 
