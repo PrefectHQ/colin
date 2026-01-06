@@ -59,6 +59,7 @@ async def test_provider_llm_model_config(
     import tomli_w
 
     from colin.api.project import load_project
+    from colin.cli.run import init
     from colin.compiler.cache import set_compile_context
     from colin.compiler.context import CompileContext
     from colin.models import Manifest
@@ -67,7 +68,7 @@ async def test_provider_llm_model_config(
     from colin.providers.project import ProjectProvider
 
     # Initialize project
-    cli("init", str(tmp_path))
+    init(project=tmp_path)
     monkeypatch.chdir(tmp_path)
 
     # Add [[providers.llm]] model config to colin.toml

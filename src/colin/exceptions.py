@@ -23,11 +23,21 @@ class RefNotCompiledError(ColinError):
             target: The ref target that wasn't compiled.
         """
         self.target = target
-        super().__init__(
-            f"ref('{target}') failed - document not compiled.\n"
-            f"Add 'depends_on: [{target}]' to ensure compilation order,\n"
-            f"or use ref('{target}', allow_stale=True) to accept stale/missing data."
+
+        # Check if target appears to have an extension
+        has_extension = "." in target.split("/")[-1]
+
+        lines = [f"ref('{target}') failed - document not compiled."]
+        if not has_extension:
+            lines.append(f"Ensure '{target}' includes the file extension (e.g., '{target}.md').")
+        lines.extend(
+            [
+                "Colin can only auto-detect dependencies for static ref targets.",
+                f"For dynamic refs, add 'depends_on: [{target}]' to frontmatter,",
+                f"or use ref('{target}', allow_stale=True) to accept stale/missing data.",
+            ]
         )
+        super().__init__("\n".join(lines))
 
 
 class RefError(ColinError):
