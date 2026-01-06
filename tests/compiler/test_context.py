@@ -62,6 +62,7 @@ class TestCompileContext:
         )
 
         result = await context.ref("doc.md")
+        assert result is not None
 
         # Returns Resource (ProjectResource) with content
         assert result.content == "Compiled content"
