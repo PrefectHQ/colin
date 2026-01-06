@@ -1345,3 +1345,158 @@ class TestIncrementalRefCompilation:
         assert len(result2) == 1
         assert result2[0].uri == "project://c.md"
         assert "Updated from B: From A: Base content" in result2[0].output
+
+
+class TestConfigHashStaleness:
+    """Tests for config hash tracking to detect colin.toml changes."""
+
+    @pytest.fixture
+    def engine_setup(
+        self, tmp_path: Path, mock_agent: MagicMock
+    ) -> tuple[CompileEngine, Path, Path, Path]:
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
+
+        # Create colin.toml
+        (tmp_path / "colin.toml").write_text('[project]\nname = "test"')
+
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=build_dir / "manifest.json",
+        )
+        artifact_storage = FileStorage(base_path=compiled_dir)
+
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+        )
+        return engine, source_dir, compiled_dir, tmp_path
+
+    async def test_config_hash_stored_on_compile(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """Config hash is stored in document metadata after compilation."""
+        engine, source_dir, _, tmp_path = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+
+        result = await engine.compile_all()
+        assert len(result) == 1
+
+        # Check config_hash is stored
+        doc_meta = engine.manifest.get_document("project://test.md")
+        assert doc_meta is not None
+        assert doc_meta.config_hash is not None
+        assert len(doc_meta.config_hash) == 16  # SHA256[:16]
+
+    async def test_stale_config_count_zero_when_fresh(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """No stale documents when config hasn't changed."""
+        engine, source_dir, compiled_dir, tmp_path = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+
+        await engine.compile_all()
+
+        # Save manifest
+        engine.config.manifest_path.write_text(
+            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        )
+
+        # Create new engine (simulating new run)
+        engine2 = CompileEngine(
+            config=engine.config,
+            artifact_storage=FileStorage(base_path=compiled_dir),
+        )
+
+        # No stale config documents
+        assert engine2.get_stale_config_count() == 0
+
+    async def test_stale_config_count_after_config_change(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """Documents become stale when colin.toml changes."""
+        engine, source_dir, compiled_dir, tmp_path = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+        (source_dir / "other.md").write_text("---\nname: Other\n---\nMore content")
+
+        await engine.compile_all()
+
+        # Save manifest
+        engine.config.manifest_path.write_text(
+            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        )
+
+        # Change colin.toml
+        (tmp_path / "colin.toml").write_text('[project]\nname = "changed"')
+
+        # Create new engine
+        engine2 = CompileEngine(
+            config=engine.config,
+            artifact_storage=FileStorage(base_path=compiled_dir),
+        )
+
+        # Both documents are stale
+        assert engine2.get_stale_config_count() == 2
+
+    async def test_stale_config_clears_after_recompile(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """Recompiled documents get updated config hash."""
+        engine, source_dir, compiled_dir, tmp_path = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+
+        await engine.compile_all()
+
+        # Save manifest
+        engine.config.manifest_path.write_text(
+            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        )
+
+        # Change colin.toml
+        (tmp_path / "colin.toml").write_text('[project]\nname = "changed"')
+
+        # Create new engine
+        engine2 = CompileEngine(
+            config=engine.config,
+            artifact_storage=FileStorage(base_path=compiled_dir),
+        )
+
+        assert engine2.get_stale_config_count() == 1
+
+        # Modify source to trigger recompile
+        (source_dir / "test.md").write_text("---\nname: Test\n---\nNew content")
+
+        await engine2.compile_all()
+
+        # After recompile, document has new config hash
+        assert engine2.get_stale_config_count() == 0
+
+    async def test_stale_config_ignores_none_hash(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        """Documents without config_hash (old manifests) are not counted as stale."""
+        engine, source_dir, _, tmp_path = engine_setup
+
+        # Manually create manifest with old-style entry (no config_hash)
+        old_meta = DocumentMeta(
+            uri="project://old.md",
+            source_hash="abc123",
+            compiled_at=datetime.now(timezone.utc),
+        )
+        engine.manifest.set_document("project://old.md", old_meta)
+
+        # Should not count as stale (None != current_hash, but we skip None)
+        assert engine.get_stale_config_count() == 0

@@ -239,6 +239,9 @@ class DocumentMeta(BaseModel):
     sections: dict[str, str] = Field(default_factory=dict)
     """Named sections extracted from the document (section_name -> raw_content)."""
 
+    config_hash: str | None = None
+    """Hash of colin.toml when this document was compiled."""
+
 
 class Manifest(BaseModel):
     """Root manifest structure, persisted as JSON."""
