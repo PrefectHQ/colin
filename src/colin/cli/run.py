@@ -277,7 +277,7 @@ async def run(
             stale_files = get_stale_files(config)
             if stale_files:
                 err_console.print(
-                    f"[yellow]Warning:[/] {len(stale_files)} stale file(s) in output/. "
+                    f"[yellow]Warning:[/] {len(stale_files)} stale file(s). "
                     "Run `colin clean` to remove."
                 )
             return
@@ -313,12 +313,12 @@ async def run(
             if stale == 0:
                 console.print()  # Add spacing if no stale config warning
             console.print(
-                f"[yellow]Warning:[/] {len(stale_files)} stale file(s) in output/. "
+                f"[yellow]Warning:[/] {len(stale_files)} stale file(s). "
                 "Run `colin clean` to remove."
             )
             for path in stale_files[:3]:
                 try:
-                    rel = path.relative_to(output_dir)
+                    rel = path.relative_to(config.project_root)
                     console.print(f"  [dim]{rel}[/]")
                 except ValueError:
                     console.print(f"  [dim]{path}[/]")
