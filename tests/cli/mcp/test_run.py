@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastmcp.mcp_config import StdioMCPServer
 
-from colin import api
+from colin.api import mcp
 from tests.cli.conftest import strip_ansi
 
 
@@ -20,11 +20,11 @@ def greeter_server(test_project: Path):
         args=["--with", "fastmcp", "fastmcp", "run", str(mcp_server_path)],
         env={"FASTMCP_SHOW_BANNER": "false"},
     )
-    api.mcp.add_server(project_dir=test_project, name="greeter", server=server)
+    mcp.add_server(project_dir=test_project, name="greeter", server=server)
 
     yield test_project
 
-    api.mcp.remove_server(project_dir=test_project, name="greeter")
+    mcp.remove_server(project_dir=test_project, name="greeter")
 
 
 def test_mcp_resource_direct(greeter_server: Path, output_dir: Path, cli: Callable[..., None]):
