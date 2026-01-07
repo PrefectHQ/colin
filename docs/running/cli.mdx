@@ -70,11 +70,13 @@ colin run --output ./out  # Override output directory
 
 ## clean
 
-The `colin clean` command removes compiled outputs:
+The `colin clean` command removes stale files—compiled artifacts no longer tracked by the manifest:
 
 ```bash
 colin clean
 ```
+
+Stale files appear when you delete or rename model files. Colin detects them in both `output/` and `.colin/compiled/`.
 
 By default, clean prompts for confirmation:
 
@@ -83,15 +85,14 @@ Config:  colin.toml
 Project: my-context
 Output:  output/
 
-Will remove:
-  output/manifest.json
-  output/compiled/company.md
-  output/compiled/products/overview.md
+Will remove stale files:
+  output/old-report.md
+  .colin/compiled/deleted-doc.md
 
 Continue? (y/N)
 ```
 
-Type `y` to proceed. The entire `output/` directory is deleted, including the manifest and all compiled documents.
+Type `y` to proceed. Only stale files are removed—your manifest, LLM call history, and tracked outputs remain intact.
 
 ### Skip Confirmation
 
@@ -101,7 +102,15 @@ Use `-y` or `--yes` to skip the confirmation prompt:
 colin clean -y
 ```
 
-After cleaning, the next `colin run` performs a full recompilation since no manifest exists.
+### When to Use
+
+Run `colin clean` after deleting or renaming model files to remove leftover outputs. Colin warns you about stale files after compilation:
+
+```
+Warning: 2 stale file(s) in output/. Run `colin clean` to remove.
+```
+
+For a fresh build without stale file cleanup, use `colin run --no-cache` instead—this recompiles everything from source.
 
 ## mcp
 

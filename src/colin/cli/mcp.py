@@ -12,7 +12,7 @@ from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
 from rich.console import Console
 from rich.table import Table
 
-from colin import api
+from colin.api import mcp
 
 console = Console()
 err_console = Console(stderr=True)
@@ -97,7 +97,7 @@ def add(
         )
 
     try:
-        api.mcp.add_server(project_dir=project, name=name, server=server)
+        mcp.add_server(project_dir=project, name=name, server=server)
         console.print(f"[green]Added:[/] {name}")
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
@@ -121,7 +121,7 @@ def remove(
         project: Project directory.
     """
     try:
-        api.mcp.remove_server(project_dir=project, name=name)
+        mcp.remove_server(project_dir=project, name=name)
         console.print(f"[green]Removed:[/] {name}")
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
@@ -143,7 +143,7 @@ def list_servers(
         project: Project directory.
     """
     try:
-        servers = api.mcp.list_servers(project_dir=project)
+        servers = mcp.list_servers(project_dir=project)
 
         if not servers:
             console.print("[dim]No MCP servers configured.[/]")
@@ -187,7 +187,7 @@ def test(
         project: Project directory.
     """
     try:
-        servers = api.mcp.list_servers(project_dir=project)
+        servers = mcp.list_servers(project_dir=project)
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")

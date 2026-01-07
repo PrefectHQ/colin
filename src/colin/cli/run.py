@@ -13,8 +13,8 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from colin import api
-from colin.api.compile import CompileResult
+from colin.api.compile import CompileResult, compile_project
+from colin.api.project import clean_project, get_project_status, get_stale_files
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
@@ -150,7 +150,7 @@ async def _compile_with_progress(
         vertical_overflow="ellipsis",
     ) as live:
         task = asyncio.create_task(
-            api.compile_project(
+            compile_project(
                 project_dir=project_dir,
                 output_dir=output_dir,
                 force=force,
@@ -233,7 +233,7 @@ async def run(
         if dry_run:
             dry_result = cast(
                 list[tuple[str, Path]],
-                await api.compile_project(
+                await compile_project(
                     project_dir=project,
                     output_dir=output,
                     force=no_cache,
@@ -252,7 +252,7 @@ async def run(
 
         if quiet:
             # No output at all, just run compilation
-            result = await api.compile_project(
+            result = await compile_project(
                 project_dir=project,
                 output_dir=output,
                 force=no_cache,
@@ -272,6 +272,13 @@ async def run(
                 err_console.print(
                     f"[yellow]Warning:[/] {stale} document(s) "
                     "compiled with old colin.toml. Run with --no-cache to recompile."
+                )
+            # Warn about stale output files
+            stale_files = get_stale_files(config)
+            if stale_files:
+                err_console.print(
+                    f"[yellow]Warning:[/] {len(stale_files)} stale file(s) in output/. "
+                    "Run `colin clean` to remove."
                 )
             return
 
@@ -299,6 +306,24 @@ async def run(
                 f"[yellow]Warning:[/] {stale} document(s) "
                 "compiled with old colin.toml. Run with --no-cache to recompile."
             )
+
+        # Warn about stale output files
+        stale_files = get_stale_files(config)
+        if stale_files:
+            if stale == 0:
+                console.print()  # Add spacing if no stale config warning
+            console.print(
+                f"[yellow]Warning:[/] {len(stale_files)} stale file(s) in output/. "
+                "Run `colin clean` to remove."
+            )
+            for path in stale_files[:3]:
+                try:
+                    rel = path.relative_to(output_dir)
+                    console.print(f"  [dim]{rel}[/]")
+                except ValueError:
+                    console.print(f"  [dim]{path}[/]")
+            if len(stale_files) > 3:
+                console.print(f"  [dim]... and {len(stale_files) - 3} more[/]")
 
     except MultipleCompilationErrors as e:
         err_console.print("\n[red bold]Compilation failed[/]\n")
@@ -437,46 +462,50 @@ def clean(
     *,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
 ) -> None:
-    """Remove output directory (compiled outputs and manifest).
+    """Remove stale files from output/ and .colin/compiled/.
+
+    Stale files are compiled artifacts no longer tracked by the manifest.
+    This cleans up leftovers from deleted or renamed documents.
 
     Args:
         project: Project directory (default: current directory).
         yes: Skip confirmation prompt.
     """
-    status_info = api.get_project_status(project)
+    status_info = get_project_status(project)
     project_file = status_info["project_file"]
-    output_dir = status_info["output_dir"]
+    output_dir: Path = status_info["output_dir"]
+    stale_files: list[Path] = status_info["stale_files"]
 
     if not project_file:
         err_console.print(f"[red]Error:[/] No colin.toml found in {project.resolve()}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
 
-    if not output_dir.exists():
+    if not stale_files:
         console.print("[dim]Nothing to clean.[/]")
         return
 
-    # Collect files for display
-    files_in_output: list[str] = []
     project_dir = project.resolve()
-    for path in output_dir.rglob("*"):
-        if path.is_file():
-            try:
-                rel = path.relative_to(project_dir)
-                files_in_output.append(str(rel))
-            except ValueError:
-                files_in_output.append(str(path))
 
-    # Show what will be removed
+    # Format file paths for display
+    def format_path(path: Path) -> str:
+        try:
+            return str(path.relative_to(project_dir))
+        except ValueError:
+            return str(path)
+
+    # Show what will be removed and prompt for confirmation
     if not yes:
         if not sys.stdin.isatty():
             err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
             sys.exit(1)
 
         print_project_info(project_file, status_info["project_name"], output_dir)
-        console.print("[bold]Will remove:[/]")
-        for rel in files_in_output:
-            console.print(f"  [yellow]{rel}[/]")
+        console.print("[bold]Will remove stale files:[/]")
+        for path in stale_files[:10]:
+            console.print(f"  [yellow]{format_path(path)}[/]")
+        if len(stale_files) > 10:
+            console.print(f"  [dim]... and {len(stale_files) - 10} more[/]")
         console.print()
         confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
         if confirm.lower() not in ("y", "yes"):
@@ -488,13 +517,11 @@ def clean(
         print_project_info(project_file, status_info["project_name"], output_dir)
 
     # Remove files
-    removed = api.clean_project(project)
+    removed = clean_project(status_info["config"])
 
     # Show what was removed
-    console.print("[bold]Removed:[/]")
-    for path in removed:
-        try:
-            rel = path.relative_to(project_dir)
-            console.print(f"  [dim]{rel}[/]")
-        except ValueError:
-            console.print(f"  [dim]{path}[/]")
+    console.print("[bold]Removed stale files:[/]")
+    for path in removed[:10]:
+        console.print(f"  [dim]{format_path(path)}[/]")
+    if len(removed) > 10:
+        console.print(f"  [dim]... and {len(removed) - 10} more[/]")
