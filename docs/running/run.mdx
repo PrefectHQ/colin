@@ -72,29 +72,6 @@ colin run --no-cache
 
 Use this when you want fresh LLM outputs regardless of whether inputs changed. This discards the manifest and starts from scratch, so all LLM calls execute again.
 
-### Dry Run
-
-The `--dry-run` flag shows what would compile without actually doing it:
-
-```bash
-colin run --dry-run
-```
-
-Output:
-
-```
-Config:  colin.toml
-Project: my-context
-Output:  output/
-
-Would run 3 documents:
-  context/company.md
-  context/products.md
-  skills/support-agent.md
-```
-
-This helps you understand what Colin will do before committing to potentially expensive LLM calls.
-
 ### Quiet Mode
 
 The `-q` or `--quiet` flag suppresses progress output:

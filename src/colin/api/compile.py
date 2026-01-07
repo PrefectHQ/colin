@@ -55,10 +55,9 @@ async def compile_project(
     output_dir: Path | None = None,
     force: bool = False,
     ephemeral: bool = False,
-    dry_run: bool = False,
     state: CompilationState | None = None,
     vars: dict[str, str] | None = None,
-) -> CompileResult | list[tuple[str, Path]]:
+) -> CompileResult:
     """Compile all documents in a project.
 
     Note: This function only writes/overwrites files, never deletes. Use
@@ -69,12 +68,11 @@ async def compile_project(
         output_dir: Override output directory (default: from colin.toml).
         force: Force recompile all documents.
         ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
-        dry_run: If True, return list of (uri, path) tuples instead of compiling.
         state: Optional compilation state for progress tracking.
         vars: CLI-provided variable overrides (key=value parsed to dict).
 
     Returns:
-        CompileResult with compiled documents and manifest, or list of (uri, path) if dry_run.
+        CompileResult with compiled documents and manifest.
 
     Raises:
         ProjectNotInitializedError: If no colin.toml found.
@@ -106,16 +104,6 @@ async def compile_project(
             providers=config.providers,
             vars=config.vars,
         )
-
-    # Handle dry run - discover models directly
-    if dry_run:
-        uris: list[tuple[str, Path]] = []
-        if config.model_path.exists():
-            for path in config.model_path.rglob("*.md"):
-                relative = path.relative_to(config.model_path)
-                uri = f"project://{relative}"
-                uris.append((uri, config.output_path / str(relative)))
-        return sorted(uris, key=lambda x: x[0])
 
     # Ensure .colin/compiled/ directory exists (skip in ephemeral mode)
     compiled_path = config.build_path / "compiled"

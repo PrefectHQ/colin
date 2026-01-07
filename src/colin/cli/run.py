@@ -3,7 +3,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated
 
 import cyclopts
 from rich.console import Console, Group, RenderableType
@@ -198,7 +198,6 @@ async def run(
     output: Annotated[Path | None, cyclopts.Parameter(name=["-o", "--output"])] = None,
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
     ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
-    dry_run: bool = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
     var: Annotated[list[str], cyclopts.Parameter(name=["--var"])] = [],
 ) -> None:
@@ -209,7 +208,6 @@ async def run(
         output: Override output directory (default: from colin.toml).
         no_cache: Ignore cached results and recompile all documents.
         ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
-        dry_run: Show what would be run without running.
         quiet: Hide progress display, show only final results.
         var: Variable overrides in key=value format (can be repeated).
     """
@@ -237,24 +235,6 @@ async def run(
         project_name = config.name
         output_dir = output or config.output_path
 
-        # Handle dry run
-        if dry_run:
-            dry_result = cast(
-                list[tuple[str, Path]],
-                await compile_project(
-                    project_dir=project,
-                    output_dir=output,
-                    force=no_cache,
-                    ephemeral=ephemeral,
-                    dry_run=True,
-                ),
-            )
-            print_project_info(project_file, project_name, output_dir)
-            console.print(f"[bold]Would run {len(dry_result)} documents:[/]")
-            for uri, _ in dry_result:
-                console.print(f"  {uri}")
-            return
-
         # Create state for progress tracking
         state = CompilationState()
 
@@ -265,7 +245,6 @@ async def run(
                 output_dir=output,
                 force=no_cache,
                 ephemeral=ephemeral,
-                dry_run=False,
                 state=state,
                 vars=vars_dict,
             )

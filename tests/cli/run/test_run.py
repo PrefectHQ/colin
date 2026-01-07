@@ -126,17 +126,6 @@ def test_run_warns_about_stale_files(
     assert "colin clean" in output
 
 
-def test_dry_run_shows_correct_uri(test_project: Path, capsys, cli: Callable[..., None]):
-    """colin run --dry-run shows URIs without double .md extension."""
-    cli("run", "--dry-run")
-
-    captured = capsys.readouterr()
-    output = strip_ansi(captured.out)
-    # Should show project://greeting.md, not project://greeting.md.md
-    assert "project://greeting.md.md" not in output
-    assert "project://greeting.md" in output
-
-
 async def test_provider_llm_model_config(
     tmp_path: Path, monkeypatch, mock_agent, cli: Callable[..., None]
 ):

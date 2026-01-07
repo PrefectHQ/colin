@@ -907,7 +907,6 @@ Compile all documents (or specific paths):
 colin compile                      # Compile everything that needs it
 colin compile context/eng-health   # Compile specific doc (and deps)
 colin compile --no-cache           # Ignore cache, recompile all
-colin compile --dry-run            # Show what would compile
 colin compile --parallel 4         # Limit parallelism
 ```
 
