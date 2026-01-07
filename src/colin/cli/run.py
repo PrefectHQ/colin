@@ -22,6 +22,11 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+def _plural(n: int, singular: str, plural: str) -> str:
+    """Return singular or plural form based on count."""
+    return singular if n == 1 else plural
+
+
 def _get_icon(op: OperationState) -> RenderableType:
     """Get display icon for an operation based on status and type."""
     if op.status == Status.FAILED:
@@ -273,12 +278,20 @@ async def run(
                     f"[yellow]Warning:[/] {stale} document(s) "
                     "compiled with old colin.toml. Run with --no-cache to recompile."
                 )
-            # Warn about stale output files
+            # Warn about stale output files (only output/, not cache)
             stale_files = get_stale_files(config)
-            if stale_files:
+            output_stale = [
+                p for p in stale_files if output_dir in p.parents or p.parent == output_dir
+            ]
+            if output_stale:
+                n = len(output_stale)
+                try:
+                    out_display = output_dir.relative_to(Path.cwd())
+                except ValueError:
+                    out_display = output_dir
                 err_console.print(
-                    f"[yellow]Warning:[/] {len(stale_files)} stale file(s). "
-                    "Run `colin clean` to remove."
+                    f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
+                    f"in {out_display}/. Run `colin clean` to remove."
                 )
             return
 
@@ -307,23 +320,29 @@ async def run(
                 "compiled with old colin.toml. Run with --no-cache to recompile."
             )
 
-        # Warn about stale output files
+        # Warn about stale output files (only output/, not cache)
         stale_files = get_stale_files(config)
-        if stale_files:
+        output_stale = [p for p in stale_files if output_dir in p.parents or p.parent == output_dir]
+        if output_stale:
             if stale == 0:
                 console.print()  # Add spacing if no stale config warning
+            n = len(output_stale)
+            try:
+                out_display = output_dir.relative_to(Path.cwd())
+            except ValueError:
+                out_display = output_dir
             console.print(
-                f"[yellow]Warning:[/] {len(stale_files)} stale file(s). "
-                "Run `colin clean` to remove."
+                f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
+                f"in {out_display}/. Run `colin clean` to remove."
             )
-            for path in stale_files[:3]:
+            for path in output_stale[:3]:
                 try:
-                    rel = path.relative_to(config.project_root)
-                    console.print(f"  [dim]{rel}[/]")
+                    rel = path.relative_to(output_dir)
+                    console.print(f"[yellow]![/] {rel}")
                 except ValueError:
-                    console.print(f"  [dim]{path}[/]")
-            if len(stale_files) > 3:
-                console.print(f"  [dim]... and {len(stale_files) - 3} more[/]")
+                    console.print(f"[yellow]![/] {path}")
+            if len(output_stale) > 3:
+                console.print(f"[dim]... and {len(output_stale) - 3} more[/]")
 
     except MultipleCompilationErrors as e:
         err_console.print("\n[red bold]Compilation failed[/]\n")
@@ -485,12 +504,16 @@ def clean(
         console.print("[dim]Nothing to clean.[/]")
         return
 
-    project_dir = project.resolve()
+    config = status_info["config"]
 
-    # Format file paths for display
-    def format_path(path: Path) -> str:
+    # Separate output files from cache artifacts
+    output_stale = [p for p in stale_files if output_dir in p.parents or p.parent == output_dir]
+    cache_stale = [p for p in stale_files if p not in output_stale]
+
+    # Format paths relative to output dir
+    def format_output_path(path: Path) -> str:
         try:
-            return str(path.relative_to(project_dir))
+            return str(path.relative_to(output_dir))
         except ValueError:
             return str(path)
 
@@ -501,11 +524,12 @@ def clean(
             sys.exit(1)
 
         print_project_info(project_file, status_info["project_name"], output_dir)
-        console.print("[bold]Will remove stale files:[/]")
-        for path in stale_files[:10]:
-            console.print(f"  [yellow]{format_path(path)}[/]")
-        if len(stale_files) > 10:
-            console.print(f"  [dim]... and {len(stale_files) - 10} more[/]")
+        console.print("[bold]Will remove:[/]")
+        for path in output_stale:
+            console.print(f"  [yellow]{format_output_path(path)}[/]")
+        if cache_stale:
+            n = len(cache_stale)
+            console.print(f"  [dim]+ {n} cached {_plural(n, 'artifact', 'artifacts')}[/]")
         console.print()
         confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
         if confirm.lower() not in ("y", "yes"):
@@ -517,11 +541,16 @@ def clean(
         print_project_info(project_file, status_info["project_name"], output_dir)
 
     # Remove files
-    removed = clean_project(status_info["config"])
+    removed = clean_project(config)
+
+    # Separate removed files for display
+    removed_output = [p for p in removed if output_dir in p.parents or p.parent == output_dir]
+    removed_cache = [p for p in removed if p not in removed_output]
 
     # Show what was removed
-    console.print("[bold]Removed stale files:[/]")
-    for path in removed[:10]:
-        console.print(f"  [dim]{format_path(path)}[/]")
-    if len(removed) > 10:
-        console.print(f"  [dim]... and {len(removed) - 10} more[/]")
+    console.print("[bold]Removed:[/]")
+    for path in removed_output:
+        console.print(f"  [dim]{format_output_path(path)}[/]")
+    if removed_cache:
+        n = len(removed_cache)
+        console.print(f"  [dim]+ {n} cached {_plural(n, 'artifact', 'artifacts')}[/]")
