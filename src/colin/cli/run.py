@@ -281,21 +281,19 @@ async def run(
                     f"[yellow]Warning:[/] {stale} document(s) "
                     "compiled with old colin.toml. Run with --no-cache to recompile."
                 )
-            # Warn about stale output files (only output/, not cache)
-            stale_files = get_stale_files(config)
-            output_stale = [
-                p for p in stale_files if output_dir in p.parents or p.parent == output_dir
-            ]
-            if output_stale:
-                n = len(output_stale)
-                try:
-                    out_display = output_dir.relative_to(Path.cwd())
-                except ValueError:
-                    out_display = output_dir
-                err_console.print(
-                    f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
-                    f"in {out_display}/. Run `colin clean` to remove."
-                )
+            # Warn about stale output files (only when using default output)
+            if output is None:
+                stale_files = get_stale_files(config)
+                if stale_files:
+                    n = len(stale_files)
+                    try:
+                        out_display = output_dir.relative_to(Path.cwd())
+                    except ValueError:
+                        out_display = output_dir
+                    err_console.print(
+                        f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
+                        f"in {out_display}/. Run `colin clean` to remove."
+                    )
             return
 
         # Print project info before starting
@@ -323,29 +321,29 @@ async def run(
                 "compiled with old colin.toml. Run with --no-cache to recompile."
             )
 
-        # Warn about stale output files (only output/, not cache)
-        stale_files = get_stale_files(config)
-        output_stale = [p for p in stale_files if output_dir in p.parents or p.parent == output_dir]
-        if output_stale:
-            if stale == 0:
-                console.print()  # Add spacing if no stale config warning
-            n = len(output_stale)
-            try:
-                out_display = output_dir.relative_to(Path.cwd())
-            except ValueError:
-                out_display = output_dir
-            console.print(
-                f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
-                f"in {out_display}/. Run `colin clean` to remove."
-            )
-            for path in output_stale[:3]:
+        # Warn about stale output files (only when using default output)
+        if output is None:
+            stale_files = get_stale_files(config)
+            if stale_files:
+                if stale == 0:
+                    console.print()  # Add spacing if no stale config warning
+                n = len(stale_files)
                 try:
-                    rel = path.relative_to(output_dir)
-                    console.print(f"[yellow]![/] {rel}")
+                    out_display = output_dir.relative_to(Path.cwd())
                 except ValueError:
-                    console.print(f"[yellow]![/] {path}")
-            if len(output_stale) > 3:
-                console.print(f"[dim]... and {len(output_stale) - 3} more[/]")
+                    out_display = output_dir
+                console.print(
+                    f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
+                    f"in {out_display}/. Run `colin clean` to remove."
+                )
+                for path in stale_files[:3]:
+                    try:
+                        rel = path.relative_to(output_dir)
+                        console.print(f"[yellow]![/] {rel}")
+                    except ValueError:
+                        console.print(f"[yellow]![/] {path}")
+                if len(stale_files) > 3:
+                    console.print(f"[dim]... and {len(stale_files) - 3} more[/]")
 
     except MultipleCompilationErrors as e:
         err_console.print("\n[red bold]Compilation failed[/]\n")

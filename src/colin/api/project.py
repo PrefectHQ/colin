@@ -566,7 +566,10 @@ def get_project_status(project_dir: Path) -> dict:
     }
 
 
-def get_stale_files(config: ProjectConfig, include_compiled: bool = False) -> list[Path]:
+def get_stale_files(
+    config: ProjectConfig,
+    include_compiled: bool = False,
+) -> list[Path]:
     """Find stale files in output/ (and optionally .colin/compiled/).
 
     A "stale file" is any file that isn't tracked by the manifest.
