@@ -580,38 +580,50 @@ class TestGetStaleFiles:
         # No stale files
         assert result == []
 
-    def test_identifies_stale_files_in_compiled(self, tmp_path: Path) -> None:
-        """Files in .colin/compiled/ not in manifest are identified as stale."""
+    def test_ignores_compiled_by_default(self, tmp_path: Path) -> None:
+        """By default, files in .colin/compiled/ are not considered stale."""
         import json
 
         config_file = tmp_path / "colin.toml"
         config_file.write_text('[project]\nname = "test"')
         config = load_project(config_file)
 
-        # Create .colin/compiled/ with files
+        # Create .colin/compiled/ with untracked files
         colin_dir = tmp_path / ".colin"
         compiled_dir = colin_dir / "compiled"
         compiled_dir.mkdir(parents=True)
-        (compiled_dir / "tracked.md").write_text("tracked content")
-        (compiled_dir / "stale.txt").write_text("stale content")
+        (compiled_dir / "untracked.md").write_text("untracked content")
 
-        # Create manifest that only tracks tracked.md
-        manifest = {
-            "documents": {
-                "project://tracked.md": {
-                    "uri": "project://tracked.md",
-                    "source_hash": "abc123",
-                    "output_path": "tracked.md",
-                    "is_published": True,
-                }
-            }
-        }
+        # Create empty manifest
+        manifest = {"documents": {}}
         (colin_dir / "manifest.json").write_text(json.dumps(manifest))
 
+        # Default: only checks output/, not .colin/compiled/
         result = get_stale_files(config)
+        assert len(result) == 0
 
+    def test_includes_compiled_when_requested(self, tmp_path: Path) -> None:
+        """With include_compiled=True, stale files in .colin/compiled/ are detected."""
+        import json
+
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text('[project]\nname = "test"')
+        config = load_project(config_file)
+
+        # Create .colin/compiled/ with untracked files
+        colin_dir = tmp_path / ".colin"
+        compiled_dir = colin_dir / "compiled"
+        compiled_dir.mkdir(parents=True)
+        (compiled_dir / "untracked.md").write_text("untracked content")
+
+        # Create empty manifest
+        manifest = {"documents": {}}
+        (colin_dir / "manifest.json").write_text(json.dumps(manifest))
+
+        # With include_compiled=True, finds stale files in compiled/
+        result = get_stale_files(config, include_compiled=True)
         assert len(result) == 1
-        assert result[0].name == "stale.txt"
+        assert result[0].name == "untracked.md"
 
 
 class TestCleanProject:
@@ -653,8 +665,8 @@ class TestCleanProject:
         assert not stale_file.exists()
         assert tracked_file.exists()
 
-    def test_clean_removes_stale_files_from_compiled(self, tmp_path: Path) -> None:
-        """clean_project removes stale files from .colin/compiled/."""
+    def test_clean_does_not_touch_compiled_directory(self, tmp_path: Path) -> None:
+        """clean_project (default) does not remove files from .colin/compiled/."""
         import json
 
         config_file = tmp_path / "colin.toml"
@@ -665,33 +677,21 @@ class TestCleanProject:
         compiled_dir = colin_dir / "compiled"
         compiled_dir.mkdir(parents=True)
 
-        tracked_file = compiled_dir / "tracked.md"
-        stale_file = compiled_dir / "stale.txt"
-        tracked_file.write_text("tracked")
-        stale_file.write_text("stale")
+        compiled_file = compiled_dir / "some_file.md"
+        compiled_file.write_text("compiled content")
 
-        manifest = {
-            "documents": {
-                "project://tracked.md": {
-                    "uri": "project://tracked.md",
-                    "source_hash": "abc123",
-                    "output_path": "tracked.md",
-                    "is_published": True,
-                }
-            }
-        }
+        manifest = {"documents": {}}
         (colin_dir / "manifest.json").write_text(json.dumps(manifest))
 
         removed = clean_project(config)
 
-        assert len(removed) == 1
-        assert removed[0].name == "stale.txt"
-        assert not stale_file.exists()
-        assert tracked_file.exists()
+        # Default clean only removes stale files from output/, not .colin/
+        assert len(removed) == 0
+        assert compiled_file.exists()
         assert (colin_dir / "manifest.json").exists()
 
-    def test_clean_removes_stale_from_both_locations(self, tmp_path: Path) -> None:
-        """clean_project removes stale files from both output/ and .colin/compiled/."""
+    def test_clean_all_removes_stale_from_compiled(self, tmp_path: Path) -> None:
+        """clean_project with all=True removes stale files from output/ and .colin/compiled/."""
         import json
 
         config_file = tmp_path / "colin.toml"
@@ -701,15 +701,15 @@ class TestCleanProject:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
         (output_dir / "tracked.md").write_text("tracked")
-        stale_output = output_dir / "stale_output.txt"
+        stale_output = output_dir / "stale.txt"
         stale_output.write_text("stale")
 
         colin_dir = tmp_path / ".colin"
         compiled_dir = colin_dir / "compiled"
         compiled_dir.mkdir(parents=True)
-        (compiled_dir / "tracked.md").write_text("tracked")
+        (compiled_dir / "tracked.md").write_text("tracked compiled")
         stale_compiled = compiled_dir / "stale_compiled.txt"
-        stale_compiled.write_text("stale")
+        stale_compiled.write_text("stale compiled")
 
         manifest = {
             "documents": {
@@ -723,10 +723,12 @@ class TestCleanProject:
         }
         (colin_dir / "manifest.json").write_text(json.dumps(manifest))
 
-        removed = clean_project(config)
+        removed = clean_project(config, all=True)
 
+        # Only stale files should be removed (not tracked files or manifest)
         assert len(removed) == 2
         assert not stale_output.exists()
         assert not stale_compiled.exists()
         assert (output_dir / "tracked.md").exists()
         assert (compiled_dir / "tracked.md").exists()
+        assert (colin_dir / "manifest.json").exists()

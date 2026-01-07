@@ -35,10 +35,8 @@ def test_clean_removes_stale_files_from_output(
     assert (project_output / "greeting.md").exists(), "Published output should remain"
 
 
-def test_clean_removes_stale_files_from_cache(
-    test_project: Path, mock_agent, cli: Callable[..., None]
-):
-    """colin clean removes stale files from .colin/compiled/."""
+def test_clean_does_not_touch_cache(test_project: Path, mock_agent, cli: Callable[..., None]):
+    """colin clean does not remove files from .colin/ (only output/)."""
     colin_dir = test_project / ".colin"
     compiled_dir = colin_dir / "compiled"
 
@@ -47,14 +45,43 @@ def test_clean_removes_stale_files_from_cache(
     assert compiled_dir.exists()
     assert (compiled_dir / "greeting.md").exists()
 
-    # Add a stale file to compiled/
-    stale_file = compiled_dir / "old_compiled.md"
-    stale_file.write_text("stale compiled content")
+    # Add an extra file to compiled/
+    extra_file = compiled_dir / "extra.md"
+    extra_file.write_text("extra content")
 
-    # Clean should remove the stale file but keep greeting.md
+    # Default clean should NOT touch .colin/ directory
     cli("clean", "--yes")
-    assert not stale_file.exists(), "Stale file should be removed"
+    assert extra_file.exists(), "Files in .colin/ should not be removed by default clean"
     assert (compiled_dir / "greeting.md").exists(), "Compiled output should remain"
+    assert (colin_dir / "manifest.json").exists(), "Manifest should remain"
+
+
+def test_clean_all_removes_stale_from_compiled(
+    test_project: Path, mock_agent, cli: Callable[..., None]
+):
+    """colin clean --all removes stale files from both output/ and .colin/compiled/."""
+    colin_dir = test_project / ".colin"
+    compiled_dir = colin_dir / "compiled"
+    project_output = test_project / "output"
+
+    # Run to create output and cache
+    cli("run", "--quiet")
+    assert project_output.exists()
+    assert compiled_dir.exists()
+    assert (compiled_dir / "greeting.md").exists()
+
+    # Add stale files to both locations
+    stale_output = project_output / "stale_output.txt"
+    stale_output.write_text("stale output")
+    stale_compiled = compiled_dir / "stale_compiled.txt"
+    stale_compiled.write_text("stale compiled")
+
+    # Clean --all should remove stale files from both locations
+    cli("clean", "--all", "--yes")
+    assert not stale_output.exists(), "Stale file in output/ should be removed"
+    assert not stale_compiled.exists(), "Stale file in .colin/compiled/ should be removed"
+    assert (project_output / "greeting.md").exists(), "Tracked output should remain"
+    assert (compiled_dir / "greeting.md").exists(), "Tracked compiled file should remain"
     assert (colin_dir / "manifest.json").exists(), "Manifest should remain"
 
 

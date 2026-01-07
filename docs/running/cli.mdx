@@ -70,29 +70,37 @@ colin run --output ./out  # Override output directory
 
 ## clean
 
-The `colin clean` command removes stale files—compiled artifacts no longer tracked by the manifest:
+The `colin clean` command removes stale files from `output/`:
 
 ```bash
 colin clean
 ```
 
-Stale files appear when you delete or rename model files. Colin detects them in both `output/` and `.colin/compiled/`.
+Stale files are outputs no longer tracked by the manifest—they appear when you delete or rename model files. By default, `clean` only removes stale files from `output/`, leaving your cache intact.
 
-By default, clean prompts for confirmation:
+Clean prompts for confirmation before removing files:
 
 ```
-Config:  colin.toml
-Project: my-context
-Output:  output/
+Project:    my-context
+Config:     colin.toml
+Output dir: output/
 
 Will remove stale files:
   output/old-report.md
-  .colin/compiled/deleted-doc.md
+  output/renamed-doc.md
 
 Continue? (y/N)
 ```
 
-Type `y` to proceed. Only stale files are removed—your manifest, LLM call history, and tracked outputs remain intact.
+### Include Cache
+
+Use `--all` to also remove stale files from `.colin/compiled/`:
+
+```bash
+colin clean --all
+```
+
+This checks both `output/` and `.colin/compiled/` for stale files. Your manifest and LLM call history remain intact—only orphaned compiled artifacts are removed.
 
 ### Skip Confirmation
 
@@ -100,6 +108,7 @@ Use `-y` or `--yes` to skip the confirmation prompt:
 
 ```bash
 colin clean -y
+colin clean --all -y
 ```
 
 ### When to Use
@@ -107,10 +116,10 @@ colin clean -y
 Run `colin clean` after deleting or renaming model files to remove leftover outputs. Colin warns you about stale files after compilation:
 
 ```
-Warning: 2 stale file(s) in output/. Run `colin clean` to remove.
+Warning: 2 stale files in output/. Run `colin clean` to remove.
 ```
 
-For a fresh build without stale file cleanup, use `colin run --no-cache` instead—this recompiles everything from source.
+For recompiling without removing stale files, use `colin run --no-cache` instead.
 
 ## mcp
 

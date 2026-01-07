@@ -14,7 +14,12 @@ from rich.text import Text
 from rich.tree import Tree
 
 from colin.api.compile import CompileResult, compile_project
-from colin.api.project import clean_project, get_project_status, get_stale_files
+from colin.api.project import (
+    clean_project,
+    find_project_file,
+    get_stale_files,
+    load_project,
+)
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
@@ -222,8 +227,6 @@ async def run(
             vars_dict[key] = value
     try:
         # Get project info for display
-        from colin.api.project import find_project_file, load_project
-
         project_dir = project.resolve()
         project_file = find_project_file(project_dir)
 
@@ -479,43 +482,44 @@ def init(
 def clean(
     project: Path = Path("."),
     *,
+    all: Annotated[bool, cyclopts.Parameter(name=["--all"])] = False,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
 ) -> None:
-    """Remove stale files from output/ and .colin/compiled/.
+    """Remove build artifacts from the project.
 
-    Stale files are compiled artifacts no longer tracked by the manifest.
-    This cleans up leftovers from deleted or renamed documents.
+    By default, removes only stale files from output/ (files not tracked by
+    the manifest). Use --all to also check .colin/compiled/ for stale files.
 
     Args:
         project: Project directory (default: current directory).
+        all: Also remove stale files from .colin/compiled/.
         yes: Skip confirmation prompt.
     """
-    status_info = get_project_status(project)
-    project_file = status_info["project_file"]
-    output_dir: Path = status_info["output_dir"]
-    stale_files: list[Path] = status_info["stale_files"]
+    project_file = find_project_file(project.resolve())
 
     if not project_file:
         err_console.print(f"[red]Error:[/] No colin.toml found in {project.resolve()}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
 
+    assert project_file is not None  # narrowing for type checker
+    config = load_project(project_file)
+    output_dir = config.output_path
+    cwd = Path.cwd()
+
+    # Format paths relative to cwd for display
+    def format_path(path: Path) -> str:
+        try:
+            return str(path.relative_to(cwd))
+        except ValueError:
+            return str(path)
+
+    # Get stale files (include .colin/compiled/ if --all)
+    stale_files = get_stale_files(config, include_compiled=all)
+
     if not stale_files:
         console.print("[dim]Nothing to clean.[/]")
         return
-
-    config = status_info["config"]
-
-    # Separate output files from cache artifacts
-    output_stale = [p for p in stale_files if output_dir in p.parents or p.parent == output_dir]
-    cache_stale = [p for p in stale_files if p not in output_stale]
-
-    # Format paths relative to output dir
-    def format_output_path(path: Path) -> str:
-        try:
-            return str(path.relative_to(output_dir))
-        except ValueError:
-            return str(path)
 
     # Show what will be removed and prompt for confirmation
     if not yes:
@@ -523,34 +527,21 @@ def clean(
             err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
             sys.exit(1)
 
-        print_project_info(project_file, status_info["project_name"], output_dir)
-        console.print("[bold]Will remove:[/]")
-        for path in output_stale:
-            console.print(f"  [yellow]{format_output_path(path)}[/]")
-        if cache_stale:
-            n = len(cache_stale)
-            console.print(f"  [dim]+ {n} cached {_plural(n, 'artifact', 'artifacts')}[/]")
+        print_project_info(project_file, config.name, output_dir)
+        console.print("[bold]Will remove stale files:[/]")
+        for path in stale_files:
+            console.print(f"  [yellow]{format_path(path)}[/]")
         console.print()
         confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
         if confirm.lower() not in ("y", "yes"):
             console.print("[dim]Cancelled.[/]")
             return
 
-    # Show project info if skipping confirmation
     if yes:
-        print_project_info(project_file, status_info["project_name"], output_dir)
+        print_project_info(project_file, config.name, output_dir)
 
-    # Remove files
-    removed = clean_project(config)
+    removed = clean_project(config, all=all)
 
-    # Separate removed files for display
-    removed_output = [p for p in removed if output_dir in p.parents or p.parent == output_dir]
-    removed_cache = [p for p in removed if p not in removed_output]
-
-    # Show what was removed
     console.print("[bold]Removed:[/]")
-    for path in removed_output:
-        console.print(f"  [dim]{format_output_path(path)}[/]")
-    if removed_cache:
-        n = len(removed_cache)
-        console.print(f"  [dim]+ {n} cached {_plural(n, 'artifact', 'artifacts')}[/]")
+    for path in removed:
+        console.print(f"  [dim]{format_path(path)}[/]")

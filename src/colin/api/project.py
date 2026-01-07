@@ -566,41 +566,39 @@ def get_project_status(project_dir: Path) -> dict:
     }
 
 
-def get_stale_files(config: ProjectConfig) -> list[Path]:
-    """Find stale files in output/ and .colin/compiled/.
+def get_stale_files(config: ProjectConfig, include_compiled: bool = False) -> list[Path]:
+    """Find stale files in output/ (and optionally .colin/compiled/).
 
-    A "stale file" is any compiled artifact that isn't tracked by the manifest:
-    - In output/: files not listed as published documents
-    - In .colin/compiled/: files not listed as any document (published or private)
-
-    This happens when:
-    - A model file is deleted
-    - A document's output path changes
-    - A document becomes private (for output/ only)
-    - A user manually adds files
+    A "stale file" is any file that isn't tracked by the manifest.
+    In output/, this means files not published by any document.
+    In .colin/compiled/, this means files not matching any document's output path.
 
     Args:
         config: Project configuration.
+        include_compiled: If True, also check .colin/compiled/ for stale files.
 
     Returns:
         List of absolute paths to stale files, sorted alphabetically.
     """
     output_dir = config.output_path
-    build_dir = config.build_path
+    compiled_dir = config.build_path / "compiled"
     manifest = load_manifest(config.manifest_path)
 
-    # Get output paths from manifest
+    # Get published output paths from manifest
     published_paths: set[str] = set()
+    for doc in manifest.documents.values():
+        if doc.output_path and doc.is_published:
+            published_paths.add(doc.output_path)
+
+    # Get all output paths (published or not) for compiled dir check
     all_output_paths: set[str] = set()
     for doc in manifest.documents.values():
         if doc.output_path:
             all_output_paths.add(doc.output_path)
-            if doc.is_published:
-                published_paths.add(doc.output_path)
 
     stale: list[Path] = []
 
-    # Check output/ for stale published files
+    # Check output/ for stale files (only published paths matter)
     if output_dir.exists():
         for path in output_dir.rglob("*"):
             if path.is_file():
@@ -611,9 +609,8 @@ def get_stale_files(config: ProjectConfig) -> list[Path]:
                 except ValueError:
                     stale.append(path)
 
-    # Check .colin/compiled/ for stale compiled files
-    compiled_dir = build_dir / "compiled"
-    if compiled_dir.exists():
+    # Optionally check .colin/compiled/ for stale files
+    if include_compiled and compiled_dir.exists():
         for path in compiled_dir.rglob("*"):
             if path.is_file():
                 try:
@@ -626,30 +623,34 @@ def get_stale_files(config: ProjectConfig) -> list[Path]:
     return sorted(stale)
 
 
-def clean_project(config: ProjectConfig) -> list[Path]:
-    """Remove stale files from output/ and .colin/compiled/.
-
-    Stale files are compiled artifacts no longer tracked by the manifest.
-    This cleans up leftovers from deleted or renamed model files.
+def clean_project(config: ProjectConfig, all: bool = False) -> list[Path]:
+    """Remove stale files from the project.
 
     Args:
         config: Project configuration.
+        all: If True, remove stale files from both output/ and .colin/compiled/.
+             If False (default), only remove stale files from output/.
 
     Returns:
         List of paths that were removed.
     """
-    stale_files = get_stale_files(config)
+    removed: list[Path] = []
+
+    # Get stale files from output/ (and optionally .colin/compiled/)
+    stale_files = get_stale_files(config, include_compiled=all)
     for path in stale_files:
         path.unlink()
+        removed.append(path)
 
     # Clean up empty directories
     if config.output_path.exists():
         _remove_empty_dirs(config.output_path)
-    compiled_dir = config.build_path / "compiled"
-    if compiled_dir.exists():
-        _remove_empty_dirs(compiled_dir)
+    if all:
+        compiled_dir = config.build_path / "compiled"
+        if compiled_dir.exists():
+            _remove_empty_dirs(compiled_dir)
 
-    return stale_files
+    return sorted(removed)
 
 
 def _remove_empty_dirs(directory: Path) -> None:

@@ -2,7 +2,7 @@
   "version": "1",
   "project_name": "foo",
   "config_hash": "89931de19496af49",
-  "compiled_at": "2026-01-07T00:19:30.706585Z",
+  "compiled_at": "2026-01-07T01:16:05.454995Z",
   "documents": {
     "project://hello.md": {
       "uri": "project://hello.md",
@@ -11,23 +11,7 @@
       "output_hash": "a17e23a8759ddeab",
       "output_path": "hello.md",
       "is_published": true,
-      "compiled_at": "2026-01-07T00:13:45.237112Z",
-      "refs": [],
-      "ref_versions": {},
-      "llm_calls": {},
-      "total_cost_usd": 0.0,
-      "artifacts": [],
-      "sections": {},
-      "config_hash": "89931de19496af49"
-    },
-    "project://hello 2.md": {
-      "uri": "project://hello 2.md",
-      "source_path": null,
-      "source_hash": "a17e23a8759ddeab",
-      "output_hash": "a17e23a8759ddeab",
-      "output_path": "hello 2.md",
-      "is_published": true,
-      "compiled_at": "2026-01-07T00:14:06.860998Z",
+      "compiled_at": "2026-01-07T01:15:59.044720Z",
       "refs": [],
       "ref_versions": {},
       "llm_calls": {},
