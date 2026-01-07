@@ -42,7 +42,7 @@ env = [
     "COLIN_DEFAULT_LLM_MODEL=test",
 ]
 filterwarnings = [
-    "ignore:.*Event loop is closed.*:pytest.PytestUnraisableExceptionWarning",
+    "ignore:.*BaseSubprocessTransport.*:pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.ty.terminal]
