@@ -116,7 +116,7 @@ class LLMProvider(Provider):
             "complete": self._complete,
         }
 
-    @cached(key="llm.extract")
+    @cached(key="llm.extract", detail_arg="prompt")
     async def _extract(
         self,
         content: object,
@@ -203,7 +203,7 @@ class LLMProvider(Provider):
                     )
                 raise
 
-    @cached(key="llm.classify")
+    @cached(key="llm.classify", detail_arg="labels")
     async def _classify(
         self,
         content: object,
@@ -323,7 +323,7 @@ class LLMProvider(Provider):
                     )
                 raise
 
-    @cached(key="llm.complete")
+    @cached(key="llm.complete", detail_arg="prompt")
     async def _complete(
         self,
         prompt: str,

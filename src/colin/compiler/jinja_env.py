@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment
@@ -11,6 +13,7 @@ from colin.compiler.extensions.filters import create_llm_classify_filter, create
 from colin.compiler.extensions.item_block import ItemBlockExtension
 from colin.compiler.extensions.llm_block import LLMBlockExtension
 from colin.compiler.extensions.section_block import SectionBlockExtension
+from colin.compiler.namespace import Namespace
 from colin.models import Ref
 from colin.providers.variable import _hash_value
 
@@ -47,6 +50,63 @@ class VarsProxy:
         context.ref_versions[ref.key()] = version
 
         return value
+
+
+def _wrap_provider_functions(
+    namespace: Namespace,
+    context: CompileContext,
+    provider_manager: ProviderManager,
+) -> None:
+    """Wrap all provider functions to track config on first use.
+
+    Walks the namespace structure and wraps each function to track provider
+    config when the function is called. This enables staleness detection when
+    provider configuration changes in colin.toml.
+
+    Args:
+        namespace: The top-level colin namespace.
+        context: Compile context for tracking refs.
+        provider_manager: Provider manager with config hashes.
+    """
+
+    def wrap_function(
+        func: Callable[..., Any],
+        provider_type: str,
+        connection: str,
+    ) -> Callable[..., Any]:
+        """Wrap a single function to track config on first call."""
+
+        @functools.wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Track provider config on first use
+            # Use empty hash for builtins without explicit config
+            config_hash = provider_manager.get_config_hash(provider_type, connection)
+            if config_hash is None:
+                config_hash = "0" * 16  # Sentinel for builtin/unconfigured
+            context.track_provider_config(provider_type, connection, config_hash)
+            return await func(*args, **kwargs)
+
+        return wrapper
+
+    # Walk the namespace structure: colin.{provider_type}.{connection}.{function}
+    for provider_type, type_namespace in namespace._mapping.items():
+        if not isinstance(type_namespace, Namespace):
+            continue
+
+        # Walk instances (including __default__)
+        for connection_key, instance_namespace in type_namespace._mapping.items():
+            if not isinstance(instance_namespace, Namespace):
+                continue
+
+            # Determine actual connection name (empty for default)
+            connection = "" if connection_key == "__default__" else connection_key
+
+            # Wrap all functions in this instance
+            for func_name, func in list(instance_namespace._mapping.items()):
+                if callable(func):
+                    instance_namespace._mapping[func_name] = wrap_function(
+                        func, provider_type, connection
+                    )
 
 
 def create_jinja_environment() -> Environment:
@@ -95,6 +155,10 @@ def bind_context_to_environment(
 
     # Providers namespace - exposed as `colin.*` in templates
     colin = provider_manager.namespace()
+
+    # Wrap provider functions to track config on first use
+    _wrap_provider_functions(colin, context, provider_manager)
+
     env.globals["colin"] = colin
 
     # Project variables - exposed as `vars.*` in templates with ref tracking

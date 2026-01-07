@@ -98,21 +98,50 @@ class ProviderManager:
     def __init__(self) -> None:
         self._registry = ProviderRegistry()
         self._all_providers: list[Provider] = []
+        self._config_hashes: dict[tuple[str, str], str] = {}  # (type, connection) -> hash
 
     def namespace(self) -> Namespace:
         return build_namespace(self._registry)
 
-    def register(self, provider: Provider, instance: str | None = None) -> None:
-        """Register a provider."""
+    def register(
+        self,
+        provider: Provider,
+        instance: str | None = None,
+        config_hash: str | None = None,
+    ) -> None:
+        """Register a provider.
+
+        Args:
+            provider: The provider instance.
+            instance: Connection/instance name (e.g., 'prod' for s3.prod).
+            config_hash: Hash of provider config for staleness tracking.
+        """
         namespace = provider.namespace
         if namespace is None:
             raise ValueError(f"Provider {type(provider).__name__} has no namespace")
         self._registry.register(namespace, instance, provider)
         self._all_providers.append(provider)
 
+        # Store config hash for staleness tracking
+        if config_hash is not None:
+            key = (namespace, instance or "")
+            self._config_hashes[key] = config_hash
+
     def get_provider(self, provider_type: str, instance: str | None = None) -> Provider | None:
         """Get a provider by type and optional instance name."""
         return self._registry.get_provider(provider_type, instance)
+
+    def get_config_hash(self, provider_type: str, connection: str) -> str | None:
+        """Get config hash for a provider connection.
+
+        Args:
+            provider_type: Provider type (e.g., 'llm', 's3').
+            connection: Connection name (empty string for default).
+
+        Returns:
+            Config hash if registered, None otherwise.
+        """
+        return self._config_hashes.get((provider_type, connection))
 
 
 @asynccontextmanager
@@ -123,7 +152,11 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
     async with AsyncExitStack() as stack:
         for inst_config in config.providers.values():
             provider = create_provider(inst_config)
-            manager.register(provider, instance=inst_config.name)
+            manager.register(
+                provider,
+                instance=inst_config.name,
+                config_hash=inst_config.config_hash,
+            )
 
         # Register builtin providers if not configured
         if "http" not in manager._registry.types:

@@ -54,6 +54,7 @@ class CompileContext:
         self.total_cost: float = 0.0
         self.sections: dict[str, str] = {}  # section_name -> raw_content
         self.defer_blocks: dict[str, Any] = {}  # defer_id -> callable
+        self._tracked_provider_configs: set[tuple[str, str]] = set()  # (type, connection)
 
     @overload
     async def ref(self, target: str, *, allow_stale: bool = False) -> ProjectResource | None: ...
@@ -194,6 +195,37 @@ class CompileContext:
         self.refs.append(ref)
         self.ref_versions[key] = version
         return True
+
+    def track_provider_config(
+        self,
+        provider_type: str,
+        connection: str,
+        config_hash: str,
+    ) -> None:
+        """Track provider config for staleness detection.
+
+        Creates a special ref with method="config" that tracks the provider's
+        configuration. If the config changes, documents using this provider
+        will be marked stale.
+
+        Args:
+            provider_type: Provider type (e.g., 'llm', 's3').
+            connection: Connection name (empty string for default).
+            config_hash: Hash of the provider's config.
+        """
+        key = (provider_type, connection)
+        if key in self._tracked_provider_configs:
+            return
+
+        self._tracked_provider_configs.add(key)
+        ref = Ref(
+            provider=provider_type,
+            connection=connection,
+            method="config",
+            args={},
+        )
+        self.refs.append(ref)
+        self.ref_versions[ref.key()] = config_hash
 
     def add_llm_call(self, call: LLMCall) -> None:
         """Record an LLM call made during compilation.

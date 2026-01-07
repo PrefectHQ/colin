@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from colin.api.project import ProjectConfig
+from colin.api.project import ProjectConfig, ProviderInstanceConfig
 from colin.compiler import CompileEngine
 from colin.models import DocumentMeta, Manifest
 from colin.providers.storage.file import FileStorage
@@ -1347,22 +1347,12 @@ class TestIncrementalRefCompilation:
         assert "Updated from B: From A: Base content" in result2[0].output
 
 
-def _stale_config_count(manifest: Manifest) -> int:
-    """Helper to count documents with stale config hash."""
-    return sum(
-        1
-        for doc in manifest.documents.values()
-        if doc.config_hash is not None and doc.config_hash != manifest.config_hash
-    )
-
-
-class TestConfigHashStaleness:
-    """Tests for config hash tracking to detect colin.toml changes."""
+class TestProviderConfigStaleness:
+    """Tests for provider config-based staleness detection."""
 
     @pytest.fixture
-    def engine_setup(
-        self, tmp_path: Path, mock_agent: MagicMock
-    ) -> tuple[CompileEngine, Path, Path, Path]:
+    def engine_setup(self, tmp_path: Path, mock_agent: MagicMock) -> tuple[Path, Path, Path, Path]:
+        """Set up directories for engine creation."""
         source_dir = tmp_path / "models"
         source_dir.mkdir()
         output_dir = tmp_path / "output"
@@ -1375,137 +1365,348 @@ class TestConfigHashStaleness:
         # Create colin.toml
         (tmp_path / "colin.toml").write_text('[project]\nname = "test"')
 
+        return source_dir, output_dir, build_dir, compiled_dir
+
+    def make_engine(
+        self,
+        tmp_path: Path,
+        source_dir: Path,
+        output_dir: Path,
+        build_dir: Path,
+        compiled_dir: Path,
+        providers: dict[str, ProviderInstanceConfig] | None = None,
+    ) -> CompileEngine:
+        """Create an engine with optional provider configuration."""
+        from colin.providers.storage.file import FileStorage
+
         config = ProjectConfig(
             name="test-project",
             project_root=tmp_path,
             model_path=source_dir,
             output_path=output_dir,
             manifest_path=build_dir / "manifest.json",
+            providers=providers or {},
         )
         artifact_storage = FileStorage(base_path=compiled_dir)
 
-        engine = CompileEngine(
+        return CompileEngine(
             config=config,
             artifact_storage=artifact_storage,
         )
-        return engine, source_dir, compiled_dir, tmp_path
 
-    async def test_config_hash_stored_on_compile(
-        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    def save_manifest(self, engine: CompileEngine) -> None:
+        """Save the engine's manifest to disk."""
+        content = engine.manifest.model_dump_json(indent=2)
+        engine.config.manifest_path.write_text(content, encoding="utf-8")
+
+    async def test_stale_when_provider_config_changes(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
     ) -> None:
-        """Config hash is stored in document metadata after compilation."""
-        engine, source_dir, _, tmp_path = engine_setup
+        """Document is stale if a provider config it uses has changed."""
+        from colin.api.project import ProviderInstanceConfig
 
-        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
 
-        result = await engine.compile_all()
-        assert len(result) == 1
+        # Create document that uses LLM (which will trigger provider config tracking)
+        (source_dir / "test.md").write_text("---\nname: Test\n---\n{% llm %}Say hello{% endllm %}")
 
-        # Check config_hash is stored
-        doc_meta = engine.manifest.get_document("project://test.md")
+        # First compile with model=test
+        providers1 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"model": "test"},
+            )
+        }
+        engine1 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers1
+        )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        self.save_manifest(engine1)
+
+        # Verify provider config ref was tracked
+        doc_meta = engine1.manifest.get_document("project://test.md")
         assert doc_meta is not None
-        assert doc_meta.config_hash is not None
-        assert len(doc_meta.config_hash) == 16  # SHA256[:16]
+        config_refs = [r for r in doc_meta.refs if r.method == "config"]
+        assert len(config_refs) == 1
+        assert config_refs[0].provider == "llm"
 
-    async def test_stale_config_count_zero_when_fresh(
-        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+        # Second compile with different model config
+        providers2 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"model": "different"},  # Changed!
+            )
+        }
+        engine2 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers2
+        )
+        result2 = await engine2.compile_all()
+        assert len(result2) == 1  # Recompiled because provider config changed
+
+    async def test_fresh_when_provider_config_unchanged(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
     ) -> None:
-        """No stale documents when config hasn't changed."""
-        engine, source_dir, compiled_dir, tmp_path = engine_setup
+        """Document is fresh if the provider config it uses hasn't changed."""
+        from colin.api.project import ProviderInstanceConfig
 
-        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
 
-        await engine.compile_all()
+        (source_dir / "test.md").write_text("---\nname: Test\n---\n{% llm %}Say hello{% endllm %}")
 
-        # Save manifest
-        engine.config.manifest_path.write_text(
-            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        # First compile
+        providers = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"model": "test"},
+            )
+        }
+        engine1 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers
         )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        self.save_manifest(engine1)
 
-        # Create new engine (simulating new run)
-        engine2 = CompileEngine(
-            config=engine.config,
-            artifact_storage=FileStorage(base_path=compiled_dir),
+        # Second compile with same config
+        engine2 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers
         )
+        result2 = await engine2.compile_all()
+        assert len(result2) == 0  # Skipped because fresh
 
-        # No stale config documents
-        assert _stale_config_count(engine2.manifest) == 0
-
-    async def test_stale_config_count_after_config_change(
-        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    async def test_selective_recompile_based_on_provider_usage(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
     ) -> None:
-        """Documents become stale when colin.toml changes."""
-        engine, source_dir, compiled_dir, tmp_path = engine_setup
+        """Only documents using a changed provider config are recompiled."""
+        from colin.api.project import ProviderInstanceConfig
 
-        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
-        (source_dir / "other.md").write_text("---\nname: Other\n---\nMore content")
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
 
-        await engine.compile_all()
+        # doc_a uses LLM, doc_b doesn't
+        (source_dir / "doc_a.md").write_text("---\nname: Doc A\n---\n{% llm %}Hello{% endllm %}")
+        (source_dir / "doc_b.md").write_text("---\nname: Doc B\n---\nStatic content")
 
-        # Save manifest
-        engine.config.manifest_path.write_text(
-            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        # First compile
+        providers1 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"model": "test"},
+            )
+        }
+        engine1 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers1
         )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 2
+        self.save_manifest(engine1)
 
-        # Change colin.toml
-        (tmp_path / "colin.toml").write_text('[project]\nname = "changed"')
-
-        # Create new engine
-        engine2 = CompileEngine(
-            config=engine.config,
-            artifact_storage=FileStorage(base_path=compiled_dir),
+        # Second compile with changed LLM config
+        providers2 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"model": "changed"},
+            )
+        }
+        engine2 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers2
         )
+        result2 = await engine2.compile_all()
+        assert len(result2) == 1  # Only doc_a recompiled
+        assert result2[0].uri == "project://doc_a.md"
 
-        # Both documents are stale
-        assert _stale_config_count(engine2.manifest) == 2
-
-    async def test_stale_config_clears_after_recompile(
-        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    async def test_stale_when_provider_removed(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
     ) -> None:
-        """Recompiled documents get updated config hash."""
-        engine, source_dir, compiled_dir, tmp_path = engine_setup
+        """Document is stale if a provider it used was removed from config."""
+        from colin.api.project import ProviderInstanceConfig
 
-        (source_dir / "test.md").write_text("---\nname: Test\n---\nContent")
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
 
-        await engine.compile_all()
+        (source_dir / "test.md").write_text("---\nname: Test\n---\n{% llm %}Hello{% endllm %}")
 
-        # Save manifest
-        engine.config.manifest_path.write_text(
-            engine.manifest.model_dump_json(indent=2), encoding="utf-8"
+        # First compile with LLM provider configured
+        providers1 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"model": "test"},
+            )
+        }
+        engine1 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers1
+        )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        self.save_manifest(engine1)
+
+        # Second compile without LLM provider (removed from config)
+        # Note: LLM is a builtin provider, so it will still be available
+        # but without custom config. We test with empty providers dict.
+        engine2 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers={}
+        )
+        result2 = await engine2.compile_all()
+        # Should recompile because the custom "llm" provider config was removed
+        assert len(result2) == 1
+
+    async def test_stale_when_config_added_to_builtin(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path]
+    ) -> None:
+        """Document is stale when config is added to a previously builtin provider."""
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\n{% llm %}Hello{% endllm %}")
+
+        # First compile WITHOUT any provider config (uses builtin LLM)
+        engine1 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers={}
+        )
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        self.save_manifest(engine1)
+
+        # Verify provider config ref was tracked with sentinel hash
+        doc_meta = engine1.manifest.get_document("project://test.md")
+        assert doc_meta is not None
+        config_refs = [r for r in doc_meta.refs if r.method == "config"]
+        assert len(config_refs) == 1
+        assert config_refs[0].provider == "llm"
+        # Sentinel hash for unconfigured builtin
+        assert doc_meta.ref_versions[config_refs[0].key()] == "0" * 16
+
+        # Second compile WITH explicit LLM config (simulates adding instructions to colin.toml)
+        providers2 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"instructions": "Talk like a pirate"},
+            )
+        }
+        engine2 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers2
+        )
+        result2 = await engine2.compile_all()
+        # Should recompile because config was added (sentinel -> real hash)
+        assert len(result2) == 1
+
+    async def test_llm_cache_invalidated_when_provider_config_changes(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path], mock_agent: MagicMock
+    ) -> None:
+        """LLM function cache is invalidated when provider config changes.
+
+        This tests that the @cached decorator includes provider config hash
+        in its cache key, so changing provider config causes LLM calls to
+        re-execute (not just documents to recompile).
+        """
+        from colin.api.project import ProviderInstanceConfig
+
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\n{% llm %}Say hello{% endllm %}")
+
+        # First compile with instructions="Be helpful"
+        providers1 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"instructions": "Be helpful"},
+            )
+        }
+        engine1 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers1
         )
 
-        # Change colin.toml
-        (tmp_path / "colin.toml").write_text('[project]\nname = "changed"')
+        # Reset mock call count
+        mock_agent.return_value.run.reset_mock()
 
-        # Create new engine
-        engine2 = CompileEngine(
-            config=engine.config,
-            artifact_storage=FileStorage(base_path=compiled_dir),
+        result1 = await engine1.compile_all()
+        assert len(result1) == 1
+        first_call_count = mock_agent.return_value.run.call_count
+        assert first_call_count == 1, "LLM should be called once on first compile"
+
+        self.save_manifest(engine1)
+
+        # Second compile with different instructions
+        providers2 = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"instructions": "Be concise"},  # Changed!
+            )
+        }
+        engine2 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers2
         )
 
-        assert _stale_config_count(engine2.manifest) == 1
+        # Reset mock call count again
+        mock_agent.return_value.run.reset_mock()
 
-        # Modify source to trigger recompile
-        (source_dir / "test.md").write_text("---\nname: Test\n---\nNew content")
+        result2 = await engine2.compile_all()
+        assert len(result2) == 1  # Document recompiled
 
+        # THE KEY ASSERTION: LLM should be called again because config changed
+        second_call_count = mock_agent.return_value.run.call_count
+        assert second_call_count == 1, (
+            "LLM should be called again when provider config changes, "
+            f"but was called {second_call_count} times (expected 1)"
+        )
+
+    async def test_unused_cache_entries_pruned(
+        self, tmp_path: Path, engine_setup: tuple[Path, Path, Path, Path], mock_agent: MagicMock
+    ) -> None:
+        """Cache entries from previous runs are pruned if not used in current run.
+
+        This prevents unbounded cache growth when configs change.
+        """
+        from colin.api.project import ProviderInstanceConfig
+
+        source_dir, output_dir, build_dir, compiled_dir = engine_setup
+
+        (source_dir / "test.md").write_text("---\nname: Test\n---\n{% llm %}Say hello{% endllm %}")
+
+        # First compile with config A
+        providers_a = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"instructions": "Config A"},
+            )
+        }
+        engine1 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers_a
+        )
+        await engine1.compile_all()
+        self.save_manifest(engine1)
+
+        # Cache should have 1 entry
+        assert len(engine1.manifest.cache) == 1
+        cache_keys_a = set(engine1.manifest.cache.keys())
+
+        # Second compile with config B (different)
+        providers_b = {
+            "llm": ProviderInstanceConfig(
+                provider_type="llm",
+                config={"instructions": "Config B"},
+            )
+        }
+        engine2 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers_b
+        )
         await engine2.compile_all()
+        self.save_manifest(engine2)
 
-        # After recompile, document has new config hash
-        assert _stale_config_count(engine2.manifest) == 0
+        # Cache should still have 1 entry (old pruned, new added)
+        assert len(engine2.manifest.cache) == 1
+        cache_keys_b = set(engine2.manifest.cache.keys())
 
-    async def test_stale_config_ignores_none_hash(
-        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
-    ) -> None:
-        """Documents without config_hash (old manifests) are not counted as stale."""
-        engine, source_dir, _, tmp_path = engine_setup
+        # The cache keys should be different
+        assert cache_keys_a != cache_keys_b, "Cache keys should differ when config changes"
 
-        # Manually create manifest with old-style entry (no config_hash)
-        old_meta = DocumentMeta(
-            uri="project://old.md",
-            source_hash="abc123",
-            compiled_at=datetime.now(timezone.utc),
+        # Third compile back to config A
+        engine3 = self.make_engine(
+            tmp_path, source_dir, output_dir, build_dir, compiled_dir, providers_a
         )
-        engine.manifest.set_document("project://old.md", old_meta)
+        await engine3.compile_all()
 
-        # Should not count as stale (None != current_hash, but we skip None)
-        assert _stale_config_count(engine.manifest) == 0
+        # Cache should still have 1 entry (config B's entry was pruned)
+        assert len(engine3.manifest.cache) == 1
+        cache_keys_a2 = set(engine3.manifest.cache.keys())
+
+        # Keys should match config A (same config = same keys)
+        assert cache_keys_a == cache_keys_a2

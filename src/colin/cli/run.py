@@ -269,18 +269,7 @@ async def run(
                 state=state,
                 vars=vars_dict,
             )
-            # Warn about stale config even in quiet mode
             assert isinstance(result, CompileResult)
-            stale = sum(
-                1
-                for doc in result.manifest.documents.values()
-                if doc.config_hash and doc.config_hash != result.manifest.config_hash
-            )
-            if stale > 0:
-                err_console.print(
-                    f"[yellow]Warning:[/] {stale} document(s) "
-                    "compiled with old colin.toml. Run with --no-cache to recompile."
-                )
             # Warn about stale output files (only when using default output)
             if output is None:
                 stale_files = get_stale_files(config)
@@ -309,24 +298,12 @@ async def run(
             state=state,
         )
         assert isinstance(result, CompileResult)
-        stale = sum(
-            1
-            for doc in result.manifest.documents.values()
-            if doc.config_hash and doc.config_hash != result.manifest.config_hash
-        )
-        if stale > 0:
-            console.print()
-            console.print(
-                f"[yellow]Warning:[/] {stale} document(s) "
-                "compiled with old colin.toml. Run with --no-cache to recompile."
-            )
 
         # Warn about stale output files (only when using default output)
         if output is None:
             stale_files = get_stale_files(config)
             if stale_files:
-                if stale == 0:
-                    console.print()  # Add spacing if no stale config warning
+                console.print()
                 n = len(stale_files)
                 try:
                     out_display = output_dir.relative_to(Path.cwd())

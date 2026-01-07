@@ -17,8 +17,12 @@ def mock_agent() -> Generator[MagicMock, None, None]:
     """Mock pydantic_ai.Agent for testing.
 
     Returns a mock that simulates Agent behavior with predictable outputs.
+    Also mocks infer_model to accept any model string.
     """
-    with patch("colin.providers.llm.Agent") as mock_agent_class:
+    with (
+        patch("colin.providers.llm.Agent") as mock_agent_class,
+        patch("colin.providers.llm.infer_model") as mock_infer_model,
+    ):
         # Create a mock agent instance
         mock_instance = MagicMock()
 
@@ -32,6 +36,11 @@ def mock_agent() -> Generator[MagicMock, None, None]:
 
         # Make the class return the mock instance
         mock_agent_class.return_value = mock_instance
+
+        # Mock infer_model to return a mock model with model_name attribute
+        mock_model = MagicMock()
+        mock_model.model_name = "test-model"
+        mock_infer_model.return_value = mock_model
 
         yield mock_agent_class
 

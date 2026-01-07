@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from pathlib import Path
 from typing import Any, Literal
@@ -105,6 +107,16 @@ class ProviderInstanceConfig(BaseModel):
         if self.name:
             return [f"{self.provider_type}.{self.name}"]
         return [self.provider_type]
+
+    @property
+    def config_hash(self) -> str:
+        """Hash of provider config for staleness tracking.
+
+        Used to detect when provider configuration changes, which should
+        invalidate cached documents that use this provider.
+        """
+        content = json.dumps(self.config, sort_keys=True)
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
 class ProjectConfig(BaseModel):
