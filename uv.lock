@@ -568,7 +568,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cyclopts", specifier = ">=4.0.0" },
-    { name = "fastmcp", git = "https://github.com/jlowin/fastmcp?rev=fix-stdio-cleanup-warning" },
+    { name = "fastmcp", git = "https://github.com/jlowin/fastmcp?rev=main" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -862,8 +862,8 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.14.2.dev97+fe31e525"
-source = { git = "https://github.com/jlowin/fastmcp?rev=fix-stdio-cleanup-warning#fe31e5252a078624b7c42105a823050f51a2d76f" }
+version = "2.14.2.dev96+da965db5"
+source = { git = "https://github.com/jlowin/fastmcp?rev=main#da965db5cb460aef9f0341556a2bd4ad5f61846c" }
 dependencies = [
     { name = "authlib" },
     { name = "cyclopts" },
