@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gc
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from typing import Any, ClassVar
@@ -130,10 +129,6 @@ class MCPProvider(Provider):
             self._client = client
             yield
         self._client = None
-        # Force GC to clean up subprocess transports while event loop is still running.
-        # Without this, transport cleanup may be deferred until after the loop closes,
-        # causing "Event loop is closed" warnings on Linux.
-        gc.collect()
 
     def _require_client(self) -> Client:
         """Get client, raising if not initialized."""
