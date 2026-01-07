@@ -568,7 +568,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cyclopts", specifier = ">=4.0.0" },
-    { name = "fastmcp", specifier = ">=2.14.1" },
+    { name = "fastmcp", git = "https://github.com/jlowin/fastmcp?rev=fix-stdio-cleanup-warning" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -862,8 +862,8 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.14.1"
-source = { registry = "https://pypi.org/simple" }
+version = "2.14.2.dev97+fe31e525"
+source = { git = "https://github.com/jlowin/fastmcp?rev=fix-stdio-cleanup-warning#fe31e5252a078624b7c42105a823050f51a2d76f" }
 dependencies = [
     { name = "authlib" },
     { name = "cyclopts" },
@@ -881,10 +881,6 @@ dependencies = [
     { name = "rich" },
     { name = "uvicorn" },
     { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/50/d38e4371bdc34e709f4731b1e882cb7bc50e51c1a224859d4cd381b3a79b/fastmcp-2.14.1.tar.gz", hash = "sha256:132725cbf77b68fa3c3d165eff0cfa47e40c1479457419e6a2cfda65bd84c8d6", size = 8263331, upload-time = "2025-12-15T02:26:27.102Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/82/72401d09dc27c27fdf72ad6c2fe331e553e3c3646e01b5ff16473191033d/fastmcp-2.14.1-py3-none-any.whl", hash = "sha256:fb3e365cc1d52573ab89caeba9944dd4b056149097be169bce428e011f0a57e5", size = 412176, upload-time = "2025-12-15T02:26:25.356Z" },
 ]
 
 [[package]]
