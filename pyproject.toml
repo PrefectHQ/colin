@@ -45,6 +45,9 @@ filterwarnings = [
     "ignore::pytest.PytestUnraisableExceptionWarning:.*Event loop is closed.*",
 ]
 
+[tool.ty.terminal]
+error-on-warning = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

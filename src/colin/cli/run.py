@@ -13,13 +13,23 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from colin import api
-from colin.api.compile import CompileResult
+from colin.api.compile import CompileResult, compile_project
+from colin.api.project import (
+    clean_project,
+    find_project_file,
+    get_stale_files,
+    load_project,
+)
 from colin.compiler.state import CompilationState, OperationState, Status
 from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedError
 
 console = Console()
 err_console = Console(stderr=True)
+
+
+def _plural(n: int, singular: str, plural: str) -> str:
+    """Return singular or plural form based on count."""
+    return singular if n == 1 else plural
 
 
 def _get_icon(op: OperationState) -> RenderableType:
@@ -150,7 +160,7 @@ async def _compile_with_progress(
         vertical_overflow="ellipsis",
     ) as live:
         task = asyncio.create_task(
-            api.compile_project(
+            compile_project(
                 project_dir=project_dir,
                 output_dir=output_dir,
                 force=force,
@@ -217,8 +227,6 @@ async def run(
             vars_dict[key] = value
     try:
         # Get project info for display
-        from colin.api.project import find_project_file, load_project
-
         project_dir = project.resolve()
         project_file = find_project_file(project_dir)
 
@@ -233,7 +241,7 @@ async def run(
         if dry_run:
             dry_result = cast(
                 list[tuple[str, Path]],
-                await api.compile_project(
+                await compile_project(
                     project_dir=project,
                     output_dir=output,
                     force=no_cache,
@@ -252,7 +260,7 @@ async def run(
 
         if quiet:
             # No output at all, just run compilation
-            result = await api.compile_project(
+            result = await compile_project(
                 project_dir=project,
                 output_dir=output,
                 force=no_cache,
@@ -273,6 +281,19 @@ async def run(
                     f"[yellow]Warning:[/] {stale} document(s) "
                     "compiled with old colin.toml. Run with --no-cache to recompile."
                 )
+            # Warn about stale output files (only when using default output)
+            if output is None:
+                stale_files = get_stale_files(config)
+                if stale_files:
+                    n = len(stale_files)
+                    try:
+                        out_display = output_dir.relative_to(Path.cwd())
+                    except ValueError:
+                        out_display = output_dir
+                    err_console.print(
+                        f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
+                        f"in {out_display}/. Run `colin clean` to remove."
+                    )
             return
 
         # Print project info before starting
@@ -299,6 +320,30 @@ async def run(
                 f"[yellow]Warning:[/] {stale} document(s) "
                 "compiled with old colin.toml. Run with --no-cache to recompile."
             )
+
+        # Warn about stale output files (only when using default output)
+        if output is None:
+            stale_files = get_stale_files(config)
+            if stale_files:
+                if stale == 0:
+                    console.print()  # Add spacing if no stale config warning
+                n = len(stale_files)
+                try:
+                    out_display = output_dir.relative_to(Path.cwd())
+                except ValueError:
+                    out_display = output_dir
+                console.print(
+                    f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
+                    f"in {out_display}/. Run `colin clean` to remove."
+                )
+                for path in stale_files[:3]:
+                    try:
+                        rel = path.relative_to(output_dir)
+                        console.print(f"[yellow]![/] {rel}")
+                    except ValueError:
+                        console.print(f"[yellow]![/] {path}")
+                if len(stale_files) > 3:
+                    console.print(f"[dim]... and {len(stale_files) - 3} more[/]")
 
     except MultipleCompilationErrors as e:
         err_console.print("\n[red bold]Compilation failed[/]\n")
@@ -435,66 +480,66 @@ def init(
 def clean(
     project: Path = Path("."),
     *,
+    all: Annotated[bool, cyclopts.Parameter(name=["--all"])] = False,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
 ) -> None:
-    """Remove output directory (compiled outputs and manifest).
+    """Remove build artifacts from the project.
+
+    By default, removes only stale files from output/ (files not tracked by
+    the manifest). Use --all to also check .colin/compiled/ for stale files.
 
     Args:
         project: Project directory (default: current directory).
+        all: Also remove stale files from .colin/compiled/.
         yes: Skip confirmation prompt.
     """
-    status_info = api.get_project_status(project)
-    project_file = status_info["project_file"]
-    output_dir = status_info["output_dir"]
+    project_file = find_project_file(project.resolve())
 
     if not project_file:
         err_console.print(f"[red]Error:[/] No colin.toml found in {project.resolve()}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
 
-    if not output_dir.exists():
+    assert project_file is not None  # narrowing for type checker
+    config = load_project(project_file)
+    output_dir = config.output_path
+    cwd = Path.cwd()
+
+    # Format paths relative to cwd for display
+    def format_path(path: Path) -> str:
+        try:
+            return str(path.relative_to(cwd))
+        except ValueError:
+            return str(path)
+
+    # Get stale files (include .colin/compiled/ if --all)
+    stale_files = get_stale_files(config, include_compiled=all)
+
+    if not stale_files:
         console.print("[dim]Nothing to clean.[/]")
         return
 
-    # Collect files for display
-    files_in_output: list[str] = []
-    project_dir = project.resolve()
-    for path in output_dir.rglob("*"):
-        if path.is_file():
-            try:
-                rel = path.relative_to(project_dir)
-                files_in_output.append(str(rel))
-            except ValueError:
-                files_in_output.append(str(path))
-
-    # Show what will be removed
+    # Show what will be removed and prompt for confirmation
     if not yes:
         if not sys.stdin.isatty():
             err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
             sys.exit(1)
 
-        print_project_info(project_file, status_info["project_name"], output_dir)
-        console.print("[bold]Will remove:[/]")
-        for rel in files_in_output:
-            console.print(f"  [yellow]{rel}[/]")
+        print_project_info(project_file, config.name, output_dir)
+        console.print("[bold]Will remove stale files:[/]")
+        for path in stale_files:
+            console.print(f"  [yellow]{format_path(path)}[/]")
         console.print()
         confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
         if confirm.lower() not in ("y", "yes"):
             console.print("[dim]Cancelled.[/]")
             return
 
-    # Show project info if skipping confirmation
     if yes:
-        print_project_info(project_file, status_info["project_name"], output_dir)
+        print_project_info(project_file, config.name, output_dir)
 
-    # Remove files
-    removed = api.clean_project(project)
+    removed = clean_project(config, all=all)
 
-    # Show what was removed
     console.print("[bold]Removed:[/]")
     for path in removed:
-        try:
-            rel = path.relative_to(project_dir)
-            console.print(f"  [dim]{rel}[/]")
-        except ValueError:
-            console.print(f"  [dim]{path}[/]")
+        console.print(f"  [dim]{format_path(path)}[/]")

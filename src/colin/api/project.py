@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Any, Literal
 
@@ -513,6 +512,7 @@ def get_project_status(project_dir: Path) -> dict:
     Returns:
         Dictionary with status information:
         - project_file: Path to colin.toml (or None if not found)
+        - config: ProjectConfig (or None if not found)
         - project_name: Name of the project
         - output_dir: Output directory path
         - manifest_exists: Whether manifest.json exists
@@ -520,34 +520,42 @@ def get_project_status(project_dir: Path) -> dict:
         - total_llm_calls: Total LLM calls across all documents
         - total_cost: Total cost in USD
         - compiled_at: Last compilation timestamp
+        - stale_files: List of stale file paths
     """
     project_file = find_project_file(project_dir.resolve())
 
-    if project_file:
-        config = load_project(project_file)
-        project_name = config.name
-        output_dir = config.output_path
-        manifest_path = config.manifest_path
-    else:
-        project_dir = project_dir.resolve()
-        project_name = project_dir.name
-        output_dir = project_dir / "output"
-        manifest_path = project_dir / ".colin" / settings.manifest_file
+    if not project_file:
+        return {
+            "project_file": None,
+            "config": None,
+            "project_name": project_dir.name,
+            "output_dir": project_dir / "output",
+            "manifest_exists": False,
+            "document_count": 0,
+            "total_llm_calls": 0,
+            "total_cost": 0.0,
+            "compiled_at": None,
+            "stale_files": [],
+            "documents": {},
+        }
 
-    manifest = load_manifest(manifest_path)
+    config = load_project(project_file)
+    manifest = load_manifest(config.manifest_path)
 
     total_llm_calls = sum(len(doc.llm_calls) for doc in manifest.documents.values())
     total_cost = sum(doc.total_cost_usd for doc in manifest.documents.values())
 
     return {
         "project_file": project_file,
-        "project_name": project_name,
-        "output_dir": output_dir,
-        "manifest_exists": manifest_path.exists(),
+        "config": config,
+        "project_name": config.name,
+        "output_dir": config.output_path,
+        "manifest_exists": config.manifest_path.exists(),
         "document_count": len(manifest.documents),
         "total_llm_calls": total_llm_calls,
         "total_cost": total_cost,
         "compiled_at": manifest.compiled_at,
+        "stale_files": get_stale_files(config),
         "documents": {
             uri: {
                 "llm_calls": len(meta.llm_calls),
@@ -558,30 +566,98 @@ def get_project_status(project_dir: Path) -> dict:
     }
 
 
-def clean_project(project_dir: Path) -> list[Path]:
-    """Remove output directory and all compiled outputs.
+def get_stale_files(
+    config: ProjectConfig,
+    include_compiled: bool = False,
+) -> list[Path]:
+    """Find stale files in output/ (and optionally .colin/compiled/).
+
+    A "stale file" is any file that isn't tracked by the manifest.
+    In output/, this means files not published by any document.
+    In .colin/compiled/, this means files not matching any document's output path.
 
     Args:
-        project_dir: Project directory.
+        config: Project configuration.
+        include_compiled: If True, also check .colin/compiled/ for stale files.
+
+    Returns:
+        List of absolute paths to stale files, sorted alphabetically.
+    """
+    output_dir = config.output_path
+    compiled_dir = config.build_path / "compiled"
+    manifest = load_manifest(config.manifest_path)
+
+    # Get published output paths from manifest
+    published_paths: set[str] = set()
+    for doc in manifest.documents.values():
+        if doc.output_path and doc.is_published:
+            published_paths.add(doc.output_path)
+
+    # Get all output paths (published or not) for compiled dir check
+    all_output_paths: set[str] = set()
+    for doc in manifest.documents.values():
+        if doc.output_path:
+            all_output_paths.add(doc.output_path)
+
+    stale: list[Path] = []
+
+    # Check output/ for stale files (only published paths matter)
+    if output_dir.exists():
+        for path in output_dir.rglob("*"):
+            if path.is_file():
+                try:
+                    rel_path = str(path.relative_to(output_dir))
+                    if rel_path not in published_paths:
+                        stale.append(path)
+                except ValueError:
+                    stale.append(path)
+
+    # Optionally check .colin/compiled/ for stale files
+    if include_compiled and compiled_dir.exists():
+        for path in compiled_dir.rglob("*"):
+            if path.is_file():
+                try:
+                    rel_path = str(path.relative_to(compiled_dir))
+                    if rel_path not in all_output_paths:
+                        stale.append(path)
+                except ValueError:
+                    stale.append(path)
+
+    return sorted(stale)
+
+
+def clean_project(config: ProjectConfig, all: bool = False) -> list[Path]:
+    """Remove stale files from the project.
+
+    Args:
+        config: Project configuration.
+        all: If True, remove stale files from both output/ and .colin/compiled/.
+             If False (default), only remove stale files from output/.
 
     Returns:
         List of paths that were removed.
     """
-    project_file = find_project_file(project_dir.resolve())
+    removed: list[Path] = []
 
-    if project_file:
-        config = load_project(project_file)
-        output_dir = config.output_path
-    else:
-        output_dir = project_dir.resolve() / "output"
+    # Get stale files from output/ (and optionally .colin/compiled/)
+    stale_files = get_stale_files(config, include_compiled=all)
+    for path in stale_files:
+        path.unlink()
+        removed.append(path)
 
-    if not output_dir.exists():
-        return []
+    # Clean up empty directories
+    if config.output_path.exists():
+        _remove_empty_dirs(config.output_path)
+    if all:
+        compiled_dir = config.build_path / "compiled"
+        if compiled_dir.exists():
+            _remove_empty_dirs(compiled_dir)
 
-    # Collect files before removal
-    removed_files = [path for path in output_dir.rglob("*") if path.is_file()]
+    return sorted(removed)
 
-    # Remove directory
-    shutil.rmtree(output_dir)
 
-    return removed_files
+def _remove_empty_dirs(directory: Path) -> None:
+    """Remove empty directories recursively, bottom-up."""
+    for path in sorted(directory.rglob("*"), reverse=True):
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()

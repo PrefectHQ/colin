@@ -15,17 +15,83 @@ def test_run_creates_output(
     assert (output_dir / "greeting.md").exists()
 
 
-def test_clean_removes_output(test_project: Path, mock_agent, cli: Callable[..., None]):
-    """colin clean removes output/ contents after compilation."""
+def test_clean_removes_stale_files_from_output(
+    test_project: Path, mock_agent, cli: Callable[..., None]
+):
+    """colin clean removes stale files from output/, keeps published outputs."""
     project_output = test_project / "output"
 
     # Run to create output
     cli("run", "--quiet")
-    assert (project_output).exists()
+    assert (project_output / "greeting.md").exists()
 
-    # Clean
+    # Add a stale file
+    stale_file = project_output / "old_file.txt"
+    stale_file.write_text("stale content")
+
+    # Clean should remove only the stale file
     cli("clean", "--yes")
-    assert not (project_output).exists()
+    assert not stale_file.exists(), "Stale file should be removed"
+    assert (project_output / "greeting.md").exists(), "Published output should remain"
+
+
+def test_clean_does_not_touch_cache(test_project: Path, mock_agent, cli: Callable[..., None]):
+    """colin clean does not remove files from .colin/ (only output/)."""
+    colin_dir = test_project / ".colin"
+    compiled_dir = colin_dir / "compiled"
+
+    # Run to create cache
+    cli("run", "--quiet")
+    assert compiled_dir.exists()
+    assert (compiled_dir / "greeting.md").exists()
+
+    # Add an extra file to compiled/
+    extra_file = compiled_dir / "extra.md"
+    extra_file.write_text("extra content")
+
+    # Default clean should NOT touch .colin/ directory
+    cli("clean", "--yes")
+    assert extra_file.exists(), "Files in .colin/ should not be removed by default clean"
+    assert (compiled_dir / "greeting.md").exists(), "Compiled output should remain"
+    assert (colin_dir / "manifest.json").exists(), "Manifest should remain"
+
+
+def test_clean_all_removes_stale_from_compiled(
+    test_project: Path, mock_agent, cli: Callable[..., None]
+):
+    """colin clean --all removes stale files from both output/ and .colin/compiled/."""
+    colin_dir = test_project / ".colin"
+    compiled_dir = colin_dir / "compiled"
+    project_output = test_project / "output"
+
+    # Run to create output and cache
+    cli("run", "--quiet")
+    assert project_output.exists()
+    assert compiled_dir.exists()
+    assert (compiled_dir / "greeting.md").exists()
+
+    # Add stale files to both locations
+    stale_output = project_output / "stale_output.txt"
+    stale_output.write_text("stale output")
+    stale_compiled = compiled_dir / "stale_compiled.txt"
+    stale_compiled.write_text("stale compiled")
+
+    # Clean --all should remove stale files from both locations
+    cli("clean", "--all", "--yes")
+    assert not stale_output.exists(), "Stale file in output/ should be removed"
+    assert not stale_compiled.exists(), "Stale file in .colin/compiled/ should be removed"
+    assert (project_output / "greeting.md").exists(), "Tracked output should remain"
+    assert (compiled_dir / "greeting.md").exists(), "Tracked compiled file should remain"
+    assert (colin_dir / "manifest.json").exists(), "Manifest should remain"
+
+
+def test_clean_nothing_to_clean(test_project: Path, mock_agent, cli: Callable[..., None]):
+    """colin clean reports nothing to clean when no stale files exist."""
+    # Run to create output
+    cli("run", "--quiet")
+
+    # Clean should report nothing to clean (no stale files)
+    cli("clean", "--yes")  # Should not error, just report nothing to clean
 
 
 def test_clean_does_nothing_if_no_output(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
@@ -36,6 +102,28 @@ def test_clean_does_nothing_if_no_output(tmp_path: Path, monkeypatch, cli: Calla
 
     # Clean should not error even if output doesn't exist
     cli("clean", "--yes")
+
+
+def test_run_warns_about_stale_files(
+    test_project: Path, mock_agent, capsys, cli: Callable[..., None]
+):
+    """colin run warns about stale files in output/."""
+    project_output = test_project / "output"
+
+    # Run to create output
+    cli("run", "--quiet")
+
+    # Add a stale file
+    stale_file = project_output / "stale.txt"
+    stale_file.write_text("stale content")
+
+    # Run again - should warn about stale file
+    cli("run", "--quiet")
+
+    captured = capsys.readouterr()
+    output = strip_ansi(captured.err)
+    assert "stale file" in output.lower()
+    assert "colin clean" in output
 
 
 def test_dry_run_shows_correct_uri(test_project: Path, capsys, cli: Callable[..., None]):
