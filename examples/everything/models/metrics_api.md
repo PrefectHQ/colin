@@ -2,7 +2,8 @@
 name: Metrics API
 description: Structured JSON output for API consumption
 colin:
-  output: json
+  output:
+    format: json
 ---
 
 ## product

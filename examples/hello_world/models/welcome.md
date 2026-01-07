@@ -5,7 +5,7 @@ description: Demonstrates ref() and LLM blocks
 
 # Welcome
 
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 ---
 
@@ -17,7 +17,7 @@ Colin automatically compiles documents in the right order based on their depende
 {% llm %}
 Translate this greeting message for French users of the Colin library:
 
-{{ ref('greeting').content }}
+{{ ref('greeting.md').content }}
 
 The translation should feel welcoming and appropriate for a technical audience.
 {% endllm %}

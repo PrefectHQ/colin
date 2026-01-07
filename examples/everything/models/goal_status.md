@@ -7,10 +7,10 @@ description: Assessment of progress toward goals
 Based on current metrics and stated objectives:
 
 **Current Data:**
-{{ ref('data').content }}
+{{ ref('data.md').content }}
 
 **Goals:**
-{{ ref('goals').content }}
+{{ ref('goals.md').content }}
 
 {% llm %}
 Compare the current metrics from the data above against the stated goals.

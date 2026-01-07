@@ -1,0 +1,55 @@
+{
+  "version": "1",
+  "project_name": "mcp",
+  "config_hash": "f6a9b770bee3be5d",
+  "compiled_at": "2026-01-07T21:57:28.998543Z",
+  "documents": {
+    "project://greeting.md": {
+      "uri": "project://greeting.md",
+      "source_path": null,
+      "source_hash": "44d23c70d58c7e85",
+      "output_hash": "326780bff734af74",
+      "output_path": "greeting.md",
+      "is_published": true,
+      "compiled_at": "2026-01-07T21:53:49.341310Z",
+      "refs": [
+        {
+          "provider": "mcp",
+          "connection": "demo",
+          "method": "config",
+          "args": {}
+        },
+        {
+          "provider": "mcp",
+          "connection": "demo",
+          "method": "resource",
+          "args": {
+            "uri": "demo://greeting/World"
+          }
+        },
+        {
+          "provider": "mcp",
+          "connection": "demo",
+          "method": "prompt",
+          "args": {
+            "name": "summarize",
+            "arguments": {
+              "style": "detailed"
+            }
+          }
+        }
+      ],
+      "ref_versions": {
+        "{\"args\": {}, \"connection\": \"demo\", \"method\": \"config\", \"provider\": \"mcp\"}": "e0569178996485f6",
+        "{\"args\": {\"uri\": \"demo://greeting/World\"}, \"connection\": \"demo\", \"method\": \"resource\", \"provider\": \"mcp\"}": "6236c65af4fdeed5",
+        "{\"args\": {\"arguments\": {\"style\": \"detailed\"}, \"name\": \"summarize\"}, \"connection\": \"demo\", \"method\": \"prompt\", \"provider\": \"mcp\"}": "e31eb0daa2d308b8"
+      },
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": [],
+      "sections": {},
+      "config_hash": "f6a9b770bee3be5d"
+    }
+  },
+  "cache": {}
+}

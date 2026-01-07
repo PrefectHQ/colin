@@ -485,17 +485,20 @@ class CompileEngine:
         content = path.read_text(encoding="utf-8")
         post = fm_parser.loads(content)
 
+        # Build relative path for URIs and error messages
+        relative = path.relative_to(self.config.model_path)
+
         # Extract colin config
         raw_colin = post.metadata.pop("colin", {})
         colin_data = cast(dict[str, Any], raw_colin) if isinstance(raw_colin, dict) else {}
-        colin_config = ColinConfig.model_validate(colin_data)
+        try:
+            colin_config = ColinConfig.model_validate(colin_data)
+        except Exception as e:
+            raise ValueError(f"Invalid frontmatter in {relative}:\n{e}") from e
 
         # Rest is document metadata
         metadata = cast(dict[str, Any], post.metadata)
         frontmatter = Frontmatter(colin=colin_config, metadata=metadata)
-
-        # Build URI from path
-        relative = path.relative_to(self.config.model_path)
         uri = f"project://{relative}"
 
         # Hash the FULL content (including frontmatter) for change detection
