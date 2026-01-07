@@ -30,3 +30,15 @@ This document demonstrates how to use the `instructions` parameter to control LL
 {% llm instructions='Talk like a pirate. Use "Arrr" and pirate vocabulary.' %}
 Summarize this product feedback in one sentence: {{ ref('source.md').content }}
 {% endllm %}
+
+---
+
+## Using Classification from Another Model
+
+{% llm instructions='You are a customer success manager.' %}
+Based on this sentiment analysis:
+
+{{ ref('classify.md').content }}
+
+Write a one-sentence professional response acknowledging the feedback.
+{% endllm %}

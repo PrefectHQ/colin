@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 # Context variable for current compilation
 _compile_context: ContextVar[CompileContext | None] = ContextVar("compile_context", default=None)
 
+# Context variable for tracking used cache keys (for pruning unused entries)
+_used_cache_keys: ContextVar[set[str] | None] = ContextVar("used_cache_keys", default=None)
+
 
 def get_compile_context() -> CompileContext | None:
     """Get current compile context, or None if not in compilation."""
@@ -30,6 +33,16 @@ def get_compile_context() -> CompileContext | None:
 def set_compile_context(ctx: CompileContext | None) -> None:
     """Set the current compile context."""
     _compile_context.set(ctx)
+
+
+def get_used_cache_keys() -> set[str] | None:
+    """Get the set of cache keys used in current compilation."""
+    return _used_cache_keys.get()
+
+
+def set_used_cache_keys(keys: set[str] | None) -> None:
+    """Set the used cache keys set for tracking."""
+    _used_cache_keys.set(keys)
 
 
 def _serialize_value(value: object) -> str:
@@ -96,16 +109,22 @@ def hash_args_for_func(
 def cached(
     key: str,
     exclude_args: set[str] | None = None,
+    detail_arg: str | None = None,
 ):
     """Decorator to cache provider function results.
 
     Args:
         key: Cache key prefix (e.g., "llm.extract").
         exclude_args: Argument names to exclude from hash.
+        detail_arg: Argument name to use for state tracking detail (e.g., "prompt").
 
     Call-time overrides (passed as kwargs):
         _cache_id: Custom cache ID (skips hash, uses this directly).
         _cache: Set to False to bypass cache entirely.
+
+    Provider config hashing:
+        If `self` has a `_config_hash` attribute, it will be included in the cache key.
+        This ensures provider config changes invalidate cached results.
     """
 
     def decorator(func):
@@ -132,11 +151,39 @@ def cached(
                 bound = sig.bind(self, *args, **kwargs)
                 bound.apply_defaults()
                 bound_args = {k: v for k, v in bound.arguments.items() if k != "self"}
+
+                # Include provider config hash if available
+                config_hash = getattr(self, "_config_hash", None)
+                if config_hash:
+                    bound_args["provider_config"] = config_hash
+
                 cache_key = f"{key}:{hash_args_for_func(func, bound_args, exclude_args)}"
+
+            # Track this cache key as used (for pruning unused entries)
+            used_keys = get_used_cache_keys()
+            if used_keys is not None:
+                used_keys.add(cache_key)
 
             # Check cache
             cached_entry = compile_ctx.manifest.cache.get(cache_key)
             if cached_entry:
+                # Track cache hit in state for UI display
+                doc_state = compile_ctx.doc_state
+                if doc_state:
+                    # Get detail from args if specified
+                    detail = None
+                    if detail_arg:
+                        bound = sig.bind(self, *args, **kwargs)
+                        bound.apply_defaults()
+                        detail_val = bound.arguments.get(detail_arg, "")
+                        if detail_val:
+                            # Truncate long details
+                            detail_str = str(detail_val)
+                            if len(detail_str) > 30:
+                                detail_str = detail_str[:27] + "..."
+                            detail = detail_str
+                    op = doc_state.child("llm", detail=detail)
+                    op.mark_cached()
                 return json.loads(cached_entry.output)
 
             # Cache miss - execute function (exceptions propagate, not cached)

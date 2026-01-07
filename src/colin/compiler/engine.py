@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 import frontmatter as fm_parser
 from jinja2 import TemplateSyntaxError, nodes
 
-from colin.compiler.cache import set_compile_context
+from colin.compiler.cache import set_compile_context, set_used_cache_keys
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
@@ -221,6 +221,18 @@ class CompileEngine:
             if old_version is None:
                 return (True, f"ref has no stored version: {ref.method}")
 
+            # Handle config refs (provider config tracking)
+            if ref.method == "config":
+                # Get current config hash from ProjectConfig.providers
+                key = f"{ref.provider}.{ref.connection}" if ref.connection else ref.provider
+                inst_config = self.config.providers.get(key)
+                if inst_config is None:
+                    # Provider was removed from config
+                    return (True, f"provider config removed: {ref.provider}")
+                if inst_config.config_hash != old_version:
+                    return (True, f"provider config changed: {ref.provider}")
+                continue
+
             # Get provider
             if ref.provider == "project":
                 provider = self._project_provider
@@ -246,6 +258,17 @@ class CompileEngine:
         Returns:
             List of compiled documents in compilation order.
         """
+        # Track cache keys used during this compilation (for pruning unused entries)
+        used_cache_keys: set[str] = set()
+        set_used_cache_keys(used_cache_keys)
+
+        try:
+            return await self._compile_all_inner(used_cache_keys)
+        finally:
+            set_used_cache_keys(None)
+
+    async def _compile_all_inner(self, used_cache_keys: set[str]) -> list[CompiledDocument]:
+        """Inner compile_all implementation."""
         # Phase 1: Discover and load documents
         documents = await self._discover_documents()
 
@@ -365,6 +388,11 @@ class CompileEngine:
 
         # Update manifest timestamp
         self.manifest.compiled_at = datetime.now(timezone.utc)
+
+        # Prune unused cache entries (keeps only entries used in this run)
+        unused_keys = set(self.manifest.cache.keys()) - used_cache_keys
+        for key in unused_keys:
+            del self.manifest.cache[key]
 
         # Publish public outputs to output/
         await self._publish_outputs(compiled_outputs=compiled_outputs)

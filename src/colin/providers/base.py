@@ -36,6 +36,9 @@ class Provider(BaseModel):
     _connection: str = ""
     """Instance/connection name (e.g., 'prod' for s3.prod). Set by from_config()."""
 
+    _config_hash: str = ""
+    """Hash of provider config for cache key inclusion. Set by from_config()."""
+
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         """Return template functions this provider contributes."""
         return {}
@@ -91,6 +94,12 @@ class Provider(BaseModel):
         Returns:
             Configured provider instance.
         """
+        import hashlib
+        import json
+
         instance = cls(**config)
         instance._connection = name or ""
+        # Store config hash for cache key inclusion
+        config_str = json.dumps(config, sort_keys=True)
+        instance._config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:16]
         return instance
