@@ -1,10 +1,7 @@
 [project]
-name = "everything"
+name = "mcp"
 model-path = "models"
 output-path = "output"
-
-[[providers.llm]]
-model = "anthropic:claude-haiku-4-5"
 
 [[providers.mcp]]
 name = "demo"
@@ -17,5 +14,5 @@ args = [
     "--no-banner",
     "--log-level",
     "ERROR",
-    "examples/everything/mcp_server.py",
+    "examples/mcp/mcp_server.py",
 ]

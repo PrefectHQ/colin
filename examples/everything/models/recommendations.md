@@ -5,10 +5,10 @@ description: Prioritized action items based on analysis
 # Strategic Recommendations
 
 ## Analysis Summary
-{{ ref('analysis').content }}
+{{ ref('analysis.md').content }}
 
 ## Goal Status
-{{ ref('goal_status') | llm_extract('Which goals are at risk or behind?') }}
+{{ ref('goal_status.md') | llm_extract('Which goals are at risk or behind?') }}
 
 ## Recommended Actions
 

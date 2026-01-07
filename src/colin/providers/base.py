@@ -1,5 +1,7 @@
 """Provider base class."""
 
+import hashlib
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -94,8 +96,6 @@ class Provider(BaseModel):
         Returns:
             Configured provider instance.
         """
-        import hashlib
-        import json
 
         instance = cls(**config)
         instance._connection = name or ""
