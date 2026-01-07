@@ -112,6 +112,10 @@ class MCPProvider(Provider):
         """
         if not name:
             raise ValueError("MCP provider requires an instance name")
+        # Set keep_alive=False for stdio servers to ensure proper subprocess cleanup
+        # and avoid "Event loop is closed" warnings during shutdown.
+        if "command" in config and "keep_alive" not in config:
+            config = {**config, "keep_alive": False}
         server = MCPServerAdapter.validate_python(config)
         return cls(name, server)
 

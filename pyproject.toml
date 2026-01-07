@@ -42,7 +42,9 @@ env = [
     "COLIN_DEFAULT_LLM_MODEL=test",
 ]
 filterwarnings = [
-    "ignore::pytest.PytestUnraisableExceptionWarning:.*Event loop is closed.*",
+    # With keep_alive=False on stdio MCP servers, the subprocess cleanup warning
+    # should no longer occur. Setting to error to verify the fix works.
+    "error::pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.ty.terminal]
