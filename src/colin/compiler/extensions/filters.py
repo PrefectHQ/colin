@@ -1,4 +1,9 @@
-"""LLM filters for Jinja templates."""
+"""LLM filters for Jinja templates.
+
+These filters provide position-based IDs for LLM calls, enabling previous_output
+to be passed even when inputs change. Each filter factory maintains a counter
+that resets per document (since filters are recreated for each compilation).
+"""
 
 from __future__ import annotations
 
@@ -8,12 +13,16 @@ from typing import Any
 def create_llm_extract_filter(llm_namespace: Any):
     """Create the llm_extract filter bound to the LLM provider.
 
+    The filter maintains a counter for position-based IDs, enabling previous_output
+    to work across compilations even when inputs change.
+
     Args:
         llm_namespace: The LLM provider namespace.
 
     Returns:
         An async filter function.
     """
+    counter = 0
 
     async def llm_extract_filter(
         content: object,
@@ -37,18 +46,23 @@ def create_llm_extract_filter(llm_namespace: Any):
             prompt: What to extract.
             model: Optional model override.
             instructions: Optional instructions override (call-level).
-            _cache_id: Optional custom cache ID.
+            _cache_id: Optional custom cache ID. If not provided, a position-based
+                ID is generated automatically.
             _cache: Set to False to bypass cache.
 
         Returns:
             The extracted text.
         """
+        nonlocal counter
+        counter += 1
+        effective_cache_id = _cache_id or f"extract_{counter}"
+
         return await llm_namespace.extract(
             content,
             prompt,
             model=model,
             instructions=instructions,
-            _cache_id=_cache_id,
+            _cache_id=effective_cache_id,
             _cache=_cache,
         )
 
@@ -58,12 +72,16 @@ def create_llm_extract_filter(llm_namespace: Any):
 def create_llm_classify_filter(llm_namespace: Any):
     """Create the llm_classify filter bound to the LLM provider.
 
+    The filter maintains a counter for position-based IDs, enabling previous_output
+    to work across compilations even when inputs change.
+
     Args:
         llm_namespace: The LLM provider namespace.
 
     Returns:
         An async filter function.
     """
+    counter = 0
 
     async def llm_classify_filter(
         content: object,
@@ -89,19 +107,24 @@ def create_llm_classify_filter(llm_namespace: Any):
             model: Optional model override.
             multi: Whether to allow multiple labels (multi-label classification).
             instructions: Optional instructions override (call-level).
-            _cache_id: Optional custom cache ID.
+            _cache_id: Optional custom cache ID. If not provided, a position-based
+                ID is generated automatically.
             _cache: Set to False to bypass cache.
 
         Returns:
             Single label (str or bool) if multi=False, list of labels if multi=True.
         """
+        nonlocal counter
+        counter += 1
+        effective_cache_id = _cache_id or f"classify_{counter}"
+
         return await llm_namespace.classify(
             content,
             labels,
             model=model,
             multi=multi,
             instructions=instructions,
-            _cache_id=_cache_id,
+            _cache_id=effective_cache_id,
             _cache=_cache,
         )
 

@@ -30,6 +30,12 @@ class LLMBlockExtension(Extension):
 
     The body is rendered first (resolving any refs/expressions),
     then passed to the LLM for processing.
+
+    Position-based IDs:
+        When no explicit ID is provided, a stable position-based ID is generated
+        at parse time (e.g., 'llm_1_42' for the first LLM block at line 42).
+        This enables previous_output to be passed to LLM calls even when the
+        prompt content changes, allowing the LLM to produce stable outputs.
     """
 
     tags = {"llm"}
@@ -37,13 +43,19 @@ class LLMBlockExtension(Extension):
     def __init__(self, environment: Environment) -> None:
         """Initialize the extension."""
         super().__init__(environment)
+        self._llm_counter = 0
 
     def parse(self, parser: Parser) -> nodes.Node:
         """Parse the {% llm %} block."""
         lineno = next(parser.stream).lineno
 
+        # Generate position-based ID for this LLM block
+        self._llm_counter += 1
+        position_id = f"llm_{self._llm_counter}_{lineno}"
+
         # Parse optional keyword arguments: model, id
         kwargs: list[nodes.Keyword] = []
+        has_explicit_id = False
 
         while parser.stream.current.test("name"):
             key = parser.stream.current.value
@@ -52,9 +64,17 @@ class LLMBlockExtension(Extension):
             value = parser.parse_expression()
             kwargs.append(nodes.Keyword(key, value, lineno=lineno))
 
+            # Track if user provided explicit ID
+            if key in ("id", "_cache_id"):
+                has_explicit_id = True
+
             # Handle optional comma between kwargs
             if parser.stream.current.test("comma"):
                 parser.stream.skip()
+
+        # If no explicit ID provided, pass position-based ID
+        if not has_explicit_id:
+            kwargs.append(nodes.Keyword("_position_id", nodes.Const(position_id), lineno=lineno))
 
         # Parse body until {% endllm %}
         body = parser.parse_statements(("name:endllm",), drop_needle=True)
@@ -72,6 +92,7 @@ class LLMBlockExtension(Extension):
         model: str | None = None,
         id: str | None = None,  # noqa: A002 - using 'id' to match template syntax
         _cache_id: str | None = None,
+        _position_id: str | None = None,
         _cache: bool = True,
         instructions: str | None = None,
         caller: object = None,
@@ -82,6 +103,7 @@ class LLMBlockExtension(Extension):
             model: LLM model name override.
             id: Alias for _cache_id (deprecated, use _cache_id).
             _cache_id: Optional custom cache ID.
+            _position_id: Auto-generated position-based ID (set at parse time).
             _cache: Set to False to bypass cache.
             instructions: Optional instructions override (call-level).
             caller: Async callable that renders the block body.
@@ -105,8 +127,9 @@ class LLMBlockExtension(Extension):
             # No context available, return a placeholder
             return f"[LLM BLOCK - no context]\n{body_content}"
 
-        # Support 'id' as alias for '_cache_id' for backwards compatibility
-        effective_cache_id = _cache_id or id
+        # ID precedence: explicit _cache_id > explicit id > position-based ID
+        # Position-based IDs enable previous_output to work even when prompt changes
+        effective_cache_id = _cache_id or id or _position_id
 
         # Delegate to LLM provider's complete method
         return await llm_namespace.complete(

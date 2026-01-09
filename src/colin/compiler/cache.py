@@ -119,12 +119,18 @@ def cached(
         detail_arg: Argument name to use for state tracking detail (e.g., "prompt").
 
     Call-time overrides (passed as kwargs):
-        _cache_id: Custom cache ID (skips hash, uses this directly).
+        _cache_id: Custom cache ID. When provided, cache key is document-scoped
+            to prevent collisions (format: key:doc_uri:_cache_id:config_hash).
         _cache: Set to False to bypass cache entirely.
 
     Provider config hashing:
         If `self` has a `_config_hash` attribute, it will be included in the cache key.
         This ensures provider config changes invalidate cached results.
+
+    Note on _cache_id:
+        The decorator extracts _cache_id from kwargs for cache key computation,
+        but does NOT strip it. Functions can declare _cache_id as a parameter
+        if they need it for other purposes (e.g., previous_output lookup).
     """
 
     def decorator(func):
@@ -142,18 +148,32 @@ def cached(
 
             # Skip cache if disabled or not in compilation
             if not _cache or compile_ctx is None:
+                # Pass _cache_id if the function accepts it
+                func_params = sig.parameters
+                if "_cache_id" in func_params:
+                    return await func(self, *args, _cache_id=_cache_id, **kwargs)
                 return await func(self, *args, **kwargs)
 
-            # Build cache key - only compute hash if no manual _cache_id
+            # Provider config hash - included in all cache keys
+            config_hash = getattr(self, "_config_hash", None)
+            doc_uri = compile_ctx.document_uri
+
+            # Build cache key
             if _cache_id:
-                cache_key = f"{key}:{_cache_id}"
+                # Document-scoped cache key when using _cache_id
+                # This ensures file-unique IDs don't collide across documents
+                # Format: key:doc_uri:_cache_id:config_hash
+                parts = [key, doc_uri, _cache_id]
+                if config_hash:
+                    parts.append(config_hash)
+                cache_key = ":".join(parts)
             else:
+                # Hash-based cache key (global, shared across docs with same inputs)
                 bound = sig.bind(self, *args, **kwargs)
                 bound.apply_defaults()
                 bound_args = {k: v for k, v in bound.arguments.items() if k != "self"}
 
                 # Include provider config hash if available
-                config_hash = getattr(self, "_config_hash", None)
                 if config_hash:
                     bound_args["provider_config"] = config_hash
 
@@ -187,7 +207,12 @@ def cached(
                 return json.loads(cached_entry.output)
 
             # Cache miss - execute function (exceptions propagate, not cached)
-            result = await func(self, *args, **kwargs)
+            # Pass _cache_id if the function accepts it
+            func_params = sig.parameters
+            if "_cache_id" in func_params:
+                result = await func(self, *args, _cache_id=_cache_id, **kwargs)
+            else:
+                result = await func(self, *args, **kwargs)
 
             # Store in cache
             compile_ctx.manifest.cache[cache_key] = CacheEntry(

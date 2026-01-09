@@ -123,6 +123,7 @@ class LLMProvider(Provider):
         prompt: str,
         model: str | None = None,
         instructions: str | None = None,
+        _cache_id: str | None = None,
     ) -> str:
         """Extract information from content using LLM.
 
@@ -131,6 +132,9 @@ class LLMProvider(Provider):
             prompt: What to extract.
             model: Optional model override.
             instructions: Optional instructions override (call-level).
+            _cache_id: Stable ID for cache key and previous_output lookup.
+                When provided (e.g., position-based ID from filters),
+                enables previous_output to be passed even when inputs change.
 
         Returns:
             The extracted text.
@@ -138,14 +142,23 @@ class LLMProvider(Provider):
         serialized = _serialize_value(content)
         effective_model = infer_model(model or self.model or settings.default_llm_model)
         compile_ctx = get_compile_context()
+        config_hash = self._config_hash
 
-        # Generate call_id for tracking
-        call_id = f"llm.extract:{hash_args((serialized, prompt), {})}"
+        # Generate call_id for tracking - use stable _cache_id if provided
+        if _cache_id:
+            call_id = f"llm.extract:{_cache_id}"
+        else:
+            call_id = f"llm.extract:{hash_args((serialized, prompt), {})}"
 
-        # TODO: previous_output should enable stability when inputs change,
-        # but current auto-ID design ties cache key to input hash.
-        # Needs redesign to support "same logical call, different inputs".
+        # Look up previous output using stable call_id WITH config validation
+        # Only use previous output if provider config hasn't changed
         previous_output = None
+        if compile_ctx and _cache_id:
+            prev_call = compile_ctx.manifest.get_llm_call(
+                compile_ctx.document_uri, call_id, config_hash=config_hash
+            )
+            if prev_call and prev_call.is_successful:
+                previous_output = prev_call.output
 
         # Render prompt from template
         full_prompt = render_extract_prompt(serialized, prompt, previous_output)
@@ -176,6 +189,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash=hash_args((output_text,), {}),
                             output=output_text,
@@ -192,6 +206,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash="",
                             output="",
@@ -211,6 +226,7 @@ class LLMProvider(Provider):
         model: str | None = None,
         multi: bool = False,
         instructions: str | None = None,
+        _cache_id: str | None = None,
     ) -> str | bool | list[str | bool]:
         """Classify content into one or more predefined labels using LLM.
 
@@ -220,6 +236,9 @@ class LLMProvider(Provider):
             model: Optional model override.
             multi: Whether to allow multiple labels (multi-label classification).
             instructions: Optional instructions override (call-level).
+            _cache_id: Stable ID for cache key and previous_output lookup.
+                When provided (e.g., position-based ID from filters),
+                enables previous_output to be passed even when inputs change.
 
         Returns:
             Single label (str or bool) if multi=False, list of labels if multi=True.
@@ -233,18 +252,27 @@ class LLMProvider(Provider):
         serialized = _serialize_value(content)
         effective_model = infer_model(model or self.model or settings.default_llm_model)
         compile_ctx = get_compile_context()
+        config_hash = self._config_hash
 
         # Sort labels for consistent hashing
         sorted_labels = sorted(labels, key=lambda x: (isinstance(x, bool), str(x)))
         labels_key = ",".join(str(label) for label in sorted_labels)
 
-        # Generate call_id for tracking
-        call_id = f"llm.classify:{hash_args((serialized, labels_key, str(multi)), {})}"
+        # Generate call_id for tracking - use stable _cache_id if provided
+        if _cache_id:
+            call_id = f"llm.classify:{_cache_id}"
+        else:
+            call_id = f"llm.classify:{hash_args((serialized, labels_key, str(multi)), {})}"
 
-        # TODO: previous_output should enable stability when inputs change,
-        # but current auto-ID design ties cache key to input hash.
-        # Needs redesign to support "same logical call, different inputs".
+        # Look up previous output using stable call_id WITH config validation
+        # Only use previous output if provider config hasn't changed
         previous_output = None
+        if compile_ctx and _cache_id:
+            prev_call = compile_ctx.manifest.get_llm_call(
+                compile_ctx.document_uri, call_id, config_hash=config_hash
+            )
+            if prev_call and prev_call.is_successful:
+                previous_output = prev_call.output
 
         # Render prompt from template
         full_prompt = render_classify_prompt(serialized, sorted_labels, previous_output, multi)
@@ -296,6 +324,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash=hash_args((record_output,), {}),
                             output=record_output,
@@ -312,6 +341,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash="",
                             output="",
@@ -329,6 +359,7 @@ class LLMProvider(Provider):
         prompt: str,
         model: str | None = None,
         instructions: str | None = None,
+        _cache_id: str | None = None,
     ) -> str:
         """Complete a prompt using LLM.
 
@@ -338,20 +369,32 @@ class LLMProvider(Provider):
             prompt: The prompt to complete.
             model: Optional model override.
             instructions: Optional instructions override (call-level).
+            _cache_id: Stable ID for cache key and previous_output lookup.
+                When provided (e.g., position-based ID from LLM blocks),
+                enables previous_output to be passed even when prompt changes.
 
         Returns:
             The LLM response.
         """
         effective_model = infer_model(model or self.model or settings.default_llm_model)
         compile_ctx = get_compile_context()
+        config_hash = self._config_hash
 
-        # Generate call_id for tracking
-        call_id = f"llm.complete:{hash_args((prompt,), {})}"
+        # Generate call_id for tracking - use stable _cache_id if provided
+        if _cache_id:
+            call_id = f"llm.complete:{_cache_id}"
+        else:
+            call_id = f"llm.complete:{hash_args((prompt,), {})}"
 
-        # TODO: previous_output should enable stability when inputs change,
-        # but current auto-ID design ties cache key to input hash.
-        # Needs redesign to support "same logical call, different inputs".
+        # Look up previous output using stable call_id WITH config validation
+        # Only use previous output if provider config hasn't changed
         previous_output = None
+        if compile_ctx and _cache_id:
+            prev_call = compile_ctx.manifest.get_llm_call(
+                compile_ctx.document_uri, call_id, config_hash=config_hash
+            )
+            if prev_call and prev_call.is_successful:
+                previous_output = prev_call.output
 
         # Render prompt from template
         full_prompt = render_complete_prompt(prompt, previous_output)
@@ -382,6 +425,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            config_hash=config_hash,
                             input_hash=hash_args((prompt,), {}),
                             output_hash=hash_args((output_text,), {}),
                             output=output_text,
@@ -398,6 +442,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            config_hash=config_hash,
                             input_hash=hash_args((prompt,), {}),
                             output_hash="",
                             output="",

@@ -167,6 +167,9 @@ class LLMCall(BaseModel):
     call_id: str
     """Identifier for this call (auto-generated or manual)."""
 
+    config_hash: str | None = None
+    """Hash of provider config at call time. Used to validate previous_output lookup."""
+
     input_hash: str
     """Hash of the input content."""
 
@@ -376,12 +379,31 @@ class Manifest(BaseModel):
                     break
         return dependents
 
-    def get_llm_call(self, doc_uri: str, call_id: str) -> LLMCall | None:
-        """Get a cached LLM call for a document."""
+    def get_llm_call(
+        self, doc_uri: str, call_id: str, config_hash: str | None = None
+    ) -> LLMCall | None:
+        """Get a cached LLM call for a document.
+
+        Args:
+            doc_uri: Document URI to look up.
+            call_id: The call ID to find.
+            config_hash: If provided, only return call if config_hash matches.
+                This ensures previous_output is only used when provider config
+                hasn't changed.
+
+        Returns:
+            The LLMCall if found (and config matches), None otherwise.
+        """
         doc = self.get_document(doc_uri)
         if doc is None:
             return None
-        return doc.llm_calls.get(call_id)
+        call = doc.llm_calls.get(call_id)
+        if call is None:
+            return None
+        # If config_hash provided, validate it matches
+        if config_hash is not None and call.config_hash != config_hash:
+            return None
+        return call
 
 
 class ColinDocument(BaseModel):
