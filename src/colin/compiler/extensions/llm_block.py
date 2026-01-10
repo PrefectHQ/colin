@@ -73,8 +73,30 @@ class LLMBlockExtension(Extension):
                 parser.stream.skip()
 
         # If no explicit ID provided, pass position-based ID
+        # Include loop index if we're inside a {% for %} block at runtime
         if not has_explicit_id:
-            kwargs.append(nodes.Keyword("_position_id", nodes.Const(position_id), lineno=lineno))
+            # Build: f"{position_id}:{loop.index0}" if loop is defined else position_id
+            loop_var = nodes.Name("loop", "load", lineno=lineno)
+            loop_index = nodes.Getattr(loop_var, "index0", "load", lineno=lineno)
+
+            # Concatenation: position_id + ":" + str(loop.index0)
+            concat = nodes.Concat(
+                [nodes.Const(f"{position_id}:"), loop_index],
+                lineno=lineno,
+            )
+
+            # Test: loop is defined
+            is_defined = nodes.Test(loop_var, "defined", [], [], None, None, lineno=lineno)
+
+            # Conditional: concat if is_defined else position_id
+            position_expr = nodes.CondExpr(
+                is_defined,
+                concat,
+                nodes.Const(position_id),
+                lineno=lineno,
+            )
+
+            kwargs.append(nodes.Keyword("_position_id", position_expr, lineno=lineno))
 
         # Parse body until {% endllm %}
         body = parser.parse_statements(("name:endllm",), drop_needle=True)
@@ -129,13 +151,13 @@ class LLMBlockExtension(Extension):
 
         # ID precedence: explicit _cache_id > explicit id > position-based ID
         # Position-based IDs enable previous_output to work even when prompt changes
-        effective_cache_id = _cache_id or id or _position_id
+        effective_position_id = _cache_id or id or _position_id
 
         # Delegate to LLM provider's complete method
         return await llm_namespace.complete(
             body_content,
             model=model,
             instructions=instructions,
-            _cache_id=effective_cache_id,
+            _position_id=effective_position_id,
             _cache=_cache,
         )

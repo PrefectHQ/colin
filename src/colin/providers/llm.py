@@ -123,7 +123,7 @@ class LLMProvider(Provider):
         prompt: str,
         model: str | None = None,
         instructions: str | None = None,
-        _cache_id: str | None = None,
+        _position_id: str | None = None,
     ) -> str:
         """Extract information from content using LLM.
 
@@ -132,8 +132,8 @@ class LLMProvider(Provider):
             prompt: What to extract.
             model: Optional model override.
             instructions: Optional instructions override (call-level).
-            _cache_id: Position-based ID for document-scoped caching.
-                Combined with input hash for unique cache keys per call.
+            _position_id: Position-based ID (e.g., 'extract_1' or 'extract_1:0' for loops).
+                Used for document-scoped caching and previous_output lookup.
 
         Returns:
             The extracted text.
@@ -143,22 +143,21 @@ class LLMProvider(Provider):
         compile_ctx = get_compile_context()
         config_hash = self._config_hash
 
-        # Generate call_id for tracking
-        # Always includes input hash to handle loops correctly (each iteration unique)
+        # Generate call_id for tracking (unique per invocation)
         input_hash = hash_args((serialized, prompt), {})
-        if _cache_id:
-            call_id = f"llm.extract:{_cache_id}:{input_hash}"
+        if _position_id:
+            call_id = f"llm.extract:{_position_id}:{input_hash}"
         else:
             call_id = f"llm.extract:{input_hash}"
 
-        # Look up previous output using call_id WITH config validation
-        # Only use previous output if provider config hasn't changed
+        # Look up previous output by POSITION (not call_id)
+        # This finds any previous output at this position, regardless of inputs
         previous_output = None
-        if compile_ctx:
-            prev_call = compile_ctx.manifest.get_llm_call(
-                compile_ctx.document_uri, call_id, config_hash=config_hash
+        if compile_ctx and _position_id:
+            prev_call = compile_ctx.manifest.get_llm_call_by_position(
+                compile_ctx.document_uri, _position_id, config_hash=config_hash
             )
-            if prev_call and prev_call.is_successful:
+            if prev_call:
                 previous_output = prev_call.output
 
         # Render prompt from template
@@ -190,6 +189,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            position_id=_position_id,
                             config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash=hash_args((output_text,), {}),
@@ -207,6 +207,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            position_id=_position_id,
                             config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash="",
@@ -227,7 +228,7 @@ class LLMProvider(Provider):
         model: str | None = None,
         multi: bool = False,
         instructions: str | None = None,
-        _cache_id: str | None = None,
+        _position_id: str | None = None,
     ) -> str | bool | list[str | bool]:
         """Classify content into one or more predefined labels using LLM.
 
@@ -237,8 +238,8 @@ class LLMProvider(Provider):
             model: Optional model override.
             multi: Whether to allow multiple labels (multi-label classification).
             instructions: Optional instructions override (call-level).
-            _cache_id: Position-based ID for document-scoped caching.
-                Combined with input hash for unique cache keys per call.
+            _position_id: Position-based ID (e.g., 'classify_1' or 'classify_1:0' for loops).
+                Used for document-scoped caching and previous_output lookup.
 
         Returns:
             Single label (str or bool) if multi=False, list of labels if multi=True.
@@ -258,22 +259,21 @@ class LLMProvider(Provider):
         sorted_labels = sorted(labels, key=lambda x: (isinstance(x, bool), str(x)))
         labels_key = ",".join(str(label) for label in sorted_labels)
 
-        # Generate call_id for tracking
-        # Always includes input hash to handle loops correctly (each iteration unique)
+        # Generate call_id for tracking (unique per invocation)
         input_hash = hash_args((serialized, labels_key, str(multi)), {})
-        if _cache_id:
-            call_id = f"llm.classify:{_cache_id}:{input_hash}"
+        if _position_id:
+            call_id = f"llm.classify:{_position_id}:{input_hash}"
         else:
             call_id = f"llm.classify:{input_hash}"
 
-        # Look up previous output using call_id WITH config validation
-        # Only use previous output if provider config hasn't changed
+        # Look up previous output by POSITION (not call_id)
+        # This finds any previous output at this position, regardless of inputs
         previous_output = None
-        if compile_ctx:
-            prev_call = compile_ctx.manifest.get_llm_call(
-                compile_ctx.document_uri, call_id, config_hash=config_hash
+        if compile_ctx and _position_id:
+            prev_call = compile_ctx.manifest.get_llm_call_by_position(
+                compile_ctx.document_uri, _position_id, config_hash=config_hash
             )
-            if prev_call and prev_call.is_successful:
+            if prev_call:
                 previous_output = prev_call.output
 
         # Render prompt from template
@@ -321,11 +321,12 @@ class LLMProvider(Provider):
                 else:
                     record_output = str(output_value)
 
-                # Record LLM call for tracking
+                # Record LLM call for tracking (only on actual execution, not cache hit)
                 if compile_ctx:
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            position_id=_position_id,
                             config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash=hash_args((record_output,), {}),
@@ -343,6 +344,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            position_id=_position_id,
                             config_hash=config_hash,
                             input_hash=hash_args((serialized,), {}),
                             output_hash="",
@@ -361,7 +363,7 @@ class LLMProvider(Provider):
         prompt: str,
         model: str | None = None,
         instructions: str | None = None,
-        _cache_id: str | None = None,
+        _position_id: str | None = None,
     ) -> str:
         """Complete a prompt using LLM.
 
@@ -371,8 +373,8 @@ class LLMProvider(Provider):
             prompt: The prompt to complete.
             model: Optional model override.
             instructions: Optional instructions override (call-level).
-            _cache_id: Position-based ID for document-scoped caching.
-                Combined with input hash for unique cache keys per call.
+            _position_id: Position-based ID (e.g., 'llm_1_5' or 'llm_1_5:0' for loops).
+                Used for document-scoped caching and previous_output lookup.
 
         Returns:
             The LLM response.
@@ -381,22 +383,21 @@ class LLMProvider(Provider):
         compile_ctx = get_compile_context()
         config_hash = self._config_hash
 
-        # Generate call_id for tracking
-        # Always includes input hash to handle loops correctly (each iteration unique)
+        # Generate call_id for tracking (unique per invocation)
         input_hash = hash_args((prompt,), {})
-        if _cache_id:
-            call_id = f"llm.complete:{_cache_id}:{input_hash}"
+        if _position_id:
+            call_id = f"llm.complete:{_position_id}:{input_hash}"
         else:
             call_id = f"llm.complete:{input_hash}"
 
-        # Look up previous output using call_id WITH config validation
-        # Only use previous output if provider config hasn't changed
+        # Look up previous output by POSITION (not call_id)
+        # This finds any previous output at this position, regardless of inputs
         previous_output = None
-        if compile_ctx:
-            prev_call = compile_ctx.manifest.get_llm_call(
-                compile_ctx.document_uri, call_id, config_hash=config_hash
+        if compile_ctx and _position_id:
+            prev_call = compile_ctx.manifest.get_llm_call_by_position(
+                compile_ctx.document_uri, _position_id, config_hash=config_hash
             )
-            if prev_call and prev_call.is_successful:
+            if prev_call:
                 previous_output = prev_call.output
 
         # Render prompt from template
@@ -423,11 +424,12 @@ class LLMProvider(Provider):
                 result = await agent.run(full_prompt)
                 output_text = str(result.output)
 
-                # Record LLM call for tracking
+                # Record LLM call for tracking (only on actual execution, not cache hit)
                 if compile_ctx:
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            position_id=_position_id,
                             config_hash=config_hash,
                             input_hash=hash_args((prompt,), {}),
                             output_hash=hash_args((output_text,), {}),
@@ -445,6 +447,7 @@ class LLMProvider(Provider):
                     compile_ctx.add_llm_call(
                         LLMCall(
                             call_id=call_id,
+                            position_id=_position_id,
                             config_hash=config_hash,
                             input_hash=hash_args((prompt,), {}),
                             output_hash="",

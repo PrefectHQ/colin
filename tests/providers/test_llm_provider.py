@@ -311,11 +311,11 @@ class TestLLMProvider:
 class TestPreviousOutput:
     """Tests for previous_output feature with position-based IDs."""
 
-    async def test_complete_receives_previous_output_with_cache_id(self, tmp_path) -> None:
-        """Test that _complete receives previous_output when using stable _cache_id.
+    async def test_complete_receives_previous_output_with_position_id(self, tmp_path) -> None:
+        """Test that _complete receives previous_output when using stable _position_id.
 
-        When a position-based _cache_id is provided, the LLM call should look up
-        the previous output from the manifest and include it in the prompt.
+        When a position-based _position_id is provided, the LLM call should look up
+        the previous output from the manifest (by position) and include it in the prompt.
         """
         captured_prompts: list[str] = []
 
@@ -327,11 +327,12 @@ class TestPreviousOutput:
         provider = LLMProvider(model=FunctionModel(capture_prompt))
 
         # Create manifest with a previous LLM call recorded
-        # Note: config_hash must match provider's _config_hash for previous_output to work
-        # call_id now includes input hash for loop correctness
-        prompt = "Write a haiku about spring"
-        input_hash = hash_args((prompt,), {})
-        call_id = f"llm.complete:llm_1_5:{input_hash}"
+        # Note: position_id is used for previous_output lookup (input-agnostic)
+        # call_id includes input hash for unique storage
+        old_prompt = "Write a haiku about winter"  # Different from new prompt
+        old_input_hash = hash_args((old_prompt,), {})
+        position_id = "llm_1_5"
+        call_id = f"llm.complete:{position_id}:{old_input_hash}"
 
         manifest = Manifest()
         doc_uri = "project://test.md"
@@ -341,8 +342,9 @@ class TestPreviousOutput:
             llm_calls={
                 call_id: LLMCall(
                     call_id=call_id,
+                    position_id=position_id,  # Position-based ID for lookup
                     config_hash=provider._config_hash,  # Must match current config
-                    input_hash=input_hash,
+                    input_hash=old_input_hash,
                     output_hash="out_hash",
                     output="Previous haiku output",
                     model="test",
@@ -360,10 +362,11 @@ class TestPreviousOutput:
 
         set_compile_context(compile_ctx)
         try:
-            # Call with position-based _cache_id that matches stored call
+            # Call with position-based _position_id that matches stored call's position
+            # Note: even with different prompt, previous_output is found by position
             result = await provider._complete(
-                prompt,
-                _cache_id="llm_1_5",
+                "Write a haiku about spring",  # Different prompt!
+                _position_id=position_id,
             )
         finally:
             set_compile_context(None)
@@ -404,7 +407,7 @@ class TestPreviousOutput:
         try:
             result = await provider._complete(
                 "Write a haiku about spring",
-                _cache_id="llm_1_5",
+                _position_id="llm_1_5",
             )
         finally:
             set_compile_context(None)
@@ -415,11 +418,11 @@ class TestPreviousOutput:
         assert "## Previous Output" not in captured_prompts[0]
         assert "UseExisting" not in captured_prompts[0]
 
-    async def test_complete_no_previous_output_without_cache_id(self, tmp_path) -> None:
-        """Test that previous_output lookup requires _cache_id.
+    async def test_complete_no_previous_output_without_position_id(self, tmp_path) -> None:
+        """Test that previous_output lookup requires _position_id.
 
-        When no _cache_id is provided (hash-based ID), previous_output
-        is not looked up since the call_id won't be stable.
+        When no _position_id is provided (hash-based ID), previous_output
+        is not looked up since the position isn't stable.
         """
         captured_prompts: list[str] = []
 
@@ -440,7 +443,7 @@ class TestPreviousOutput:
 
         set_compile_context(compile_ctx)
         try:
-            # Call WITHOUT _cache_id - uses hash-based ID
+            # Call WITHOUT _position_id - uses hash-based ID
             result = await provider._complete("Write a haiku about spring")
         finally:
             set_compile_context(None)
@@ -467,7 +470,8 @@ class TestPreviousOutput:
         # Manifest with a FAILED previous call
         prompt = "Write a haiku about spring"
         input_hash = hash_args((prompt,), {})
-        call_id = f"llm.complete:llm_1_5:{input_hash}"
+        position_id = "llm_1_5"
+        call_id = f"llm.complete:{position_id}:{input_hash}"
 
         manifest = Manifest()
         doc_uri = "project://test.md"
@@ -477,6 +481,7 @@ class TestPreviousOutput:
             llm_calls={
                 call_id: LLMCall(
                     call_id=call_id,
+                    position_id=position_id,
                     config_hash=provider._config_hash,
                     input_hash=input_hash,
                     output_hash="",
@@ -500,7 +505,7 @@ class TestPreviousOutput:
         try:
             result = await provider._complete(
                 prompt,
-                _cache_id="llm_1_5",
+                _position_id=position_id,
             )
         finally:
             set_compile_context(None)
@@ -527,7 +532,8 @@ class TestPreviousOutput:
         # Manifest with a call that has DIFFERENT config_hash
         prompt = "Write a haiku about spring"
         input_hash = hash_args((prompt,), {})
-        call_id = f"llm.complete:llm_1_5:{input_hash}"
+        position_id = "llm_1_5"
+        call_id = f"llm.complete:{position_id}:{input_hash}"
 
         manifest = Manifest()
         doc_uri = "project://test.md"
@@ -537,6 +543,7 @@ class TestPreviousOutput:
             llm_calls={
                 call_id: LLMCall(
                     call_id=call_id,
+                    position_id=position_id,
                     config_hash="different_config_hash",  # Different from provider!
                     input_hash=input_hash,
                     output_hash="out_hash",
@@ -558,7 +565,7 @@ class TestPreviousOutput:
         try:
             result = await provider._complete(
                 prompt,
-                _cache_id="llm_1_5",
+                _position_id=position_id,
             )
         finally:
             set_compile_context(None)
@@ -569,8 +576,8 @@ class TestPreviousOutput:
         assert "## Previous Output" not in captured_prompts[0]
         assert "different config" not in captured_prompts[0]
 
-    async def test_extract_receives_previous_output_with_cache_id(self, tmp_path) -> None:
-        """Test that _extract receives previous_output when _cache_id is provided."""
+    async def test_extract_receives_previous_output_with_position_id(self, tmp_path) -> None:
+        """Test that _extract receives previous_output when _position_id is provided."""
         captured_prompts: list[str] = []
 
         def capture_prompt(messages, info):
@@ -582,11 +589,12 @@ class TestPreviousOutput:
         # Manifest with previous successful extract call
         from colin.compiler.cache import _serialize_value
 
-        content = "Some content to extract from"
+        old_content = "Old content that was extracted from"
         prompt = "key points"
-        serialized = _serialize_value(content)
+        serialized = _serialize_value(old_content)
         input_hash = hash_args((serialized, prompt), {})
-        call_id = f"llm.extract:extract_1:{input_hash}"
+        position_id = "extract_1"
+        call_id = f"llm.extract:{position_id}:{input_hash}"
 
         manifest = Manifest()
         doc_uri = "project://test.md"
@@ -596,6 +604,7 @@ class TestPreviousOutput:
             llm_calls={
                 call_id: LLMCall(
                     call_id=call_id,
+                    position_id=position_id,
                     config_hash=provider._config_hash,
                     input_hash=input_hash,
                     output_hash="out_hash",
@@ -615,22 +624,23 @@ class TestPreviousOutput:
 
         set_compile_context(compile_ctx)
         try:
+            # Call with different content but same position_id
             result = await provider._extract(
-                content,
+                "New content to extract from",  # Different content!
                 prompt,
-                _cache_id="extract_1",
+                _position_id=position_id,
             )
         finally:
             set_compile_context(None)
 
         assert result == "New extraction"
-        # The prompt should include previous output
+        # The prompt should include previous output (found by position)
         assert len(captured_prompts) == 1
         assert "## Previous Output" in captured_prompts[0]
         assert "Previous extraction result" in captured_prompts[0]
 
-    async def test_classify_receives_previous_output_with_cache_id(self, tmp_path) -> None:
-        """Test that _classify receives previous_output when _cache_id is provided."""
+    async def test_classify_receives_previous_output_with_position_id(self, tmp_path) -> None:
+        """Test that _classify receives previous_output when _position_id is provided."""
         captured_prompts: list[str] = []
 
         def capture_prompt(messages, info):
@@ -643,13 +653,14 @@ class TestPreviousOutput:
         # Manifest with previous successful classify call
         from colin.compiler.cache import _serialize_value
 
-        content = "This is great!"
+        old_content = "Old content"
         labels = ["positive", "negative"]
-        serialized = _serialize_value(content)
+        serialized = _serialize_value(old_content)
         sorted_labels = sorted(labels, key=lambda x: (isinstance(x, bool), str(x)))
         labels_key = ",".join(str(label) for label in sorted_labels)
         input_hash = hash_args((serialized, labels_key, str(False)), {})
-        call_id = f"llm.classify:classify_1:{input_hash}"
+        position_id = "classify_1"
+        call_id = f"llm.classify:{position_id}:{input_hash}"
 
         manifest = Manifest()
         doc_uri = "project://test.md"
@@ -659,6 +670,7 @@ class TestPreviousOutput:
             llm_calls={
                 call_id: LLMCall(
                     call_id=call_id,
+                    position_id=position_id,
                     config_hash=provider._config_hash,
                     input_hash=input_hash,
                     output_hash="out_hash",
@@ -678,16 +690,17 @@ class TestPreviousOutput:
 
         set_compile_context(compile_ctx)
         try:
+            # Call with different content but same position_id
             result = await provider._classify(
-                content,
+                "New content to classify",  # Different content!
                 labels,
-                _cache_id="classify_1",
+                _position_id=position_id,
             )
         finally:
             set_compile_context(None)
 
         assert result == "positive"
-        # The prompt should include previous output
+        # The prompt should include previous output (found by position)
         assert len(captured_prompts) == 1
         assert "## Previous Output" in captured_prompts[0]
         assert "positive" in captured_prompts[0]
