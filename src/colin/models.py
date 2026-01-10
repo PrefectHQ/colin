@@ -165,7 +165,13 @@ class LLMCall(BaseModel):
     """Record of a single LLM invocation."""
 
     call_id: str
-    """Identifier for this call (auto-generated or manual)."""
+    """Identifier for this call (unique per invocation, includes input hash)."""
+
+    position_id: str | None = None
+    """Position-based ID for previous_output lookup (e.g., 'llm_1_5' or 'llm_1_5:0' for loops)."""
+
+    config_hash: str | None = None
+    """Hash of provider config at call time. Used to validate previous_output lookup."""
 
     input_hash: str
     """Hash of the input content."""
@@ -376,12 +382,69 @@ class Manifest(BaseModel):
                     break
         return dependents
 
-    def get_llm_call(self, doc_uri: str, call_id: str) -> LLMCall | None:
-        """Get a cached LLM call for a document."""
+    def get_llm_call(
+        self, doc_uri: str, call_id: str, config_hash: str | None = None
+    ) -> LLMCall | None:
+        """Get a cached LLM call for a document.
+
+        Args:
+            doc_uri: Document URI to look up.
+            call_id: The call ID to find.
+            config_hash: If provided, only return call if config_hash matches.
+                This ensures previous_output is only used when provider config
+                hasn't changed.
+
+        Returns:
+            The LLMCall if found (and config matches), None otherwise.
+        """
         doc = self.get_document(doc_uri)
         if doc is None:
             return None
-        return doc.llm_calls.get(call_id)
+        call = doc.llm_calls.get(call_id)
+        if call is None:
+            return None
+        # If config_hash provided, validate it matches
+        if config_hash is not None and call.config_hash != config_hash:
+            return None
+        return call
+
+    def get_llm_call_by_position(
+        self, doc_uri: str, position_id: str, config_hash: str | None = None
+    ) -> LLMCall | None:
+        """Get the most recent successful LLM call at a position.
+
+        Used for previous_output lookup. Finds any previous output at the same
+        position (regardless of inputs), enabling the LLM to compare and
+        potentially return "UseExisting".
+
+        Args:
+            doc_uri: Document URI to look up.
+            position_id: Position-based ID (e.g., "llm_1_5" or "llm_1_5:0").
+            config_hash: If provided, only return call if config_hash matches.
+
+        Returns:
+            The most recent successful LLMCall at this position, or None.
+        """
+        doc = self.get_document(doc_uri)
+        if doc is None:
+            return None
+
+        # Find all calls at this position
+        matching_calls = []
+        for call in doc.llm_calls.values():
+            if call.position_id != position_id:
+                continue
+            if not call.is_successful:
+                continue
+            if config_hash is not None and call.config_hash != config_hash:
+                continue
+            matching_calls.append(call)
+
+        if not matching_calls:
+            return None
+
+        # Return most recent by created_at
+        return max(matching_calls, key=lambda c: c.created_at)
 
 
 class ColinDocument(BaseModel):

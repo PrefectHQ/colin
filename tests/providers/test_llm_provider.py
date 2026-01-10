@@ -4,9 +4,9 @@ import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from colin.compiler.cache import set_compile_context
+from colin.compiler.cache import hash_args, set_compile_context
 from colin.compiler.context import CompileContext
-from colin.models import Manifest
+from colin.models import DocumentMeta, LLMCall, Manifest
 from colin.providers.llm import LLMProvider
 from colin.providers.project import ProjectProvider
 
@@ -306,3 +306,401 @@ class TestLLMProvider:
             assert resolved == "Provider instructions"
         finally:
             set_compile_context(None)
+
+
+class TestPreviousOutput:
+    """Tests for previous_output feature with position-based IDs."""
+
+    async def test_complete_receives_previous_output_with_position_id(self, tmp_path) -> None:
+        """Test that _complete receives previous_output when using stable _position_id.
+
+        When a position-based _position_id is provided, the LLM call should look up
+        the previous output from the manifest (by position) and include it in the prompt.
+        """
+        captured_prompts: list[str] = []
+
+        def capture_prompt(messages, info):
+            # Capture the prompt for inspection
+            captured_prompts.append(str(messages[0].parts[0].content))
+            return ModelResponse(parts=[TextPart(content="New response")])
+
+        provider = LLMProvider(model=FunctionModel(capture_prompt))
+
+        # Create manifest with a previous LLM call recorded
+        # Note: position_id is used for previous_output lookup (input-agnostic)
+        # call_id includes input hash for unique storage
+        old_prompt = "Write a haiku about winter"  # Different from new prompt
+        old_input_hash = hash_args((old_prompt,), {})
+        position_id = "llm_1_5"
+        call_id = f"llm.complete:{position_id}:{old_input_hash}"
+
+        manifest = Manifest()
+        doc_uri = "project://test.md"
+        doc_meta = DocumentMeta(
+            uri=doc_uri,
+            source_hash="abc123",
+            llm_calls={
+                call_id: LLMCall(
+                    call_id=call_id,
+                    position_id=position_id,  # Position-based ID for lookup
+                    config_hash=provider._config_hash,  # Must match current config
+                    input_hash=old_input_hash,
+                    output_hash="out_hash",
+                    output="Previous haiku output",
+                    model="test",
+                )
+            },
+        )
+        manifest.set_document(doc_uri, doc_meta)
+
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx = CompileContext(
+            manifest=manifest,
+            document_uri=doc_uri,
+            project_provider=project_provider,
+        )
+
+        set_compile_context(compile_ctx)
+        try:
+            # Call with position-based _position_id that matches stored call's position
+            # Note: even with different prompt, previous_output is found by position
+            result = await provider._complete(
+                "Write a haiku about spring",  # Different prompt!
+                _position_id=position_id,
+            )
+        finally:
+            set_compile_context(None)
+
+        assert result == "New response"
+        # The prompt should include the previous output section
+        assert len(captured_prompts) == 1
+        assert "## Previous Output (for reference)" in captured_prompts[0]
+        assert "Previous haiku output" in captured_prompts[0]
+        assert "UseExisting" in captured_prompts[0]
+
+    async def test_complete_no_previous_output_on_first_run(self, tmp_path) -> None:
+        """Test that _complete doesn't include previous_output on first run.
+
+        When there's no previous LLM call stored, the prompt should not
+        include the previous output section.
+        """
+        captured_prompts: list[str] = []
+
+        def capture_prompt(messages, info):
+            captured_prompts.append(str(messages[0].parts[0].content))
+            return ModelResponse(parts=[TextPart(content="First response")])
+
+        provider = LLMProvider(model=FunctionModel(capture_prompt))
+
+        # Empty manifest - no previous calls
+        manifest = Manifest()
+        doc_uri = "project://test.md"
+
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx = CompileContext(
+            manifest=manifest,
+            document_uri=doc_uri,
+            project_provider=project_provider,
+        )
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._complete(
+                "Write a haiku about spring",
+                _position_id="llm_1_5",
+            )
+        finally:
+            set_compile_context(None)
+
+        assert result == "First response"
+        # The prompt should NOT include previous output section
+        assert len(captured_prompts) == 1
+        assert "## Previous Output" not in captured_prompts[0]
+        assert "UseExisting" not in captured_prompts[0]
+
+    async def test_complete_no_previous_output_without_position_id(self, tmp_path) -> None:
+        """Test that previous_output lookup requires _position_id.
+
+        When no _position_id is provided (hash-based ID), previous_output
+        is not looked up since the position isn't stable.
+        """
+        captured_prompts: list[str] = []
+
+        def capture_prompt(messages, info):
+            captured_prompts.append(str(messages[0].parts[0].content))
+            return ModelResponse(parts=[TextPart(content="New response")])
+
+        provider = LLMProvider(model=FunctionModel(capture_prompt))
+
+        manifest = Manifest()
+        doc_uri = "project://test.md"
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx = CompileContext(
+            manifest=manifest,
+            document_uri=doc_uri,
+            project_provider=project_provider,
+        )
+
+        set_compile_context(compile_ctx)
+        try:
+            # Call WITHOUT _position_id - uses hash-based ID
+            result = await provider._complete("Write a haiku about spring")
+        finally:
+            set_compile_context(None)
+
+        assert result == "New response"
+        # The prompt should NOT include previous output section
+        assert len(captured_prompts) == 1
+        assert "## Previous Output" not in captured_prompts[0]
+
+    async def test_complete_skips_failed_previous_output(self, tmp_path) -> None:
+        """Test that failed previous LLM calls are not used for previous_output.
+
+        If the previous call failed (is_successful=False), it should not
+        be used as previous_output.
+        """
+        captured_prompts: list[str] = []
+
+        def capture_prompt(messages, info):
+            captured_prompts.append(str(messages[0].parts[0].content))
+            return ModelResponse(parts=[TextPart(content="New response")])
+
+        provider = LLMProvider(model=FunctionModel(capture_prompt))
+
+        # Manifest with a FAILED previous call
+        prompt = "Write a haiku about spring"
+        input_hash = hash_args((prompt,), {})
+        position_id = "llm_1_5"
+        call_id = f"llm.complete:{position_id}:{input_hash}"
+
+        manifest = Manifest()
+        doc_uri = "project://test.md"
+        doc_meta = DocumentMeta(
+            uri=doc_uri,
+            source_hash="abc123",
+            llm_calls={
+                call_id: LLMCall(
+                    call_id=call_id,
+                    position_id=position_id,
+                    config_hash=provider._config_hash,
+                    input_hash=input_hash,
+                    output_hash="",
+                    output="",
+                    model="test",
+                    is_successful=False,  # Failed!
+                    error="Some error",
+                )
+            },
+        )
+        manifest.set_document(doc_uri, doc_meta)
+
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx = CompileContext(
+            manifest=manifest,
+            document_uri=doc_uri,
+            project_provider=project_provider,
+        )
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._complete(
+                prompt,
+                _position_id=position_id,
+            )
+        finally:
+            set_compile_context(None)
+
+        assert result == "New response"
+        # Failed calls should NOT be used as previous output
+        assert len(captured_prompts) == 1
+        assert "## Previous Output" not in captured_prompts[0]
+
+    async def test_complete_skips_previous_output_when_config_changes(self, tmp_path) -> None:
+        """Test that previous_output is NOT used when provider config changes.
+
+        If the stored LLMCall has a different config_hash than the current
+        provider, previous_output should not be used.
+        """
+        captured_prompts: list[str] = []
+
+        def capture_prompt(messages, info):
+            captured_prompts.append(str(messages[0].parts[0].content))
+            return ModelResponse(parts=[TextPart(content="New response")])
+
+        provider = LLMProvider(model=FunctionModel(capture_prompt))
+
+        # Manifest with a call that has DIFFERENT config_hash
+        prompt = "Write a haiku about spring"
+        input_hash = hash_args((prompt,), {})
+        position_id = "llm_1_5"
+        call_id = f"llm.complete:{position_id}:{input_hash}"
+
+        manifest = Manifest()
+        doc_uri = "project://test.md"
+        doc_meta = DocumentMeta(
+            uri=doc_uri,
+            source_hash="abc123",
+            llm_calls={
+                call_id: LLMCall(
+                    call_id=call_id,
+                    position_id=position_id,
+                    config_hash="different_config_hash",  # Different from provider!
+                    input_hash=input_hash,
+                    output_hash="out_hash",
+                    output="Previous output from different config",
+                    model="test",
+                )
+            },
+        )
+        manifest.set_document(doc_uri, doc_meta)
+
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx = CompileContext(
+            manifest=manifest,
+            document_uri=doc_uri,
+            project_provider=project_provider,
+        )
+
+        set_compile_context(compile_ctx)
+        try:
+            result = await provider._complete(
+                prompt,
+                _position_id=position_id,
+            )
+        finally:
+            set_compile_context(None)
+
+        assert result == "New response"
+        # Previous output should NOT be used because config_hash doesn't match
+        assert len(captured_prompts) == 1
+        assert "## Previous Output" not in captured_prompts[0]
+        assert "different config" not in captured_prompts[0]
+
+    async def test_extract_receives_previous_output_with_position_id(self, tmp_path) -> None:
+        """Test that _extract receives previous_output when _position_id is provided."""
+        captured_prompts: list[str] = []
+
+        def capture_prompt(messages, info):
+            captured_prompts.append(str(messages[0].parts[0].content))
+            return ModelResponse(parts=[TextPart(content="New extraction")])
+
+        provider = LLMProvider(model=FunctionModel(capture_prompt))
+
+        # Manifest with previous successful extract call
+        from colin.compiler.cache import _serialize_value
+
+        old_content = "Old content that was extracted from"
+        prompt = "key points"
+        serialized = _serialize_value(old_content)
+        input_hash = hash_args((serialized, prompt), {})
+        position_id = "extract_1"
+        call_id = f"llm.extract:{position_id}:{input_hash}"
+
+        manifest = Manifest()
+        doc_uri = "project://test.md"
+        doc_meta = DocumentMeta(
+            uri=doc_uri,
+            source_hash="abc123",
+            llm_calls={
+                call_id: LLMCall(
+                    call_id=call_id,
+                    position_id=position_id,
+                    config_hash=provider._config_hash,
+                    input_hash=input_hash,
+                    output_hash="out_hash",
+                    output="Previous extraction result",
+                    model="test",
+                )
+            },
+        )
+        manifest.set_document(doc_uri, doc_meta)
+
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx = CompileContext(
+            manifest=manifest,
+            document_uri=doc_uri,
+            project_provider=project_provider,
+        )
+
+        set_compile_context(compile_ctx)
+        try:
+            # Call with different content but same position_id
+            result = await provider._extract(
+                "New content to extract from",  # Different content!
+                prompt,
+                _position_id=position_id,
+            )
+        finally:
+            set_compile_context(None)
+
+        assert result == "New extraction"
+        # The prompt should include previous output (found by position)
+        assert len(captured_prompts) == 1
+        assert "## Previous Output" in captured_prompts[0]
+        assert "Previous extraction result" in captured_prompts[0]
+
+    async def test_classify_receives_previous_output_with_position_id(self, tmp_path) -> None:
+        """Test that _classify receives previous_output when _position_id is provided."""
+        captured_prompts: list[str] = []
+
+        def capture_prompt(messages, info):
+            captured_prompts.append(str(messages[0].parts[0].content))
+            # Return valid JSON for classification
+            return ModelResponse(parts=[TextPart(content='{"label": "positive"}')])
+
+        provider = LLMProvider(model=FunctionModel(capture_prompt))
+
+        # Manifest with previous successful classify call
+        from colin.compiler.cache import _serialize_value
+
+        old_content = "Old content"
+        labels = ["positive", "negative"]
+        serialized = _serialize_value(old_content)
+        sorted_labels = sorted(labels, key=lambda x: (isinstance(x, bool), str(x)))
+        labels_key = ",".join(str(label) for label in sorted_labels)
+        input_hash = hash_args((serialized, labels_key, str(False)), {})
+        position_id = "classify_1"
+        call_id = f"llm.classify:{position_id}:{input_hash}"
+
+        manifest = Manifest()
+        doc_uri = "project://test.md"
+        doc_meta = DocumentMeta(
+            uri=doc_uri,
+            source_hash="abc123",
+            llm_calls={
+                call_id: LLMCall(
+                    call_id=call_id,
+                    position_id=position_id,
+                    config_hash=provider._config_hash,
+                    input_hash=input_hash,
+                    output_hash="out_hash",
+                    output="positive",
+                    model="test",
+                )
+            },
+        )
+        manifest.set_document(doc_uri, doc_meta)
+
+        project_provider = ProjectProvider(base_path=tmp_path)
+        compile_ctx = CompileContext(
+            manifest=manifest,
+            document_uri=doc_uri,
+            project_provider=project_provider,
+        )
+
+        set_compile_context(compile_ctx)
+        try:
+            # Call with different content but same position_id
+            result = await provider._classify(
+                "New content to classify",  # Different content!
+                labels,
+                _position_id=position_id,
+            )
+        finally:
+            set_compile_context(None)
+
+        assert result == "positive"
+        # The prompt should include previous output (found by position)
+        assert len(captured_prompts) == 1
+        assert "## Previous Output" in captured_prompts[0]
+        assert "positive" in captured_prompts[0]

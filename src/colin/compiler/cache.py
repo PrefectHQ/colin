@@ -119,12 +119,19 @@ def cached(
         detail_arg: Argument name to use for state tracking detail (e.g., "prompt").
 
     Call-time overrides (passed as kwargs):
-        _cache_id: Custom cache ID (skips hash, uses this directly).
+        _position_id: Position-based ID for document-scoped caching. When provided,
+            cache key includes position_id + input_hash for per-call uniqueness.
+            Format: key:doc_uri:position_id:input_hash:config_hash
         _cache: Set to False to bypass cache entirely.
 
     Provider config hashing:
         If `self` has a `_config_hash` attribute, it will be included in the cache key.
         This ensures provider config changes invalidate cached results.
+
+    Note on _position_id:
+        The decorator extracts _position_id from kwargs for cache key computation,
+        but does NOT strip it. Functions can declare _position_id as a parameter
+        if they need it for previous_output lookup.
     """
 
     def decorator(func):
@@ -134,7 +141,7 @@ def cached(
         async def wrapper(
             self,
             *args,
-            _cache_id: str | None = None,
+            _position_id: str | None = None,
             _cache: bool = True,
             **kwargs,
         ):
@@ -142,22 +149,38 @@ def cached(
 
             # Skip cache if disabled or not in compilation
             if not _cache or compile_ctx is None:
+                # Pass _position_id if the function accepts it
+                func_params = sig.parameters
+                if "_position_id" in func_params:
+                    return await func(self, *args, _position_id=_position_id, **kwargs)
                 return await func(self, *args, **kwargs)
 
-            # Build cache key - only compute hash if no manual _cache_id
-            if _cache_id:
-                cache_key = f"{key}:{_cache_id}"
-            else:
-                bound = sig.bind(self, *args, **kwargs)
-                bound.apply_defaults()
-                bound_args = {k: v for k, v in bound.arguments.items() if k != "self"}
+            # Provider config hash - included in all cache keys
+            config_hash = getattr(self, "_config_hash", None)
+            doc_uri = compile_ctx.document_uri
 
+            # Build cache key - always includes input hash for correctness
+            bound = sig.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+            bound_args = {k: v for k, v in bound.arguments.items() if k != "self"}
+            input_hash = hash_args_for_func(func, bound_args, exclude_args)
+
+            if _position_id:
+                # Document-scoped cache key when using _position_id
+                # Includes input_hash to handle loops correctly (each iteration unique)
+                # Format: key:doc_uri:position_id:input_hash:config_hash
+                parts = [key, doc_uri, _position_id, input_hash]
+                if config_hash:
+                    parts.append(config_hash)
+                cache_key = ":".join(parts)
+            else:
+                # Hash-based cache key (global, shared across docs with same inputs)
                 # Include provider config hash if available
-                config_hash = getattr(self, "_config_hash", None)
                 if config_hash:
                     bound_args["provider_config"] = config_hash
+                    input_hash = hash_args_for_func(func, bound_args, exclude_args)
 
-                cache_key = f"{key}:{hash_args_for_func(func, bound_args, exclude_args)}"
+                cache_key = f"{key}:{input_hash}"
 
             # Track this cache key as used (for pruning unused entries)
             used_keys = get_used_cache_keys()
@@ -187,7 +210,12 @@ def cached(
                 return json.loads(cached_entry.output)
 
             # Cache miss - execute function (exceptions propagate, not cached)
-            result = await func(self, *args, **kwargs)
+            # Pass _position_id if the function accepts it
+            func_params = sig.parameters
+            if "_position_id" in func_params:
+                result = await func(self, *args, _position_id=_position_id, **kwargs)
+            else:
+                result = await func(self, *args, **kwargs)
 
             # Store in cache
             compile_ctx.manifest.cache[cache_key] = CacheEntry(
