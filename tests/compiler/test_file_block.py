@@ -563,3 +563,66 @@ Done.
         if file_project.compiled_path in p.parents or p.parent == file_project.compiled_path
     ]
     assert "private.json" not in stale_relative
+
+
+async def test_file_output_has_content_hash(file_project):
+    """Test file outputs have their own content hash for staleness tracking."""
+    (file_project.model_path / "generator.md").write_text(
+        """---
+name: Generator
+---
+{% file "data.json" format="json" %}
+## key
+value
+{% endfile %}
+
+Done.
+"""
+    )
+
+    await file_project.compile()
+
+    doc = file_project.manifest.get_document("project://generator.md")
+    assert doc is not None
+    assert "data.json" in doc.file_outputs
+
+    # File output should have its own hash
+    file_meta = doc.file_outputs["data.json"]
+    assert file_meta.output_hash is not None
+    assert len(file_meta.output_hash) == 16  # SHA256 truncated to 16 chars
+
+
+async def test_sections_in_json_file_block(file_project):
+    """Test sections work inside JSON format file blocks."""
+    (file_project.model_path / "generator.md").write_text(
+        """---
+name: Generator
+---
+{% file "data.json" format="json" %}
+{% section config %}
+## name
+myapp
+
+## version
+1.0
+{% endsection %}
+{% endfile %}
+
+Done.
+"""
+    )
+
+    await file_project.compile()
+
+    import json
+
+    # JSON should be valid
+    file_path = file_project.compiled_path / "data.json"
+    content = json.loads(file_path.read_text())
+    assert content["name"] == "myapp"
+    assert content["version"] == "1.0"
+
+    # Section should be captured in file metadata
+    doc = file_project.manifest.get_document("project://generator.md")
+    file_meta = doc.file_outputs["data.json"]
+    assert "config" in file_meta.sections

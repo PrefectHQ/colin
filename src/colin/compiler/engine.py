@@ -749,6 +749,7 @@ class CompileEngine:
                 publish=file_output.publish,
                 format=file_output.format,
                 sections=file_output.sections,
+                output_hash=file_output.output_hash,
             )
 
         return CompiledDocument(

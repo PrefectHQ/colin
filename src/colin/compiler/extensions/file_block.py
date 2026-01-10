@@ -23,6 +23,7 @@ class FileOutput:
     publish: bool | None = None  # None = inherit from source document
     format: str = "markdown"  # renderer to apply
     sections: dict[str, str] = field(default_factory=dict)  # scoped sections
+    output_hash: str | None = None  # content hash for staleness tracking
 
 
 class FileBlockExtension(Extension):
@@ -146,8 +147,18 @@ class FileBlockExtension(Extension):
         # Render the body content
         body_content = await caller()  # type: ignore[misc]
 
-        # Apply format renderer and extract sections
-        from colin.compiler.section_parser import parse_sections, remove_colin_markers
+        # Extract sections and remove section/defer markers BEFORE format rendering
+        # (JSON/YAML renderers can't parse content with section markers)
+        # Keep item markers - the renderer needs them to detect arrays
+        from colin.compiler.section_parser import (
+            parse_sections,
+            remove_section_and_defer_markers,
+        )
+
+        sections = parse_sections(body_content)
+        clean_body = remove_section_and_defer_markers(body_content)
+
+        # Apply format renderer
         from colin.renders import get_renderer
 
         renderer = get_renderer(format)
@@ -159,13 +170,15 @@ class FileBlockExtension(Extension):
 
         # Render through the format renderer
         # Use a synthetic URI for error messages
-        render_result = renderer.render(body_content, f"file://{file_path}", output_config)
+        render_result = renderer.render(clean_body, f"file://{file_path}", output_config)
 
-        # Extract sections from the rendered content (before marker removal)
-        sections = parse_sections(render_result.content)
+        # Final content (renderer may have transformed it)
+        clean_content = render_result.content
 
-        # Remove all Colin markers from final content
-        clean_content = remove_colin_markers(render_result.content)
+        # Compute content hash for staleness tracking
+        import hashlib
+
+        output_hash = hashlib.sha256(clean_content.encode()).hexdigest()[:16]
 
         # Store in context
         context.file_outputs[file_path] = FileOutput(
@@ -173,6 +186,7 @@ class FileBlockExtension(Extension):
             publish=publish,
             format=format,
             sections=sections,
+            output_hash=output_hash,
         )
 
         # Track file output in state for progress display

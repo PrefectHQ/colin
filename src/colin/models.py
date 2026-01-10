@@ -271,6 +271,9 @@ class FileOutputMeta(BaseModel):
     sections: dict[str, str] = Field(default_factory=dict)
     """Named sections extracted from this file (scoped to file, not parent)."""
 
+    output_hash: str | None = None
+    """Content hash for staleness detection of refs to this file output."""
+
 
 class ArtifactRef(BaseModel):
     """Reference to a written artifact, stored in manifest."""
