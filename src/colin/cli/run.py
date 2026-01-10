@@ -6,13 +6,16 @@ from pathlib import Path
 from typing import Annotated
 
 import cyclopts
+from rich.align import Align
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
+import colin
 from colin.api.compile import CompileResult, compile_project
 from colin.api.project import (
     clean_project,
@@ -25,6 +28,73 @@ from colin.exceptions import MultipleCompilationErrors, ProjectNotInitializedErr
 
 console = Console()
 err_console = Console(stderr=True)
+
+# Colin logo with cyan-to-blue gradient
+# Generated with: npx oh-my-logo "Colin" dawn --filled --block-font tiny --letter-spacing 1 --color
+#  █▀▀ █▀█ █    █ █▄ █
+#  █▄▄ █▄█ █▄▄  █ █ ▀█
+LOGO = (
+    "\x1b[38;2;0;198;255m \x1b[38;2;0;193;255m█\x1b[38;2;0;189;255m▀"
+    "\x1b[38;2;0;184;255m▀\x1b[38;2;0;179;255m \x1b[38;2;0;175;255m█"
+    "\x1b[38;2;0;170;255m▀\x1b[38;2;0;165;255m█\x1b[38;2;0;161;255m "
+    "\x1b[38;2;0;156;255m█\x1b[38;2;0;151;255m \x1b[38;2;0;147;255m "
+    "\x1b[38;2;0;142;255m \x1b[38;2;0;137;255m█\x1b[38;2;0;133;255m "
+    "\x1b[38;2;0;128;255m█\x1b[38;2;0;123;255m▄\x1b[38;2;0;119;255m "
+    "\x1b[38;2;0;114;255m█\x1b[39m\n"
+    "\x1b[38;2;0;198;255m \x1b[38;2;0;193;255m█\x1b[38;2;0;189;255m▄"
+    "\x1b[38;2;0;184;255m▄\x1b[38;2;0;179;255m \x1b[38;2;0;175;255m█"
+    "\x1b[38;2;0;170;255m▄\x1b[38;2;0;165;255m█\x1b[38;2;0;161;255m "
+    "\x1b[38;2;0;156;255m█\x1b[38;2;0;151;255m▄\x1b[38;2;0;147;255m▄"
+    "\x1b[38;2;0;142;255m \x1b[38;2;0;137;255m█\x1b[38;2;0;133;255m "
+    "\x1b[38;2;0;128;255m█\x1b[38;2;0;123;255m \x1b[38;2;0;119;255m▀"
+    "\x1b[38;2;0;114;255m█\x1b[39m"
+)
+
+
+def _print_banner(project_name: str, config_path: Path, output_dir: Path) -> None:
+    """Print the Colin logo banner in a panel with project info."""
+    logo_text = Text.from_ansi(LOGO, no_wrap=True)
+    version_text = Text(f"Colin {colin.__version__}", style="bold blue")
+
+    # Project info table
+    cwd = Path.cwd()
+    try:
+        config_display = str(config_path.relative_to(cwd))
+        output_display = str(output_dir.relative_to(cwd)) + "/"
+    except ValueError:
+        config_display = str(config_path)
+        output_display = str(output_dir) + "/"
+
+    info_table = Table.grid(padding=(0, 1))
+    info_table.add_column(justify="center")  # emoji
+    info_table.add_column(style="cyan", justify="left")  # label
+    info_table.add_column(style="dim", justify="left")  # value
+    info_table.add_row("📚", "Project:", project_name)
+    info_table.add_row("🛠️", "Config:", config_display)
+    info_table.add_row("✨", "Output:", output_display)
+
+    docs_url = Text("https://github.com/prefecthq/colin", style="dim")
+
+    panel_content = Group(
+        "",
+        Align.center(logo_text),
+        "",
+        "",
+        Align.center(version_text),
+        Align.center(docs_url),
+        "",
+        Align.center(info_table),
+    )
+
+    panel = Panel(
+        panel_content,
+        border_style="dim",
+        padding=(1, 4),
+        width=80,
+    )
+
+    console.print(Align.center(panel))
+    console.print()
 
 
 def _plural(n: int, singular: str, plural: str) -> str:
@@ -199,6 +269,7 @@ async def run(
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
     ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
+    no_banner: Annotated[bool, cyclopts.Parameter(name=["--no-banner"])] = False,
     var: Annotated[list[str], cyclopts.Parameter(name=["--var"])] = [],
 ) -> None:
     """Compile and run all models.
@@ -209,6 +280,7 @@ async def run(
         no_cache: Ignore cached results and recompile all documents.
         ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
         quiet: Hide progress display, show only final results.
+        no_banner: Hide the Colin logo banner.
         var: Variable overrides in key=value format (can be repeated).
     """
     # Parse --var key=value pairs into dict
@@ -264,8 +336,11 @@ async def run(
                     )
             return
 
-        # Print project info before starting
-        print_project_info(project_file, project_name, output_dir)
+        # Print banner (includes project info) before starting
+        if not no_banner:
+            _print_banner(project_name, project_file, output_dir)
+        else:
+            print_project_info(project_file, project_name, output_dir)
 
         # Compile with progress display
         result = await _compile_with_progress(
