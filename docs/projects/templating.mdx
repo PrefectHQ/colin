@@ -308,3 +308,276 @@ Summarize this content for an executive audience.
 ```
 
 See [LLM Provider](/providers/llm) for complete documentation on instructions, structured output, caching, and cost management.
+
+## File Blocks
+
+A single Colin document normally produces one output file. File blocks let you generate multiple outputs from one source—perfect for creating related files, generating content from data, or building auxiliary outputs alongside your main document.
+
+### Creating Files
+
+Use `{% file %}` to create additional output files:
+
+```jinja models/generator.md
+---
+name: Config Generator
+---
+
+# Generator
+
+{% file "config.json" format="json" %}
+## database
+localhost
+
+## port
+5432
+{% endfile %}
+
+Generator complete.
+```
+
+This produces two files:
+- `output/generator.md` — the main document output
+- `output/config.json` — the file block output
+
+### Arguments
+
+File blocks accept three arguments that match the document-level [output configuration](/projects/documents#output-configuration):
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `path` | Yes | — | Relative path for the output file |
+| `format` | No | `markdown` | Renderer to apply (`markdown`, `json`, `yaml`) |
+| `publish` | No | inherit | Whether to copy to `output/` |
+
+```jinja
+{% file "data/users.json" format="json" publish=true %}
+...content...
+{% endfile %}
+```
+
+The path can be any Jinja expression, enabling dynamic file names:
+
+```jinja
+{% for user in users %}
+{% file "profiles/" ~ user.name ~ ".md" %}
+# {{ user.name }}
+{{ user.bio }}
+{% endfile %}
+{% endfor %}
+```
+
+### Format Rendering
+
+File blocks support the same [renderers](/renderers/renderers) as document output. When you specify a format, the content goes through that renderer's transformation pipeline:
+
+```jinja models/data-generator.md
+---
+name: Data Generator
+---
+
+{% file "users.json" format="json" %}
+{% for user in ["Alice", "Bob", "Charlie"] %}
+{% item %}
+## name
+{{ user }}
+
+## role
+Engineer
+{% enditem %}
+{% endfor %}
+{% endfile %}
+```
+
+This produces valid JSON with an array of user objects:
+
+```json output/users.json
+[
+  {"name": "Alice", "role": "Engineer"},
+  {"name": "Bob", "role": "Engineer"},
+  {"name": "Charlie", "role": "Engineer"}
+]
+```
+
+Item blocks, section markers, and all other template features work inside file blocks just as they do in the main document.
+
+### Publish Control
+
+By default, file outputs inherit their publish setting from the source document. Override this with the `publish` argument:
+
+```jinja
+{# Public source document #}
+
+{% file "public-output.json" format="json" %}
+This file publishes to output/ (inherits from source)
+{% endfile %}
+
+{% file "private-cache.json" format="json" publish=false %}
+This file stays in .colin/compiled/ only
+{% endfile %}
+```
+
+Private generators can produce public outputs—useful when the generator logic shouldn't appear in final output but the generated files should:
+
+```jinja models/_generator.md
+---
+name: Private Generator
+---
+
+{# This document doesn't publish (underscore prefix) #}
+
+{% file "public/config.json" format="json" publish=true %}
+## setting
+value
+{% endfile %}
+```
+
+The generator document stays in `.colin/compiled/` while the config file publishes to `output/public/config.json`.
+
+### Section Scoping
+
+Sections defined inside file blocks are scoped to that file only—they don't leak into the parent document:
+
+```jinja models/report.md
+---
+name: Report
+---
+
+{% section summary %}
+## Summary
+Main report summary.
+{% endsection %}
+
+{% file "data.md" %}
+{% section data_summary %}
+## Data Summary
+This section belongs to data.md only.
+{% endsection %}
+{% endfile %}
+```
+
+Access scoped sections through refs:
+
+```jinja
+{{ ref("report.md").sections.summary }}        {# Main doc section #}
+{{ ref("data.md").sections.data_summary }}     {# File block section #}
+```
+
+The parent document's `sections` only contains `summary`. The file output's `sections` contains `data_summary`.
+
+### Referencing File Outputs
+
+Other documents can reference file block outputs using `ref()`. Since file outputs can't be statically detected, use `depends_on` to ensure correct compilation order:
+
+```jinja models/consumer.md
+---
+name: Consumer
+colin:
+  depends_on:
+    - generator.md
+---
+
+Using the generated config:
+{{ ref("config.json").content }}
+```
+
+The `depends_on` hint tells Colin to compile `generator.md` first, ensuring `config.json` exists before `consumer.md` tries to reference it.
+
+<Tip>
+Colin uses content-addressed staleness for file outputs. If the generator recompiles but produces identical file content, downstream documents that reference it won't recompile unnecessarily.
+</Tip>
+
+### Patterns
+
+#### Generate Files from Data
+
+Loop over data to create multiple related files:
+
+```jinja models/skill-generator.md
+---
+name: Skill Generator
+---
+
+{% for tool in colin.mcp.server.tools() %}
+{% file "skills/" ~ tool.name ~ ".md" %}
+# {{ tool.name }}
+
+{{ tool.description }}
+
+## Parameters
+{% for param in tool.inputSchema.properties.items() %}
+- **{{ param[0] }}**: {{ param[1].description }}
+{% endfor %}
+{% endfile %}
+{% endfor %}
+```
+
+This creates a separate skill file for each MCP tool.
+
+#### Auxiliary Data Files
+
+Keep structured data alongside human-readable output:
+
+```jinja models/analysis.md
+---
+name: Market Analysis
+---
+
+# Market Analysis
+
+{% llm %}
+Analyze the competitive landscape for {{ ref("company.md").content }}
+{% endllm %}
+
+{% file "analysis-data.json" format="json" publish=false %}
+## generated_at
+{{ now().isoformat() }}
+
+## source_company
+{{ ref("company.md").name }}
+
+## model
+{{ colin.llm.default_model }}
+{% endfile %}
+```
+
+The main analysis publishes as Markdown while the metadata stays in the build cache for debugging or downstream processing.
+
+#### Configuration Generation
+
+Generate configuration files from templates:
+
+```jinja models/_config-builder.md
+---
+name: Config Builder
+colin:
+  output:
+    publish: false
+---
+
+{% file "app.config.json" format="json" publish=true %}
+## database
+{{ vars.database_host }}
+
+## port
+{{ vars.database_port }}
+
+## environment
+{{ vars.environment }}
+{% endfile %}
+
+{% file "docker-compose.yml" format="yaml" publish=true %}
+## services
+### app
+#### image
+myapp:{{ vars.version }}
+
+#### environment
+##### DATABASE_HOST
+{{ vars.database_host }}
+
+##### DATABASE_PORT
+{{ vars.database_port }}
+{% endfile %}
+```
+
+A single source generates multiple configuration files in different formats.

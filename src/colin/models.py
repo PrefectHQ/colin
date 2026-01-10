@@ -255,6 +255,26 @@ class Frontmatter(BaseModel):
     """Document metadata (everything outside the colin: block)."""
 
 
+class FileOutputMeta(BaseModel):
+    """Metadata for a file created via {% file %} block.
+
+    Stored in manifest for validity tracking and publish decisions.
+    Content is stored on disk, not in manifest.
+    """
+
+    publish: bool | None = None
+    """Whether to publish to output/. None = inherit from source document."""
+
+    format: str = "markdown"
+    """Renderer used (json, yaml, markdown)."""
+
+    sections: dict[str, str] = Field(default_factory=dict)
+    """Named sections extracted from this file (scoped to file, not parent)."""
+
+    output_hash: str | None = None
+    """Content hash for staleness detection of refs to this file output."""
+
+
 class ArtifactRef(BaseModel):
     """Reference to a written artifact, stored in manifest."""
 
@@ -310,6 +330,9 @@ class DocumentMeta(BaseModel):
     sections: dict[str, str] = Field(default_factory=dict)
     """Named sections extracted from the document (section_name -> raw_content)."""
 
+    file_outputs: dict[str, FileOutputMeta] = Field(default_factory=dict)
+    """Files created via {% file %} blocks (path -> metadata). Content stored on disk."""
+
     config_hash: str | None = None
     """Hash of colin.toml when this document was compiled."""
 
@@ -341,12 +364,19 @@ class Manifest(BaseModel):
     _output_path_index: dict[str, str] | None = None
 
     def _build_output_path_index(self) -> dict[str, str]:
-        """Build index mapping output_path -> document uri."""
-        return {
-            doc.output_path: uri
-            for uri, doc in self.documents.items()
-            if doc.output_path is not None
-        }
+        """Build index mapping output_path -> document uri.
+
+        Includes both main outputs and file outputs from {% file %} blocks.
+        """
+        index: dict[str, str] = {}
+        for uri, doc in self.documents.items():
+            # Main output
+            if doc.output_path is not None:
+                index[doc.output_path] = uri
+            # File outputs from {% file %} blocks
+            for file_path in doc.file_outputs:
+                index[file_path] = uri
+        return index
 
     def get_document(self, uri: str) -> DocumentMeta | None:
         """Get metadata for a document by URI."""
@@ -498,3 +528,9 @@ class CompiledDocument(BaseModel):
 
     sections: dict[str, str] = Field(default_factory=dict)
     """Named sections extracted from the document (section_name -> raw_content)."""
+
+    file_outputs: dict[str, str] = Field(default_factory=dict)
+    """Content of files created via {% file %} blocks (path -> content)."""
+
+    file_output_meta: dict[str, FileOutputMeta] = Field(default_factory=dict)
+    """Metadata for file outputs (path -> publish/format/sections info)."""

@@ -12,6 +12,7 @@ from colin.models import CompiledDocument, LLMCall, Ref
 from colin.resources import Resource
 
 if TYPE_CHECKING:
+    from colin.compiler.extensions.file_block import FileOutput
     from colin.models import Manifest
     from colin.providers.project import ProjectProvider, ProjectResource
 
@@ -54,6 +55,7 @@ class CompileContext:
         self.total_cost: float = 0.0
         self.sections: dict[str, str] = {}  # section_name -> raw_content
         self.defer_blocks: dict[str, Any] = {}  # defer_id -> callable
+        self.file_outputs: dict[str, FileOutput] = {}  # path -> FileOutput
         self._tracked_provider_configs: set[tuple[str, str]] = set()  # (type, connection)
 
     @overload

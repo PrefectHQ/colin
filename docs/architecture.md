@@ -93,9 +93,10 @@ src/colin/
 8. **Topological sort** - Order compilation by dependencies
 9. **Compile** - Render each template with Jinja
 10. **Render output** - Apply format renderer (markdown passthrough, JSON extraction, YAML extraction)
-11. **Write to cache** - Save compiled outputs to `.colin/compiled/`
-12. **Update manifest** - Record output_path, hashes, refs, LLM calls
-13. **Publish** - Copy non-private outputs from `.colin/compiled/` to `output/`
+11. **Process file outputs** - Extract `{% file %}` block outputs and apply their format renderers
+12. **Write to cache** - Save compiled outputs to `.colin/compiled/` (main output + file outputs)
+13. **Update manifest** - Record output_path, hashes, refs, LLM calls, file_outputs
+14. **Publish** - Copy non-private outputs from `.colin/compiled/` to `output/` (respects per-file publish settings)
 
 ### ref() Call Flow
 
@@ -301,6 +302,103 @@ Access sections from other documents:
 ```
 
 **Format-aware access**: Sections return raw strings for markdown output, parsed data structures for JSON/YAML output. Sections are captured via HTML markers during rendering, stored in the manifest, and accessed via the `SectionsAccessor` class.
+
+### {% file %} Blocks
+
+Create additional output files from a single source document:
+
+```jinja
+{% file "path/to/output.json" format="json" %}
+## name
+{{ user.name }}
+
+## role
+{{ user.role }}
+{% endfile %}
+```
+
+Arguments match `OutputConfig`:
+- **path** (required): Relative output path for the file
+- **format** (optional): Output format (`json`, `yaml`, `markdown`). Default: `markdown`
+- **publish** (optional): Whether to publish to `output/`. Default: inherit from source document
+
+**Use cases**:
+
+1. **Generate multiple files from data**: Loop over items and create separate files
+   ```jinja
+   {% for tool in colin.mcp.server.tools() %}
+   {% file "skills/" ~ tool.name ~ ".md" %}
+   # {{ tool.name }}
+   {{ tool.description }}
+   {% endfile %}
+   {% endfor %}
+   ```
+
+2. **Private generators producing public outputs**: A private source can create public file outputs
+   ```jinja
+   {# _generator.md - private source #}
+   {% file "public/config.json" format="json" publish=true %}
+   ## setting
+   value
+   {% endfile %}
+   ```
+
+3. **Auxiliary outputs**: Create supporting files alongside main output
+   ```jinja
+   {# report.md - main document #}
+   # Report
+   Main content...
+
+   {% file "report-data.json" format="json" %}
+   ## raw_data
+   {{ data | tojson }}
+   {% endfile %}
+   ```
+
+**Section scoping**: Sections defined inside `{% file %}` blocks are scoped to that file only. They don't leak into the parent document's sections:
+
+```jinja
+{% section main %}Main document section{% endsection %}
+
+{% file "output.md" %}
+{% section file_section %}This belongs to output.md{% endsection %}
+{% endfile %}
+```
+
+Access file sections via `ref("output.md").sections.file_section`.
+
+**Dependency ordering**: File outputs can't be statically detected. If another document refs a file output, use `depends_on` to ensure correct compilation order:
+
+```yaml
+---
+colin:
+  depends_on:
+    - generator.md  # Produces the file I need to ref
+---
+{{ ref("generated-file.json").content }}
+```
+
+See [ADR 011: Multi-File Output](decisions/011-multi-file-output.md) for design details.
+
+### {% defer %} Blocks
+
+Deferred rendering blocks that execute in a second pass with access to the rendered document:
+
+```jinja
+# Content
+Main body...
+
+{% defer %}
+## Table of Contents
+{% for name in rendered.sections.keys() %}
+- {{ name }}
+{% endfor %}
+{% enddefer %}
+```
+
+The `rendered` variable provides access to the first-pass output:
+- `rendered.content`: Full document content from first pass
+- `rendered.sections`: Format-aware section accessor
 
 ## Providers and Template Functions
 

@@ -1,7 +1,14 @@
 # ADR 011: Multi-File Output
 
-**Status**: Accepted
+**Status**: Partially Implemented
 **Date**: 2024-12-29
+**Updated**: 2026-01-10
+
+## Implementation Status
+
+- **`{% file %}` directive**: Implemented. Supports `path`, `format`, and `publish` arguments. See architecture.md for usage details.
+- **Static file mappings**: Not yet implemented.
+- **Output plugin-generated files**: Not yet implemented.
 
 ## Context
 

@@ -26,6 +26,7 @@ from colin.models import (
     ColinDocument,
     CompiledDocument,
     DocumentMeta,
+    FileOutputMeta,
     Frontmatter,
     Manifest,
     parse_duration,
@@ -739,6 +740,18 @@ class CompileEngine:
         # Hash the FINAL rendered content
         output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
 
+        # Convert file outputs from context to compiled document format
+        file_outputs: dict[str, str] = {}
+        file_output_meta: dict[str, FileOutputMeta] = {}
+        for path, file_output in context.file_outputs.items():
+            file_outputs[path] = file_output.content
+            file_output_meta[path] = FileOutputMeta(
+                publish=file_output.publish,
+                format=file_output.format,
+                sections=file_output.sections,
+                output_hash=file_output.output_hash,
+            )
+
         return CompiledDocument(
             uri=doc.uri,
             frontmatter=doc.frontmatter,
@@ -751,6 +764,8 @@ class CompileEngine:
             llm_calls=context.llm_calls,
             total_cost_usd=context.total_cost,
             sections=context.sections,
+            file_outputs=file_outputs,
+            file_output_meta=file_output_meta,
         )
 
     async def _load_cached_document(self, doc: ColinDocument) -> CompiledDocument | None:
@@ -816,6 +831,13 @@ class CompileEngine:
             or not artifact_path.exists()
         ):
             await self.artifact_storage.write(doc.output_path, doc.output)
+
+        # Write file outputs from {% file %} blocks
+        for path, content in doc.file_outputs.items():
+            file_artifact_path = self.config.build_path / "compiled" / path
+            # Always write file outputs (they're dynamic, can't easily content-address)
+            if not file_artifact_path.exists() or file_artifact_path.read_text() != content:
+                await self.artifact_storage.write(path, content)
 
     async def _get_previous_rendered(self, uri: str, output_format: str) -> RenderedOutput | None:
         """Get previous rendered output from manifest.
@@ -891,6 +913,7 @@ class CompileEngine:
             llm_calls=doc.llm_calls,
             total_cost_usd=doc.total_cost_usd,
             sections=doc.sections,
+            file_outputs=doc.file_output_meta,
             config_hash=self._config_hash,
         )
         self.manifest.set_document(doc.uri, meta)
@@ -920,17 +943,37 @@ class CompileEngine:
         # Copy public files from .colin/compiled/ to output/
         build_compiled = self.config.build_path / "compiled"
         for doc_meta in self.manifest.documents.values():
-            if not doc_meta.is_published:
-                continue
-            if doc_meta.output_path is None:
-                continue
+            # Publish main output if document is published
+            if doc_meta.is_published and doc_meta.output_path is not None:
+                src = build_compiled / doc_meta.output_path
+                dst = output_path / doc_meta.output_path
+                dst.parent.mkdir(parents=True, exist_ok=True)
 
-            src = build_compiled / doc_meta.output_path
-            dst = output_path / doc_meta.output_path
-            dst.parent.mkdir(parents=True, exist_ok=True)
+                if compiled_outputs and doc_meta.output_path in compiled_outputs:
+                    # Prefer in-memory compiled output (freshly compiled this run)
+                    dst.write_text(compiled_outputs[doc_meta.output_path].output, encoding="utf-8")
+                elif src.exists():
+                    shutil.copy2(src, dst)
 
-            if compiled_outputs and doc_meta.output_path in compiled_outputs:
-                # Prefer in-memory compiled output (freshly compiled this run)
-                dst.write_text(compiled_outputs[doc_meta.output_path].output, encoding="utf-8")
-            elif src.exists():
-                shutil.copy2(src, dst)
+            # Publish file outputs from {% file %} blocks
+            # (even if main doc is private, file outputs can be explicitly published)
+            for file_path, file_meta in doc_meta.file_outputs.items():
+                # Determine publish status: explicit > inherit from source doc
+                should_publish = (
+                    file_meta.publish if file_meta.publish is not None else doc_meta.is_published
+                )
+                if not should_publish:
+                    continue
+
+                file_src = build_compiled / file_path
+                file_dst = output_path / file_path
+                file_dst.parent.mkdir(parents=True, exist_ok=True)
+
+                # Prefer in-memory content if available
+                if compiled_outputs and doc_meta.output_path in compiled_outputs:
+                    compiled_doc = compiled_outputs[doc_meta.output_path]
+                    if file_path in compiled_doc.file_outputs:
+                        file_dst.write_text(compiled_doc.file_outputs[file_path], encoding="utf-8")
+                        continue
+                if file_src.exists():
+                    shutil.copy2(file_src, file_dst)

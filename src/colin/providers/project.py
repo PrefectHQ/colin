@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, ClassVar
 from pydantic import validate_call
 
 from colin.compiler.cache import get_compile_context
-from colin.models import Manifest, Ref
+from colin.models import DocumentMeta, FileOutputMeta, Manifest, Ref
 from colin.providers.base import Provider
 from colin.resources import Resource
 
@@ -230,13 +230,31 @@ class ProjectProvider(Provider):
         resource = await self._load_ref(ref)
         return resource.version
 
-    def _get_output_hash(self, path: str) -> str | None:
-        """Get output_hash from manifest for a document by output_path."""
+    def _get_file_output_meta(self, path: str) -> tuple[DocumentMeta | None, FileOutputMeta | None]:
+        """Get document and file output metadata for a path.
+
+        Returns:
+            Tuple of (doc_meta, file_output_meta or None).
+            file_output_meta is None if path is a main document output.
+        """
         if self.manifest is None:
-            return None
+            return None, None
         doc_meta = self.manifest.get_document_by_output_path(path)
         if doc_meta is None:
+            return None, None
+        # Check if this is a file output (not the main document output)
+        if path in doc_meta.file_outputs:
+            return doc_meta, doc_meta.file_outputs[path]
+        return doc_meta, None
+
+    def _get_output_hash(self, path: str) -> str | None:
+        """Get output_hash from manifest for a document by output_path."""
+        doc_meta, file_meta = self._get_file_output_meta(path)
+        if doc_meta is None:
             return None
+        # Use file output hash if this is a file output
+        if file_meta is not None:
+            return file_meta.output_hash
         return doc_meta.output_hash
 
     def _should_publish(self, path: str) -> bool:
@@ -245,35 +263,35 @@ class ProjectProvider(Provider):
         The manifest is populated during compilation with the authoritative
         publish status. If the manifest or document is missing, assume published.
         """
-        if self.manifest is None:
-            return True
-        doc_meta = self.manifest.get_document_by_output_path(path)
+        doc_meta, file_meta = self._get_file_output_meta(path)
         if doc_meta is None:
             return True
+        # Use file output publish if this is a file output
+        if file_meta is not None:
+            # File outputs inherit from parent if publish is None
+            if file_meta.publish is not None:
+                return file_meta.publish
+            return doc_meta.is_published
         return doc_meta.is_published
 
     def _get_sections(self, path: str) -> dict[str, str]:
         """Get sections from manifest for a document by output_path."""
-        if self.manifest is None:
-            return {}
-        doc_meta = self.manifest.get_document_by_output_path(path)
+        doc_meta, file_meta = self._get_file_output_meta(path)
         if doc_meta is None:
             return {}
+        # Use file output sections if this is a file output
+        if file_meta is not None:
+            return file_meta.sections
         return doc_meta.sections
 
     def _get_output_format(self, path: str) -> str | None:
         """Get output format from manifest for a document by output_path."""
-        if self.manifest is None:
-            return None
-        doc_meta = self.manifest.get_document_by_output_path(path)
+        doc_meta, file_meta = self._get_file_output_meta(path)
         if doc_meta is None:
             return None
-        # Get the document URI to look up frontmatter
-        for uri, meta in self.manifest.documents.items():
-            if meta.output_path == path:
-                # For now, return None - format will be inferred from extension
-                # In the future, could store format in manifest
-                return None
+        # Use file output format if this is a file output
+        if file_meta is not None:
+            return file_meta.format
         return None
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:

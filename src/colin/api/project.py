@@ -604,12 +604,23 @@ def get_stale_files(
     for doc in manifest.documents.values():
         if doc.output_path and doc.is_published:
             published_paths.add(doc.output_path)
+        # Include published file outputs from {% file %} blocks
+        for file_path, file_meta in doc.file_outputs.items():
+            # Determine if file output is published (explicit or inherited)
+            is_file_published = (
+                file_meta.publish if file_meta.publish is not None else doc.is_published
+            )
+            if is_file_published:
+                published_paths.add(file_path)
 
     # Get all output paths (published or not) for compiled dir check
     all_output_paths: set[str] = set()
     for doc in manifest.documents.values():
         if doc.output_path:
             all_output_paths.add(doc.output_path)
+        # Include all file outputs
+        for file_path in doc.file_outputs:
+            all_output_paths.add(file_path)
 
     stale: list[Path] = []
 

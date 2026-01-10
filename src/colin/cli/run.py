@@ -118,10 +118,10 @@ def _get_icon(op: OperationState) -> RenderableType:
     if op.cached:
         return Text("»", style="green")
 
-    # Sources get left arrow, transforms get checkmark
+    # Sources get left arrow, outputs get right arrow, transforms get checkmark
     if op.name in ("ref", "mcp"):
         return Text("←", style="cyan")
-    if op.name == "ctx":
+    if op.name in ("ctx", "file"):
         return Text("→", style="green")
     return Text("✓", style="green")
 
@@ -246,18 +246,68 @@ async def _compile_with_progress(
         live.update(render_state(state), refresh=True)
         result = await task
 
-    # Show output files
+    # Show output files (all published, including cached and file outputs)
     assert isinstance(result, CompileResult)
-    output_files = []
+
+    # Track which outputs are newly compiled vs cached
+    recompiled_outputs: set[str] = set()
     for doc in result.compiled:
         if doc.frontmatter.colin.output.should_publish(doc.uri) and doc.output_path:
-            output_files.append(doc.output_path)
+            recompiled_outputs.add(doc.output_path)
+        # Include file outputs from recompiled documents
+        for file_path, file_meta in doc.file_output_meta.items():
+            should_publish = (
+                file_meta.publish
+                if file_meta.publish is not None
+                else doc.frontmatter.colin.output.should_publish(doc.uri)
+            )
+            if should_publish:
+                recompiled_outputs.add(file_path)
 
-    if output_files:
+    # Collect all published outputs from manifest (includes cached)
+    all_outputs: list[tuple[str, bool]] = []  # (path, is_new)
+    for doc_meta in result.manifest.documents.values():
+        if doc_meta.is_published and doc_meta.output_path:
+            is_new = doc_meta.output_path in recompiled_outputs
+            all_outputs.append((doc_meta.output_path, is_new))
+        # Include file outputs
+        for file_path, file_meta in doc_meta.file_outputs.items():
+            should_publish = (
+                file_meta.publish if file_meta.publish is not None else doc_meta.is_published
+            )
+            if should_publish:
+                is_new = file_path in recompiled_outputs
+                all_outputs.append((file_path, is_new))
+
+    if all_outputs:
         console.print()
         console.print("[dim]Output:[/]")
-        for path in sorted(output_files):
-            console.print(f"[green]→[/green] {path}")
+
+        # Group by directory (None for root-level files)
+        from collections import defaultdict
+
+        by_dir: dict[str | None, list[tuple[str, bool]]] = defaultdict(list)
+        for path, is_new in all_outputs:
+            if "/" in path:
+                dir_name, file_name = path.rsplit("/", 1)
+                by_dir[dir_name].append((file_name, is_new))
+            else:
+                by_dir[None].append((path, is_new))
+
+        # Print root-level files first
+        for file_name, is_new in sorted(by_dir.get(None, [])):
+            icon = "[green]✓[/green]" if is_new else "[green]»[/green]"
+            console.print(f"{icon} {file_name}")
+
+        # Then directories with tree structure for their contents
+        for dir_name in sorted(k for k in by_dir if k is not None):
+            console.print(f"[dim]{dir_name}/[/]")
+            files = sorted(by_dir[dir_name])
+            for j, (file_name, is_new) in enumerate(files):
+                is_last_file = j == len(files) - 1
+                branch = "└── " if is_last_file else "├── "
+                icon = "[green]✓[/green]" if is_new else "[green]»[/green]"
+                console.print(f"[dim]{branch}[/]{icon} {file_name}")
 
     return result
 

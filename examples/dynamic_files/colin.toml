@@ -1,0 +1,5 @@
+# Dynamic Files Example
+# Demonstrates the {% file %} directive for multi-file output
+
+[project]
+name = "dynamic-files-example"
