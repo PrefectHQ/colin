@@ -132,9 +132,8 @@ class LLMProvider(Provider):
             prompt: What to extract.
             model: Optional model override.
             instructions: Optional instructions override (call-level).
-            _cache_id: Stable ID for cache key and previous_output lookup.
-                When provided (e.g., position-based ID from filters),
-                enables previous_output to be passed even when inputs change.
+            _cache_id: Position-based ID for document-scoped caching.
+                Combined with input hash for unique cache keys per call.
 
         Returns:
             The extracted text.
@@ -144,16 +143,18 @@ class LLMProvider(Provider):
         compile_ctx = get_compile_context()
         config_hash = self._config_hash
 
-        # Generate call_id for tracking - use stable _cache_id if provided
+        # Generate call_id for tracking
+        # Always includes input hash to handle loops correctly (each iteration unique)
+        input_hash = hash_args((serialized, prompt), {})
         if _cache_id:
-            call_id = f"llm.extract:{_cache_id}"
+            call_id = f"llm.extract:{_cache_id}:{input_hash}"
         else:
-            call_id = f"llm.extract:{hash_args((serialized, prompt), {})}"
+            call_id = f"llm.extract:{input_hash}"
 
-        # Look up previous output using stable call_id WITH config validation
+        # Look up previous output using call_id WITH config validation
         # Only use previous output if provider config hasn't changed
         previous_output = None
-        if compile_ctx and _cache_id:
+        if compile_ctx:
             prev_call = compile_ctx.manifest.get_llm_call(
                 compile_ctx.document_uri, call_id, config_hash=config_hash
             )
@@ -236,9 +237,8 @@ class LLMProvider(Provider):
             model: Optional model override.
             multi: Whether to allow multiple labels (multi-label classification).
             instructions: Optional instructions override (call-level).
-            _cache_id: Stable ID for cache key and previous_output lookup.
-                When provided (e.g., position-based ID from filters),
-                enables previous_output to be passed even when inputs change.
+            _cache_id: Position-based ID for document-scoped caching.
+                Combined with input hash for unique cache keys per call.
 
         Returns:
             Single label (str or bool) if multi=False, list of labels if multi=True.
@@ -258,16 +258,18 @@ class LLMProvider(Provider):
         sorted_labels = sorted(labels, key=lambda x: (isinstance(x, bool), str(x)))
         labels_key = ",".join(str(label) for label in sorted_labels)
 
-        # Generate call_id for tracking - use stable _cache_id if provided
+        # Generate call_id for tracking
+        # Always includes input hash to handle loops correctly (each iteration unique)
+        input_hash = hash_args((serialized, labels_key, str(multi)), {})
         if _cache_id:
-            call_id = f"llm.classify:{_cache_id}"
+            call_id = f"llm.classify:{_cache_id}:{input_hash}"
         else:
-            call_id = f"llm.classify:{hash_args((serialized, labels_key, str(multi)), {})}"
+            call_id = f"llm.classify:{input_hash}"
 
-        # Look up previous output using stable call_id WITH config validation
+        # Look up previous output using call_id WITH config validation
         # Only use previous output if provider config hasn't changed
         previous_output = None
-        if compile_ctx and _cache_id:
+        if compile_ctx:
             prev_call = compile_ctx.manifest.get_llm_call(
                 compile_ctx.document_uri, call_id, config_hash=config_hash
             )
@@ -369,9 +371,8 @@ class LLMProvider(Provider):
             prompt: The prompt to complete.
             model: Optional model override.
             instructions: Optional instructions override (call-level).
-            _cache_id: Stable ID for cache key and previous_output lookup.
-                When provided (e.g., position-based ID from LLM blocks),
-                enables previous_output to be passed even when prompt changes.
+            _cache_id: Position-based ID for document-scoped caching.
+                Combined with input hash for unique cache keys per call.
 
         Returns:
             The LLM response.
@@ -380,16 +381,18 @@ class LLMProvider(Provider):
         compile_ctx = get_compile_context()
         config_hash = self._config_hash
 
-        # Generate call_id for tracking - use stable _cache_id if provided
+        # Generate call_id for tracking
+        # Always includes input hash to handle loops correctly (each iteration unique)
+        input_hash = hash_args((prompt,), {})
         if _cache_id:
-            call_id = f"llm.complete:{_cache_id}"
+            call_id = f"llm.complete:{_cache_id}:{input_hash}"
         else:
-            call_id = f"llm.complete:{hash_args((prompt,), {})}"
+            call_id = f"llm.complete:{input_hash}"
 
-        # Look up previous output using stable call_id WITH config validation
+        # Look up previous output using call_id WITH config validation
         # Only use previous output if provider config hasn't changed
         previous_output = None
-        if compile_ctx and _cache_id:
+        if compile_ctx:
             prev_call = compile_ctx.manifest.get_llm_call(
                 compile_ctx.document_uri, call_id, config_hash=config_hash
             )

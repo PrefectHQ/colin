@@ -158,26 +158,28 @@ def cached(
             config_hash = getattr(self, "_config_hash", None)
             doc_uri = compile_ctx.document_uri
 
-            # Build cache key
+            # Build cache key - always includes input hash for correctness
+            bound = sig.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+            bound_args = {k: v for k, v in bound.arguments.items() if k != "self"}
+            input_hash = hash_args_for_func(func, bound_args, exclude_args)
+
             if _cache_id:
                 # Document-scoped cache key when using _cache_id
-                # This ensures file-unique IDs don't collide across documents
-                # Format: key:doc_uri:_cache_id:config_hash
-                parts = [key, doc_uri, _cache_id]
+                # Includes input_hash to handle loops correctly (each iteration unique)
+                # Format: key:doc_uri:_cache_id:input_hash:config_hash
+                parts = [key, doc_uri, _cache_id, input_hash]
                 if config_hash:
                     parts.append(config_hash)
                 cache_key = ":".join(parts)
             else:
                 # Hash-based cache key (global, shared across docs with same inputs)
-                bound = sig.bind(self, *args, **kwargs)
-                bound.apply_defaults()
-                bound_args = {k: v for k, v in bound.arguments.items() if k != "self"}
-
                 # Include provider config hash if available
                 if config_hash:
                     bound_args["provider_config"] = config_hash
+                    input_hash = hash_args_for_func(func, bound_args, exclude_args)
 
-                cache_key = f"{key}:{hash_args_for_func(func, bound_args, exclude_args)}"
+                cache_key = f"{key}:{input_hash}"
 
             # Track this cache key as used (for pruning unused entries)
             used_keys = get_used_cache_keys()

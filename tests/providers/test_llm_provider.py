@@ -4,7 +4,7 @@ import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
-from colin.compiler.cache import set_compile_context
+from colin.compiler.cache import hash_args, set_compile_context
 from colin.compiler.context import CompileContext
 from colin.models import DocumentMeta, LLMCall, Manifest
 from colin.providers.llm import LLMProvider
@@ -328,16 +328,21 @@ class TestPreviousOutput:
 
         # Create manifest with a previous LLM call recorded
         # Note: config_hash must match provider's _config_hash for previous_output to work
+        # call_id now includes input hash for loop correctness
+        prompt = "Write a haiku about spring"
+        input_hash = hash_args((prompt,), {})
+        call_id = f"llm.complete:llm_1_5:{input_hash}"
+
         manifest = Manifest()
         doc_uri = "project://test.md"
         doc_meta = DocumentMeta(
             uri=doc_uri,
             source_hash="abc123",
             llm_calls={
-                "llm.complete:llm_1_5": LLMCall(
-                    call_id="llm.complete:llm_1_5",
+                call_id: LLMCall(
+                    call_id=call_id,
                     config_hash=provider._config_hash,  # Must match current config
-                    input_hash="old_hash",
+                    input_hash=input_hash,
                     output_hash="out_hash",
                     output="Previous haiku output",
                     model="test",
@@ -357,7 +362,7 @@ class TestPreviousOutput:
         try:
             # Call with position-based _cache_id that matches stored call
             result = await provider._complete(
-                "Write a haiku about spring",
+                prompt,
                 _cache_id="llm_1_5",
             )
         finally:
@@ -460,16 +465,20 @@ class TestPreviousOutput:
         provider = LLMProvider(model=FunctionModel(capture_prompt))
 
         # Manifest with a FAILED previous call
+        prompt = "Write a haiku about spring"
+        input_hash = hash_args((prompt,), {})
+        call_id = f"llm.complete:llm_1_5:{input_hash}"
+
         manifest = Manifest()
         doc_uri = "project://test.md"
         doc_meta = DocumentMeta(
             uri=doc_uri,
             source_hash="abc123",
             llm_calls={
-                "llm.complete:llm_1_5": LLMCall(
-                    call_id="llm.complete:llm_1_5",
+                call_id: LLMCall(
+                    call_id=call_id,
                     config_hash=provider._config_hash,
-                    input_hash="old_hash",
+                    input_hash=input_hash,
                     output_hash="",
                     output="",
                     model="test",
@@ -490,7 +499,7 @@ class TestPreviousOutput:
         set_compile_context(compile_ctx)
         try:
             result = await provider._complete(
-                "Write a haiku about spring",
+                prompt,
                 _cache_id="llm_1_5",
             )
         finally:
@@ -516,16 +525,20 @@ class TestPreviousOutput:
         provider = LLMProvider(model=FunctionModel(capture_prompt))
 
         # Manifest with a call that has DIFFERENT config_hash
+        prompt = "Write a haiku about spring"
+        input_hash = hash_args((prompt,), {})
+        call_id = f"llm.complete:llm_1_5:{input_hash}"
+
         manifest = Manifest()
         doc_uri = "project://test.md"
         doc_meta = DocumentMeta(
             uri=doc_uri,
             source_hash="abc123",
             llm_calls={
-                "llm.complete:llm_1_5": LLMCall(
-                    call_id="llm.complete:llm_1_5",
+                call_id: LLMCall(
+                    call_id=call_id,
                     config_hash="different_config_hash",  # Different from provider!
-                    input_hash="old_hash",
+                    input_hash=input_hash,
                     output_hash="out_hash",
                     output="Previous output from different config",
                     model="test",
@@ -544,7 +557,7 @@ class TestPreviousOutput:
         set_compile_context(compile_ctx)
         try:
             result = await provider._complete(
-                "Write a haiku about spring",
+                prompt,
                 _cache_id="llm_1_5",
             )
         finally:
@@ -567,16 +580,24 @@ class TestPreviousOutput:
         provider = LLMProvider(model=FunctionModel(capture_prompt))
 
         # Manifest with previous successful extract call
+        from colin.compiler.cache import _serialize_value
+
+        content = "Some content to extract from"
+        prompt = "key points"
+        serialized = _serialize_value(content)
+        input_hash = hash_args((serialized, prompt), {})
+        call_id = f"llm.extract:extract_1:{input_hash}"
+
         manifest = Manifest()
         doc_uri = "project://test.md"
         doc_meta = DocumentMeta(
             uri=doc_uri,
             source_hash="abc123",
             llm_calls={
-                "llm.extract:extract_1": LLMCall(
-                    call_id="llm.extract:extract_1",
+                call_id: LLMCall(
+                    call_id=call_id,
                     config_hash=provider._config_hash,
-                    input_hash="old_hash",
+                    input_hash=input_hash,
                     output_hash="out_hash",
                     output="Previous extraction result",
                     model="test",
@@ -595,8 +616,8 @@ class TestPreviousOutput:
         set_compile_context(compile_ctx)
         try:
             result = await provider._extract(
-                "Some content to extract from",
-                "key points",
+                content,
+                prompt,
                 _cache_id="extract_1",
             )
         finally:
@@ -620,16 +641,26 @@ class TestPreviousOutput:
         provider = LLMProvider(model=FunctionModel(capture_prompt))
 
         # Manifest with previous successful classify call
+        from colin.compiler.cache import _serialize_value
+
+        content = "This is great!"
+        labels = ["positive", "negative"]
+        serialized = _serialize_value(content)
+        sorted_labels = sorted(labels, key=lambda x: (isinstance(x, bool), str(x)))
+        labels_key = ",".join(str(label) for label in sorted_labels)
+        input_hash = hash_args((serialized, labels_key, str(False)), {})
+        call_id = f"llm.classify:classify_1:{input_hash}"
+
         manifest = Manifest()
         doc_uri = "project://test.md"
         doc_meta = DocumentMeta(
             uri=doc_uri,
             source_hash="abc123",
             llm_calls={
-                "llm.classify:classify_1": LLMCall(
-                    call_id="llm.classify:classify_1",
+                call_id: LLMCall(
+                    call_id=call_id,
                     config_hash=provider._config_hash,
-                    input_hash="old_hash",
+                    input_hash=input_hash,
                     output_hash="out_hash",
                     output="positive",
                     model="test",
@@ -648,8 +679,8 @@ class TestPreviousOutput:
         set_compile_context(compile_ctx)
         try:
             result = await provider._classify(
-                "This is great!",
-                ["positive", "negative"],
+                content,
+                labels,
                 _cache_id="classify_1",
             )
         finally:
