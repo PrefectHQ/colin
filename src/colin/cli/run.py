@@ -3,7 +3,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import cyclopts
 from rich.align import Align
@@ -145,11 +145,9 @@ def _make_label(icon: RenderableType, text: RenderableType | str) -> RenderableT
 
 
 def _format_uri(uri: str) -> str:
-    """Format a URI for display, showing path from models/."""
+    """Format a URI for display, stripping project:// prefix."""
     if uri.startswith("project://"):
-        path = uri[len("project://") :]
-        # Show as models/path for clarity
-        return f"models/{path}"
+        return uri[len("project://") :]
     return f"{uri}.md"
 
 
@@ -217,6 +215,7 @@ async def _compile_with_progress(
     vars: dict[str, str] | None = None,
     state: CompilationState | None = None,
     config_vars: dict[str, VarConfig] | None = None,
+    model_path: Path | None = None,
 ) -> CompileResult:
     """Compile project with live progress display.
 
@@ -253,8 +252,19 @@ async def _compile_with_progress(
         console.print()
 
     console.print()
-    console.print("[cyan bold]Compiling...[/]")
-    console.print()
+    # Show model path relative to cwd, with ~ for home
+    if model_path:
+        cwd = Path.cwd()
+        try:
+            model_display = f"~/{model_path.relative_to(Path.home())}/"
+        except ValueError:
+            try:
+                model_display = f"{model_path.relative_to(cwd)}/"
+            except ValueError:
+                model_display = f"{model_path}/"
+        console.print(f"[cyan bold]Compiling...[/] [dim]→ {model_display}[/]")
+    else:
+        console.print("[cyan bold]Compiling...[/]")
 
     with Live(
         console=console,
@@ -323,38 +333,49 @@ async def _compile_with_progress(
 
         console.print()
         console.print()
-        if output_display:
-            console.print(f"[cyan bold]Output Files[/] [dim]→ {output_display}[/]")
-        else:
-            console.print("[cyan bold]Output Files[/]")
+        console.print("[cyan bold]Output Files[/]")
         console.print()
 
-        # Group by directory (None for root-level files)
-        from collections import defaultdict
-
-        indent = "  "
-        by_dir: dict[str | None, list[tuple[str, bool]]] = defaultdict(list)
+        # Build nested tree structure
+        tree: dict[str, Any] = {"files": [], "dirs": {}}
         for path, is_new in all_outputs:
-            if "/" in path:
-                dir_name, file_name = path.rsplit("/", 1)
-                by_dir[dir_name].append((file_name, is_new))
-            else:
-                by_dir[None].append((path, is_new))
+            parts = path.split("/")
+            node = tree
+            # Navigate to parent directory, creating dirs as needed
+            for part in parts[:-1]:
+                if part not in node["dirs"]:
+                    node["dirs"][part] = {"files": [], "dirs": {}}
+                node = node["dirs"][part]
+            # Add file to current node
+            node["files"].append((parts[-1], is_new))
 
-        # Root-level files first
-        for file_name, is_new in sorted(by_dir.get(None, [])):
-            icon = "[green]✓[/green]" if is_new else "[green]»[/green]"
-            console.print(f"{indent}{icon} {file_name}")
+        def render_tree(node: dict[str, Any], prefix: str = "  ") -> None:
+            """Recursively render tree with proper nesting."""
+            # Sort files and dirs
+            files = sorted(node["files"])
+            dirs = sorted(node["dirs"].keys())
+            items = [("file", f) for f in files] + [("dir", d) for d in dirs]
 
-        # Then directories with tree structure for their contents
-        for dir_name in sorted(k for k in by_dir if k is not None):
-            console.print(f"{indent}[dim]{dir_name}/[/]")
-            files = sorted(by_dir[dir_name])
-            for j, (file_name, is_new) in enumerate(files):
-                is_last_file = j == len(files) - 1
-                branch = "└── " if is_last_file else "├── "
-                icon = "[green]✓[/green]" if is_new else "[green]»[/green]"
-                console.print(f"{indent}[dim]{branch}[/]{icon} {file_name}")
+            for i, (item_type, item) in enumerate(items):
+                is_last = i == len(items) - 1
+                branch = "└── " if is_last else "├── "
+                continuation = "    " if is_last else "│   "
+
+                if item_type == "file":
+                    file_name, is_new = item
+                    icon = "[green]✓[/green]" if is_new else "[green]»[/green]"
+                    console.print(f"{prefix}[dim]{branch}[/]{icon} {file_name}")
+                else:
+                    dir_name = item
+                    console.print(f"{prefix}[dim]{branch}{dir_name}/[/]")
+                    render_tree(node["dirs"][dir_name], prefix + continuation)
+
+        # Show output path as tree root, then render content under it
+        if output_display:
+            console.print(f"  [dim]{output_display}[/]")
+            render_tree(tree, "    ")
+        else:
+            render_tree(tree, "  ")
 
     return result
 
@@ -448,6 +469,7 @@ async def run(
             vars=vars_dict,
             state=state,
             config_vars=config.vars,
+            model_path=config.model_path,
         )
         assert isinstance(result, CompileResult)
 
