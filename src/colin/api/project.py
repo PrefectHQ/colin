@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import secrets
+import string
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import tomli
 import tomli_w
@@ -15,21 +17,171 @@ from pydantic import BaseModel, Field, model_validator
 from colin.api.manifest import load_manifest
 from colin.settings import settings
 
+if TYPE_CHECKING:
+    from colin.output.base import Target
+
 logger = logging.getLogger(__name__)
 
 VarType = Literal["string", "bool", "int", "float", "date", "timestamp"]
 
+
+def generate_project_id(name: str) -> str:
+    """Generate a unique project ID.
+
+    Format: {name}-{6 random alphanumeric chars}
+    Example: mcp-skills-x7k2m9
+
+    Args:
+        name: Project name to use as prefix.
+
+    Returns:
+        Unique project ID string.
+    """
+    # Use lowercase alphanumeric characters for the random suffix
+    alphabet = string.ascii_lowercase + string.digits
+    suffix = "".join(secrets.choice(alphabet) for _ in range(6))
+    return f"{name}-{suffix}"
+
+
+def ensure_project_id(config: ProjectConfig, project_file: Path) -> str:
+    """Ensure project has an ID, generating and saving one if missing.
+
+    For backward compatibility, existing projects without IDs get one generated
+    and saved to colin.toml.
+
+    Args:
+        config: Project configuration (may have id=None).
+        project_file: Path to colin.toml for saving.
+
+    Returns:
+        The project ID (existing or newly generated).
+    """
+    if config.id:
+        return config.id
+
+    # Generate new ID
+    new_id = generate_project_id(config.name)
+    config.id = new_id
+
+    # Save back to colin.toml
+    save_project(project_file, config)
+    logger.info("Generated project ID: %s", new_id)
+
+    return new_id
+
+
 PROJECT_FILE = "colin.toml"
+
+
+def create_output_target(
+    target_name: str | None = None,
+    path: str | None = None,
+    **kwargs: Any,
+) -> Target:
+    """Create an output target instance from config.
+
+    Args:
+        target_name: Target name (e.g., "local", "skill", "claude-skill").
+            If None, defaults to "local".
+        path: Output path (required for "local" and "skill" targets).
+        **kwargs: Additional arguments passed to target constructor.
+
+    Returns:
+        Configured Target instance.
+
+    Raises:
+        ValueError: If target name is unknown or required args missing.
+    """
+    from colin.output import get_target
+
+    name = target_name or "local"
+    target_cls = get_target(name)
+
+    # Build kwargs for constructor
+    target_kwargs: dict[str, Any] = {**kwargs}
+    if path is not None:
+        target_kwargs["path"] = path
+
+    return target_cls(**target_kwargs)
+
+
+class ProjectOutputConfig(BaseModel):
+    """Configuration for project output destination.
+
+    Supports target-based output with kwargs:
+        [project.output]
+        target = "claude-skill"
+        scope = "user"
+
+    Or simple path-based output (uses LocalTarget):
+        [project]
+        output-path = "output/"
+    """
+
+    target: str | None = None
+    """Output target name (e.g., 'local', 'skill', 'claude-skill').
+
+    Built-in targets:
+    - "local" - writes to specified path (default)
+    - "skill" - writes skills to specified path with per-skill manifests
+    - "claude-skill" - writes to ~/.claude/skills/ (user) or .claude/skills/ (project)
+    """
+
+    path: str | None = None
+    """Output path. Required for 'local' and 'skill' targets.
+    Optional for 'claude-skill' (overrides default location).
+    """
+
+    scope: Literal["user", "project"] | None = None
+    """Scope for claude-skill target: 'user' (~/.claude/skills/) or 'project' (.claude/skills/).
+    Only used with target='claude-skill'. Defaults to 'user'.
+    """
+
+    model_config = {"extra": "allow"}  # Allow additional target-specific kwargs
+
 
 DEFAULT_CONFIG = """\
 # Colin project configuration
 # https://github.com/prefecthq/colin
 
 [project]
+# Project name (required)
 name = "{name}"
 
+# Source directory containing model files (default: "models")
 # model-path = "models"
+
+# Output directory for published files (default: "output")
 # output-path = "output"
+
+# [project.output]
+# Output target - controls where files are written
+# Built-in targets:
+#   "local" (default) - writes to output-path
+#   "skill" - writes skills with per-skill manifests
+#   "claude-skill" - writes to ~/.claude/skills/ (user) or .claude/skills/ (project)
+#
+# target = "claude-skill"
+# scope = "user"  # or "project"
+
+# [vars]
+# Project variables accessible via {{{{ colin.var.name }}}}
+# Can be overridden with --var name=value or COLIN_VAR_NAME env var
+#
+# Simple value:
+# api_key = "default-value"
+#
+# Typed with options:
+# [vars.timeout]
+# type = "int"
+# default = 30
+# optional = false
+
+# [[providers.mcp]]
+# MCP server configurations
+# name = "github"
+# command = "npx -y @modelcontextprotocol/server-github"
+# env = {{ GITHUB_TOKEN = "..." }}
 """
 
 
@@ -126,6 +278,12 @@ class ProjectConfig(BaseModel):
     """
 
     name: str = "colin-project"
+    id: str | None = None
+    """Unique project identifier for manifest ownership claims.
+
+    Format: {name}-{6 random chars}. Generated on init, stable thereafter.
+    Used in output manifests to identify which project owns which outputs.
+    """
     project_root: Path
     """Absolute path to project directory (where colin.toml lives)."""
     model_path: Path
@@ -134,6 +292,10 @@ class ProjectConfig(BaseModel):
     """Absolute path to output directory (published outputs)."""
     manifest_path: Path
     """Absolute path to manifest file (.colin/manifest.json)."""
+
+    # Output configuration
+    output: ProjectOutputConfig = Field(default_factory=ProjectOutputConfig)
+    """Output destination configuration (plugin, etc.)."""
 
     # Provider configuration
     project_storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -359,12 +521,39 @@ def load_project(path: Path) -> ProjectConfig:
     vars_data = data.get("vars", {})
     vars_config = _parse_vars(vars_data)
 
+    # Parse output configuration
+    output_data = project.get("output", {})
+    output_config = ProjectOutputConfig.model_validate(output_data)
+
+    # Resolve output path from target configuration
+    # Priority: [project.output].path > [project.output].target defaults > output-path
+    if output_config.target or output_config.path or output_config.scope:
+        # Build target kwargs from config
+        target_kwargs: dict[str, Any] = {}
+        if output_config.path:
+            target_kwargs["path"] = output_config.path
+        if output_config.scope:
+            target_kwargs["scope"] = output_config.scope
+        # Include any extra kwargs from config
+        if output_config.model_extra:
+            for key, value in output_config.model_extra.items():
+                target_kwargs[key] = value
+
+        target = create_output_target(output_config.target, **target_kwargs)
+        output_path = target.resolve_path(project_root)
+
+    # Get project name and ID
+    project_name = project.get("name", "colin-project")
+    project_id = project.get("id")
+
     return ProjectConfig(
-        name=project.get("name", "colin-project"),
+        name=project_name,
+        id=project_id,
         project_root=project_root,
         model_path=model_path,
         output_path=output_path,
         manifest_path=manifest_path,
+        output=output_config,
         project_storage=project_storage,
         artifacts_storage=artifacts_storage,
         providers=providers,
@@ -424,8 +613,10 @@ def init_project(
 
     # Create colin.toml with full config
     project_name = name or directory.name
+    project_id = generate_project_id(project_name)
     config = ProjectConfig(
         name=project_name,
+        id=project_id,
         project_root=project_root,
         model_path=model_path,
         output_path=output_path,
@@ -467,6 +658,19 @@ def save_project(path: Path, config: ProjectConfig) -> None:
         "model-path": str(model_path_rel),
         "output-path": str(output_path_rel),
     }
+
+    # Add project ID if set
+    if config.id:
+        project_data["id"] = config.id
+
+    # Add output config if target is set
+    if config.output.target:
+        output_data: dict[str, Any] = {"target": config.output.target}
+        if config.output.path:
+            output_data["path"] = config.output.path
+        if config.output.scope:
+            output_data["scope"] = config.output.scope
+        project_data["output"] = output_data
 
     data: dict[str, Any] = {"project": project_data}
 
@@ -578,15 +782,35 @@ def get_project_status(project_dir: Path) -> dict:
     }
 
 
+def _load_output_manifest(manifest_path: Path) -> dict[str, Any] | None:
+    """Load an output manifest file.
+
+    Args:
+        manifest_path: Path to .colin-manifest.json.
+
+    Returns:
+        Parsed manifest dict or None if not found/invalid.
+    """
+    if not manifest_path.exists():
+        return None
+    try:
+        return json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def get_stale_files(
     config: ProjectConfig,
     include_compiled: bool = False,
 ) -> list[Path]:
     """Find stale files in output/ (and optionally .colin/compiled/).
 
-    A "stale file" is any file that isn't tracked by the manifest.
-    In output/, this means files not published by any document.
-    In .colin/compiled/, this means files not matching any document's output path.
+    For output/, uses .colin-manifest.json files for ownership tracking:
+    - Scans for manifest files in the output directory
+    - Only considers files in directories owned by this project (matching project_id)
+    - Files not in the manifest's file list are stale
+
+    For .colin/compiled/, uses the internal manifest.json.
 
     Args:
         config: Project configuration.
@@ -597,46 +821,24 @@ def get_stale_files(
     """
     output_dir = config.output_path
     compiled_dir = config.build_path / "compiled"
-    manifest = load_manifest(config.manifest_path)
-
-    # Get published output paths from manifest
-    published_paths: set[str] = set()
-    for doc in manifest.documents.values():
-        if doc.output_path and doc.is_published:
-            published_paths.add(doc.output_path)
-        # Include published file outputs from {% file %} blocks
-        for file_path, file_meta in doc.file_outputs.items():
-            # Determine if file output is published (explicit or inherited)
-            is_file_published = (
-                file_meta.publish if file_meta.publish is not None else doc.is_published
-            )
-            if is_file_published:
-                published_paths.add(file_path)
-
-    # Get all output paths (published or not) for compiled dir check
-    all_output_paths: set[str] = set()
-    for doc in manifest.documents.values():
-        if doc.output_path:
-            all_output_paths.add(doc.output_path)
-        # Include all file outputs
-        for file_path in doc.file_outputs:
-            all_output_paths.add(file_path)
+    internal_manifest = load_manifest(config.manifest_path)
 
     stale: list[Path] = []
 
-    # Check output/ for stale files (only published paths matter)
+    # Check output/ for stale files using output manifests
     if output_dir.exists():
-        for path in output_dir.rglob("*"):
-            if path.is_file():
-                try:
-                    rel_path = str(path.relative_to(output_dir))
-                    if rel_path not in published_paths:
-                        stale.append(path)
-                except ValueError:
-                    stale.append(path)
+        stale.extend(_get_stale_from_output_manifests(output_dir, config.id))
 
-    # Optionally check .colin/compiled/ for stale files
+    # Optionally check .colin/compiled/ for stale files (uses internal manifest)
     if include_compiled and compiled_dir.exists():
+        # Get all output paths from internal manifest
+        all_output_paths: set[str] = set()
+        for doc in internal_manifest.documents.values():
+            if doc.output_path:
+                all_output_paths.add(doc.output_path)
+            for file_path in doc.file_outputs:
+                all_output_paths.add(file_path)
+
         for path in compiled_dir.rglob("*"):
             if path.is_file():
                 try:
@@ -649,8 +851,59 @@ def get_stale_files(
     return sorted(stale)
 
 
+def _get_stale_from_output_manifests(output_dir: Path, project_id: str | None) -> list[Path]:
+    """Find stale files in output directory using output manifests.
+
+    Scans for .colin-manifest.json files, checking only directories owned
+    by this project (matching project_id).
+
+    Args:
+        output_dir: Output directory to scan.
+        project_id: This project's ID for ownership checking.
+
+    Returns:
+        List of stale file paths.
+    """
+    stale: list[Path] = []
+
+    # Find all output manifests
+    for manifest_path in output_dir.rglob(".colin-manifest.json"):
+        manifest_data = _load_output_manifest(manifest_path)
+        if manifest_data is None:
+            continue
+
+        # Check ownership - only clean directories we own
+        manifest_project_id = manifest_data.get("project_id")
+        if project_id and manifest_project_id != project_id:
+            continue
+
+        # This directory is owned by us - check for stale files
+        scope_dir = manifest_path.parent
+        manifest_files = set(manifest_data.get("files", {}).keys())
+
+        for path in scope_dir.iterdir():
+            if path.is_file() and path.name != ".colin-manifest.json":
+                if path.name not in manifest_files:
+                    stale.append(path)
+            elif path.is_dir():
+                # Recursively check subdirectories (but not ones with their own manifests)
+                subdir_manifest = path / ".colin-manifest.json"
+                if not subdir_manifest.exists():
+                    # No manifest in subdir - check all files against our manifest
+                    for subpath in path.rglob("*"):
+                        if subpath.is_file():
+                            rel_path = str(subpath.relative_to(scope_dir))
+                            if rel_path not in manifest_files:
+                                stale.append(subpath)
+
+    return stale
+
+
 def clean_project(config: ProjectConfig, all: bool = False) -> list[Path]:
     """Remove stale files from the project.
+
+    Uses output manifests (.colin-manifest.json) for ownership tracking in the
+    output directory. Only cleans files in directories owned by this project.
 
     Args:
         config: Project configuration.
@@ -668,9 +921,10 @@ def clean_project(config: ProjectConfig, all: bool = False) -> list[Path]:
         path.unlink()
         removed.append(path)
 
-    # Clean up empty directories
+    # Clean up empty directories and stale manifests
     if config.output_path.exists():
         _remove_empty_dirs(config.output_path)
+        _cleanup_empty_manifests(config.output_path, config.id)
     if all:
         compiled_dir = config.build_path / "compiled"
         if compiled_dir.exists():
@@ -684,3 +938,35 @@ def _remove_empty_dirs(directory: Path) -> None:
     for path in sorted(directory.rglob("*"), reverse=True):
         if path.is_dir() and not any(path.iterdir()):
             path.rmdir()
+
+
+def _cleanup_empty_manifests(output_dir: Path, project_id: str | None) -> None:
+    """Remove manifests for directories that are now empty (except manifest).
+
+    Also removes the directory if only the manifest remains.
+
+    Args:
+        output_dir: Output directory to scan.
+        project_id: This project's ID for ownership checking.
+    """
+    for manifest_path in sorted(output_dir.rglob(".colin-manifest.json"), reverse=True):
+        # Check ownership
+        manifest_data = _load_output_manifest(manifest_path)
+        if manifest_data is None:
+            continue
+
+        manifest_project_id = manifest_data.get("project_id")
+        if project_id and manifest_project_id != project_id:
+            continue
+
+        # Check if directory is empty except for manifest
+        scope_dir = manifest_path.parent
+        remaining = [f for f in scope_dir.iterdir() if f.name != ".colin-manifest.json"]
+        if not remaining:
+            # Remove manifest and directory if it's not the output root
+            manifest_path.unlink()
+            if scope_dir != output_dir:
+                try:
+                    scope_dir.rmdir()
+                except OSError:
+                    pass  # Directory not empty (maybe another process added files)

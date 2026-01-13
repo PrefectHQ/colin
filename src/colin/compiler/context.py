@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
 
@@ -115,6 +116,49 @@ class CompileContext:
 
         # Check in-memory compiled outputs first (keyed by output_path)
         compiled = self.compiled_outputs.get(path)
+
+        # If not found, check file_outputs from compiled documents
+        # (files created via {% file %} blocks)
+        if compiled is None:
+            for parent_compiled in self.compiled_outputs.values():
+                if path in parent_compiled.file_outputs:
+                    file_content = parent_compiled.file_outputs[path]
+                    file_meta = parent_compiled.file_output_meta.get(path)
+
+                    project_ref = Ref(
+                        provider="project",
+                        connection="",
+                        method="get",
+                        args={"path": path},
+                    )
+
+                    # Determine publish status
+                    publish = file_meta.publish if file_meta else None
+                    if publish is None:
+                        # Inherit from parent document
+                        parent_output_config = parent_compiled.frontmatter.colin.output
+                        publish = parent_output_config.should_publish(parent_compiled.uri)
+
+                    output_hash = hashlib.sha256(file_content.encode()).hexdigest()[:16]
+
+                    resource = ProjectResource(
+                        content=file_content,
+                        ref=project_ref,
+                        relative_path=path,
+                        output_path=self.project_provider.output_path
+                        or self.project_provider.base_path,
+                        publish=publish,
+                        name=path.split("/")[-1],
+                        description=None,
+                        output_hash=output_hash,
+                        output_format=file_meta.format if file_meta else "markdown",
+                        sections=file_meta.sections if file_meta else {},
+                    )
+                    is_first = self.track(resource.ref(), resource.version)
+                    if is_first and self.doc_state is not None:
+                        op = self.doc_state.child("ref", detail=path)
+                        op.status = Status.DONE
+                    return resource
 
         if compiled is not None:
             name_val = compiled.frontmatter.metadata.get("name")

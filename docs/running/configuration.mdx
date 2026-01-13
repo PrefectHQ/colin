@@ -4,7 +4,7 @@ sidebarTitle: Configuration
 icon: gear
 ---
 
-Colin projects are configured through `colin.toml`, a TOML file in your project root. This file defines project metadata, directory paths, LLM settings, and MCP server connections.
+Colin projects are configured through `colin.toml`, a TOML file in your project root. This file defines project metadata, directory paths, output destinations, LLM settings, and MCP server connections.
 
 ## Project Settings
 
@@ -21,7 +21,7 @@ output-path = "output"
 | :------ | :---------- | :------ |
 | `name` | Project name for display | Directory name |
 | `model-path` | Directory containing source documents | `models` |
-| `output-path` | Directory for compiled output | `output` |
+| `output-path` | Directory for compiled output (see [Output Targets](#output-targets)) | `output` |
 
 ### Directory Paths
 
@@ -45,6 +45,83 @@ output-path = "/tmp/colin-output"
 ```
 
 When using absolute paths, they are preserved as-is and not resolved relative to the project root.
+
+## Output Targets
+
+Output targets control where Colin writes compiled files. The simple `output-path` setting works for most projects, but when you need more control over output behavior, use the `[project.output]` section.
+
+### Target Types
+
+Colin supports three target types, each suited to different use cases.
+
+**Local targets** write to a directory you specify. This is the default behavior and equivalent to using `output-path` directly. The entire output directory is managed as a unit, with a single manifest at the root tracking all files.
+
+```toml colin.toml
+[project.output]
+target = "local"
+path = "dist"
+```
+
+**Skill targets** are designed for projects that generate multiple independent skill sets. Each first-level subdirectory receives its own manifest file, enabling granular tracking and cleanup. When your project outputs files to `stripe/payments.md` and `github/issues.md`, Colin writes separate manifests to `stripe/.colin-manifest.json` and `github/.colin-manifest.json`.
+
+```toml colin.toml
+[project.output]
+target = "skill"
+path = "output/skills"
+```
+
+**Claude skill targets** write directly to Claude Code's skills directory. Skills placed here become available to Claude Code sessions automatically. The `scope` parameter determines whether skills are user-wide or project-specific.
+
+```toml colin.toml
+[project.output]
+target = "claude-skill"
+scope = "user"
+```
+
+With `scope = "user"`, Colin writes to `~/.claude/skills/`. This makes skills available in all Claude Code sessions on your machine.
+
+With `scope = "project"`, Colin writes to `.claude/skills/` relative to the project. Colin searches upward from the project root to find an existing `.claude` directory; if none exists, it creates one in the project root. Project-scoped skills are available only when Claude Code runs from within that project.
+
+```toml colin.toml
+[project.output]
+target = "claude-skill"
+scope = "project"
+```
+
+You can override the default location with an explicit `path`, which takes precedence over the scope-based location:
+
+```toml colin.toml
+[project.output]
+target = "claude-skill"
+path = "/custom/skills/location"
+```
+
+### Manifest Ownership
+
+Each target type determines how manifests track file ownership. Manifests enable Colin to clean up stale files without affecting unrelated content in the output directory.
+
+Local targets use a single manifest at the output root. All files in the directory are considered managed by Colin.
+
+Skill targets and Claude skill targets use per-subdirectory manifests. Each first-level directory (like `stripe/` or `github/`) gets its own manifest that tracks only files within that directory. This allows different projects or compilation runs to write to sibling directories without interfering with each other.
+
+### Compatibility
+
+The simple `output-path` configuration remains fully supported. When you use `output-path`, Colin treats it as a local target with that path:
+
+```toml colin.toml
+[project]
+output-path = "output"
+```
+
+This is equivalent to:
+
+```toml colin.toml
+[project.output]
+target = "local"
+path = "output"
+```
+
+Use `output-path` for straightforward local output. Switch to `[project.output]` when you need skill manifests or Claude Code integration.
 
 ## LLM Provider
 
@@ -180,7 +257,10 @@ A full configuration demonstrating all options:
 [project]
 name = "engineering-context"
 model-path = "context"
-output-path = "dist"
+
+[project.output]
+target = "claude-skill"
+scope = "user"
 
 [[providers.llm]]
 model = "anthropic:claude-sonnet-4-5"
@@ -209,8 +289,4 @@ url = "https://internal.company.com/mcp"
 headers = { Authorization = "Bearer ${INTERNAL_API_TOKEN}" }
 ```
 
-This project:
-- Reads source documents from `context/`
-- Writes compiled output to `dist/`
-- Uses Claude Sonnet for LLM operations
-- Connects to GitHub, Linear, a Postgres warehouse, and an internal API
+This configuration reads source documents from `context/`, compiles them using Claude Sonnet for any LLM operations, and writes the results directly to your user-level Claude Code skills directory. The compiled skills become immediately available in all your Claude Code sessions. Four MCP servers provide access to GitHub, Linear, a Postgres data warehouse, and an internal API.

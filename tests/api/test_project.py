@@ -9,10 +9,151 @@ from colin.api.project import (
     _parse_providers,
     _parse_vars,
     clean_project,
+    create_output_target,
+    ensure_project_id,
+    generate_project_id,
     get_stale_files,
+    init_project,
     load_project,
     save_project,
 )
+from colin.output import TARGET_REGISTRY
+
+
+class TestProjectId:
+    """Tests for project ID generation and handling."""
+
+    def test_generate_project_id_format(self) -> None:
+        """Project ID has format {name}-{6 alphanumeric chars}."""
+        project_id = generate_project_id("my-project")
+
+        parts = project_id.rsplit("-", 1)
+        assert len(parts) == 2
+        assert parts[0] == "my-project"
+        assert len(parts[1]) == 6
+        assert parts[1].isalnum()
+        assert parts[1].islower() or parts[1].isdigit()
+
+    def test_generate_project_id_unique(self) -> None:
+        """Each call generates a unique ID."""
+        ids = {generate_project_id("test") for _ in range(100)}
+        assert len(ids) == 100
+
+    def test_ensure_project_id_returns_existing(self, tmp_path: Path) -> None:
+        """ensure_project_id returns existing ID without modification."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+id = "test-project-abc123"
+""")
+        config = load_project(config_file)
+
+        result = ensure_project_id(config, config_file)
+
+        assert result == "test-project-abc123"
+        # File should not be modified
+        content = config_file.read_text()
+        assert 'id = "test-project-abc123"' in content
+
+    def test_ensure_project_id_generates_and_saves(self, tmp_path: Path) -> None:
+        """ensure_project_id generates and saves ID when missing."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+""")
+        config = load_project(config_file)
+        assert config.id is None
+
+        result = ensure_project_id(config, config_file)
+
+        # ID should be generated
+        assert result.startswith("test-project-")
+        assert len(result.rsplit("-", 1)[1]) == 6
+
+        # Config should be updated
+        assert config.id == result
+
+        # File should be updated
+        reloaded = load_project(config_file)
+        assert reloaded.id == result
+
+    def test_load_project_with_id(self, tmp_path: Path) -> None:
+        """load_project reads ID from colin.toml."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+id = "test-project-x7k2m9"
+""")
+
+        config = load_project(config_file)
+
+        assert config.id == "test-project-x7k2m9"
+
+    def test_load_project_without_id(self, tmp_path: Path) -> None:
+        """load_project returns None when ID is missing."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+""")
+
+        config = load_project(config_file)
+
+        assert config.id is None
+
+    def test_save_project_with_id(self, tmp_path: Path) -> None:
+        """save_project writes ID to colin.toml."""
+        config_file = tmp_path / "colin.toml"
+
+        config = ProjectConfig(
+            name="test-project",
+            id="test-project-abc123",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
+
+        save_project(config_file, config)
+
+        content = config_file.read_text()
+        assert 'id = "test-project-abc123"' in content
+
+        reloaded = load_project(config_file)
+        assert reloaded.id == "test-project-abc123"
+
+    def test_save_project_without_id(self, tmp_path: Path) -> None:
+        """save_project omits ID when None."""
+        config_file = tmp_path / "colin.toml"
+
+        config = ProjectConfig(
+            name="test-project",
+            id=None,
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
+
+        save_project(config_file, config)
+
+        content = config_file.read_text()
+        assert "id = " not in content
+
+    def test_init_project_generates_id(self, tmp_path: Path) -> None:
+        """init_project generates a project ID."""
+        project_dir = tmp_path / "new-project"
+        project_dir.mkdir()
+
+        config_file, _ = init_project(project_dir)
+        config = load_project(config_file)
+
+        assert config.id is not None
+        assert config.id.startswith("new-project-")
+        assert len(config.id.rsplit("-", 1)[1]) == 6
 
 
 class TestParseProviders:
@@ -508,11 +649,11 @@ class TestGetStaleFiles:
         assert result == []
 
     def test_identifies_stale_files(self, tmp_path: Path) -> None:
-        """Files not in manifest are identified as stale."""
+        """Files not in output manifest are identified as stale."""
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"')
+        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
         config = load_project(config_file)
 
         # Create output directory with files
@@ -521,63 +662,68 @@ class TestGetStaleFiles:
         (output_dir / "tracked.md").write_text("tracked content")
         (output_dir / "stale.txt").write_text("stale content")
 
-        # Create manifest that only tracks tracked.md
+        # Create output manifest that only tracks tracked.md
+        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
+        (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
+
+        # Create internal manifest (still needed)
         colin_dir = tmp_path / ".colin"
         colin_dir.mkdir()
-        manifest = {
-            "documents": {
-                "project://tracked.md": {
-                    "uri": "project://tracked.md",
-                    "source_hash": "abc123",
-                    "output_path": "tracked.md",
-                    "is_published": True,
-                }
-            }
-        }
-        (colin_dir / "manifest.json").write_text(json.dumps(manifest))
+        (colin_dir / "manifest.json").write_text(json.dumps({"documents": {}}))
 
         result = get_stale_files(config)
 
         assert len(result) == 1
         assert result[0].name == "stale.txt"
 
-    def test_unpublished_files_not_considered_stale(self, tmp_path: Path) -> None:
-        """Files in manifest but unpublished are not in output/, so not stale."""
+    def test_does_not_clean_other_project_files(self, tmp_path: Path) -> None:
+        """Files owned by other projects are not considered stale."""
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"')
+        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
         config = load_project(config_file)
 
-        # Create output directory
+        # Create output directory with files from another project
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        (output_dir / "published.md").write_text("published content")
+        (output_dir / "other.md").write_text("other project content")
 
-        # Create manifest with published and unpublished docs
+        # Create output manifest owned by a different project
+        output_manifest = {"project_id": "other-project-xyz789", "files": {"other.md": "abc123"}}
+        (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
+
+        # Create internal manifest
         colin_dir = tmp_path / ".colin"
         colin_dir.mkdir()
-        manifest = {
-            "documents": {
-                "project://published.md": {
-                    "uri": "project://published.md",
-                    "source_hash": "abc123",
-                    "output_path": "published.md",
-                    "is_published": True,
-                },
-                "project://_private.md": {
-                    "uri": "project://_private.md",
-                    "source_hash": "def456",
-                    "output_path": "_private.md",
-                    "is_published": False,
-                },
-            }
-        }
-        (colin_dir / "manifest.json").write_text(json.dumps(manifest))
+        (colin_dir / "manifest.json").write_text(json.dumps({"documents": {}}))
 
         result = get_stale_files(config)
 
-        # No stale files
+        # No stale files - we don't own this directory
+        assert result == []
+
+    def test_no_output_manifest_returns_empty(self, tmp_path: Path) -> None:
+        """Without output manifest, no files are considered stale in output/."""
+        import json
+
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
+        config = load_project(config_file)
+
+        # Create output directory with files but no manifest
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        (output_dir / "untracked.md").write_text("untracked content")
+
+        # Create internal manifest
+        colin_dir = tmp_path / ".colin"
+        colin_dir.mkdir()
+        (colin_dir / "manifest.json").write_text(json.dumps({"documents": {}}))
+
+        result = get_stale_files(config)
+
+        # No stale files - no output manifest means we don't own anything
         assert result == []
 
     def test_ignores_compiled_by_default(self, tmp_path: Path) -> None:
@@ -634,7 +780,7 @@ class TestCleanProject:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"')
+        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
         config = load_project(config_file)
 
         output_dir = tmp_path / "output"
@@ -644,19 +790,13 @@ class TestCleanProject:
         tracked_file.write_text("tracked")
         stale_file.write_text("stale")
 
+        # Create output manifest
+        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
+        (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
+
         colin_dir = tmp_path / ".colin"
         colin_dir.mkdir()
-        manifest = {
-            "documents": {
-                "project://tracked.md": {
-                    "uri": "project://tracked.md",
-                    "source_hash": "abc123",
-                    "output_path": "tracked.md",
-                    "is_published": True,
-                }
-            }
-        }
-        (colin_dir / "manifest.json").write_text(json.dumps(manifest))
+        (colin_dir / "manifest.json").write_text(json.dumps({"documents": {}}))
 
         removed = clean_project(config)
 
@@ -670,7 +810,7 @@ class TestCleanProject:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"')
+        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
         config = load_project(config_file)
 
         colin_dir = tmp_path / ".colin"
@@ -695,7 +835,7 @@ class TestCleanProject:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"')
+        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
         config = load_project(config_file)
 
         output_dir = tmp_path / "output"
@@ -703,6 +843,10 @@ class TestCleanProject:
         (output_dir / "tracked.md").write_text("tracked")
         stale_output = output_dir / "stale.txt"
         stale_output.write_text("stale")
+
+        # Create output manifest
+        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
+        (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
 
         colin_dir = tmp_path / ".colin"
         compiled_dir = colin_dir / "compiled"
@@ -732,3 +876,112 @@ class TestCleanProject:
         assert (output_dir / "tracked.md").exists()
         assert (compiled_dir / "tracked.md").exists()
         assert (colin_dir / "manifest.json").exists()
+
+
+class TestOutputTargets:
+    """Tests for output target configuration."""
+
+    def test_create_skill_target(self, tmp_path: Path) -> None:
+        """skill target resolves to specified path."""
+        target = create_output_target("skill", path="output/skills")
+
+        assert target.resolve_path(tmp_path) == (tmp_path / "output" / "skills").resolve()
+
+    def test_create_claude_skill_target_user_scope(self) -> None:
+        """claude-skill target with user scope resolves to ~/.claude/skills."""
+        target = create_output_target("claude-skill", scope="user")
+
+        assert target.resolve_path(Path.cwd()) == (Path.home() / ".claude" / "skills").resolve()
+
+    def test_create_unknown_target_raises(self) -> None:
+        """Unknown target name raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown output target"):
+            create_output_target("nonexistent")
+
+    def test_available_targets(self) -> None:
+        """Verify expected targets are registered."""
+        assert "local" in TARGET_REGISTRY
+        assert "skill" in TARGET_REGISTRY
+        assert "claude-skill" in TARGET_REGISTRY
+
+    def test_load_project_with_skill_target(self, tmp_path: Path) -> None:
+        """Load project with skill target sets output path."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[project.output]
+target = "skill"
+path = "output/skills"
+""")
+
+        config = load_project(config_file)
+
+        assert config.output.target == "skill"
+        assert config.output_path == (tmp_path / "output" / "skills").resolve()
+
+    def test_load_project_with_claude_skill_target(self, tmp_path: Path) -> None:
+        """Load project with claude-skill target."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[project.output]
+target = "claude-skill"
+""")
+
+        config = load_project(config_file)
+
+        assert config.output.target == "claude-skill"
+        assert config.output_path == (Path.home() / ".claude" / "skills").resolve()
+
+    def test_load_project_without_output_target(self, tmp_path: Path) -> None:
+        """Load project without target uses default output path."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+output-path = "dist"
+""")
+
+        config = load_project(config_file)
+
+        assert config.output.target is None
+        assert config.output_path == (tmp_path / "dist").resolve()
+
+    def test_save_project_with_output_target(self, tmp_path: Path) -> None:
+        """Save project preserves output target config."""
+        from colin.api.project import ProjectOutputConfig
+
+        config_file = tmp_path / "colin.toml"
+
+        config = ProjectConfig(
+            name="test-project",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output" / "skills",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+            output=ProjectOutputConfig(target="skill", path="output/skills"),
+        )
+
+        save_project(config_file, config)
+
+        # Reload and verify
+        reloaded = load_project(config_file)
+        assert reloaded.output.target == "skill"
+
+    def test_load_project_with_invalid_target_raises(self, tmp_path: Path) -> None:
+        """Load project with invalid target raises ValueError."""
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[project.output]
+target = "nonexistent-target"
+""")
+
+        with pytest.raises(ValueError, match="Unknown output target"):
+            load_project(config_file)

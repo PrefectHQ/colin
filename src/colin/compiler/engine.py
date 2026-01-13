@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import shutil
 from contextlib import nullcontext as _nullcontext
 from datetime import datetime, timezone
@@ -228,6 +229,12 @@ class CompileEngine:
                 key = f"{ref.provider}.{ref.connection}" if ref.connection else ref.provider
                 inst_config = self.config.providers.get(key)
                 if inst_config is None:
+                    # No config entry - check if it's a built-in provider (sentinel hash)
+                    from colin.providers.base import BUILTIN_CONFIG_HASH
+
+                    if old_version == BUILTIN_CONFIG_HASH:
+                        # Built-in provider with no config - still valid
+                        continue
                     # Provider was removed from config
                     return (True, f"provider config removed: {ref.provider}")
                 if inst_config.config_hash != old_version:
@@ -249,7 +256,7 @@ class CompileEngine:
                 return (True, f"ref check failed: {ref.method} ({e})")
 
             if current_version != old_version:
-                return (True, f"ref version changed: {ref.method}")
+                return (True, f"ref changed: {ref.method} ({old_version!r} -> {current_version!r})")
 
         return (False, "")
 
@@ -977,3 +984,103 @@ class CompileEngine:
                         continue
                 if file_src.exists():
                     shutil.copy2(file_src, file_dst)
+
+        # Write output manifests for ownership tracking
+        await self._write_output_manifests(compiled_outputs=compiled_outputs)
+
+    async def _write_output_manifests(
+        self,
+        *,
+        compiled_outputs: dict[str, CompiledDocument] | None = None,
+    ) -> None:
+        """Write .colin-manifest.json files for ownership tracking.
+
+        Each manifest claims ownership of its directory, enabling safe cleanup
+        of stale files without touching user-created content.
+
+        Args:
+            compiled_outputs: In-memory compiled docs for content hashing.
+        """
+        # Skip in ephemeral mode
+        if self.ephemeral:
+            return
+
+        # Get project ID (required for manifests)
+        from colin.api.project import ensure_project_id
+
+        project_file = self.config.project_root / "colin.toml"
+        project_id = ensure_project_id(self.config, project_file)
+
+        # Collect all published file paths with their content hashes
+        published_files: dict[str, str] = {}  # path -> hash
+        for doc_meta in self.manifest.documents.values():
+            if doc_meta.is_published and doc_meta.output_path:
+                # Get hash from in-memory if available, else from manifest
+                if compiled_outputs and doc_meta.output_path in compiled_outputs:
+                    content_hash = compiled_outputs[doc_meta.output_path].output_hash
+                else:
+                    content_hash = doc_meta.output_hash or ""
+                published_files[doc_meta.output_path] = content_hash
+
+            # Include file outputs
+            for file_path, file_meta in doc_meta.file_outputs.items():
+                should_publish = (
+                    file_meta.publish if file_meta.publish is not None else doc_meta.is_published
+                )
+                if should_publish:
+                    published_files[file_path] = file_meta.output_hash or ""
+
+        if not published_files:
+            return
+
+        # Get manifest locations from output target
+        from colin.api.project import create_output_target
+
+        target_kwargs: dict[str, Any] = {}
+        # Use explicit output.path if set, otherwise fall back to resolved output_path
+        if self.config.output.path:
+            target_kwargs["path"] = self.config.output.path
+        else:
+            target_kwargs["path"] = str(self.config.output_path)
+        if self.config.output.scope:
+            target_kwargs["scope"] = self.config.output.scope
+        if self.config.output.model_extra:
+            for key, value in self.config.output.model_extra.items():
+                target_kwargs[key] = value
+
+        target = create_output_target(self.config.output.target, **target_kwargs)
+        locations = target.get_manifest_locations(list(published_files.keys()))
+
+        output_path = self.config.output_path
+
+        # Write manifest for each location
+        for location in locations:
+            # Filter files for this location
+            prefix = f"{location}/" if location else ""
+            location_files: dict[str, str] = {}
+
+            for path, content_hash in published_files.items():
+                if location:
+                    # File must be under this subdir
+                    if path.startswith(prefix):
+                        rel_path = path[len(prefix) :]
+                        location_files[rel_path] = content_hash
+                else:
+                    # Root manifest - include files not in any subdir
+                    # (or all files if this is the only location)
+                    if len(locations) == 1 or "/" not in path:
+                        location_files[path] = content_hash
+
+            if not location_files:
+                continue
+
+            # Write manifest
+            manifest_dir = output_path / location if location else output_path
+            manifest_path = manifest_dir / ".colin-manifest.json"
+            manifest_data = {
+                "project_id": project_id,
+                "files": location_files,
+            }
+            manifest_path.write_text(
+                json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8"
+            )

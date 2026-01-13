@@ -9,6 +9,7 @@ import cyclopts
 from cyclopts import Parameter
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig, RemoteMCPServer, StdioMCPServer
+from rich import box
 from rich.console import Console
 from rich.table import Table
 
@@ -98,7 +99,7 @@ def add(
 
     try:
         mcp.add_server(project_dir=project, name=name, server=server)
-        console.print(f"[green]Added:[/] {name}")
+        console.print(f"[green]Added MCP server:[/] {name}")
     except FileNotFoundError as e:
         err_console.print(f"[red]Error:[/] {e}")
         err_console.print("[dim]Run `colin init` to create a new project[/]")
@@ -149,9 +150,9 @@ def list_servers(
             console.print("[dim]No MCP servers configured.[/]")
             return
 
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Name")
-        table.add_column("Type")
+        table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+        table.add_column("Name", style="cyan")
+        table.add_column("Type", style="dim")
         table.add_column("Connection")
 
         for name, server in servers.items():
@@ -207,18 +208,16 @@ def test(
 
         try:
             async with client:
+                tools = await client.list_tools()
                 resources = await client.list_resources()
+                prompts = await client.list_prompts()
 
                 console.print(f"[green]✓[/] Connected to {name}")
-
-                if resources:
-                    console.print(f"\n[bold]Resources ({len(resources)}):[/]")
-                    for resource in resources:
-                        uri = resource.uri
-                        desc = f" - {resource.description}" if resource.description else ""
-                        console.print(f"  {uri}{desc}")
-                else:
-                    console.print("\n[dim]No resources available[/]")
+                console.print(
+                    f"  [cyan]{len(tools)}[/] tools, "
+                    f"[cyan]{len(resources)}[/] resources, "
+                    f"[cyan]{len(prompts)}[/] prompts"
+                )
 
         except Exception as e:
             err_console.print(f"[red]✗[/] Failed to connect: {e}")
