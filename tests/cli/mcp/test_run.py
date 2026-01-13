@@ -58,13 +58,16 @@ def test_mcp_access_shown_in_output(
 
 
 def test_mcp_test_command(greeter_server: Path, cli: Callable[..., None], capfd):
-    """colin mcp test shows resources from working server."""
+    """colin mcp test shows connection success and capability counts."""
     cli("mcp", "test", "greeter")
 
     captured = capfd.readouterr()
     output = strip_ansi(captured.out)
     assert "Connected to greeter" in output
-    assert "colin://hello" in output
+    # Shows counts of tools, resources, prompts
+    assert "tools" in output
+    assert "resources" in output
+    assert "prompts" in output
 
 
 def test_mcp_prompt_basic(greeter_server: Path, output_dir: Path, cli: Callable[..., None]):

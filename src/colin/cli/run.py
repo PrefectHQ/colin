@@ -9,6 +9,7 @@ import cyclopts
 from rich.align import Align
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.table import Table
@@ -18,8 +19,10 @@ from rich.tree import Tree
 import colin
 from colin.api.compile import CompileResult, compile_project
 from colin.api.project import (
+    VarConfig,
     clean_project,
     find_project_file,
+    generate_project_id,
     get_stale_files,
     load_project,
 )
@@ -51,7 +54,12 @@ LOGO = (
 )
 
 
-def _print_banner(project_name: str, config_path: Path, output_dir: Path) -> None:
+def _print_banner(
+    project_name: str,
+    config_path: Path,
+    output_dir: Path,
+    target: str | None = None,
+) -> None:
     """Print the Colin logo banner in a panel with project info."""
     logo_text = Text.from_ansi(LOGO, no_wrap=True)
     version_text = Text(f"Colin {colin.__version__}", style="bold blue")
@@ -65,13 +73,16 @@ def _print_banner(project_name: str, config_path: Path, output_dir: Path) -> Non
         config_display = str(config_path)
         output_display = str(output_dir) + "/"
 
+    # Show target type if set, otherwise show path
+    target_display = target if target else output_display
+
     info_table = Table.grid(padding=(0, 1))
     info_table.add_column(justify="center")  # emoji
     info_table.add_column(style="cyan", justify="left")  # label
     info_table.add_column(style="dim", justify="left")  # value
     info_table.add_row("📚", "Project:", project_name)
     info_table.add_row("🛠️", "Config:", config_display)
-    info_table.add_row("✨", "Output:", output_display)
+    info_table.add_row("✨", "Target:", target_display)
 
     docs_url = Text("https://github.com/prefecthq/colin", style="dim")
 
@@ -179,7 +190,7 @@ def render_state(state: CompilationState) -> RenderableType:
 
         trees.append(doc_tree)
 
-    return Group(*trees)
+    return Padding(Group(*trees), (0, 0, 0, 2))  # left indent of 2
 
 
 def print_project_info(project_file: Path, project_name: str, output_dir: Path) -> None:
@@ -205,6 +216,7 @@ async def _compile_with_progress(
     ephemeral: bool = False,
     vars: dict[str, str] | None = None,
     state: CompilationState | None = None,
+    config_vars: dict[str, VarConfig] | None = None,
 ) -> CompileResult:
     """Compile project with live progress display.
 
@@ -215,6 +227,7 @@ async def _compile_with_progress(
         ephemeral: Don't write to .colin/.
         vars: Variable overrides.
         state: Compilation state for tracking (created if None).
+        config_vars: Variable definitions from config (for showing defaults).
 
     Returns:
         CompileResult with compiled documents and manifest.
@@ -222,7 +235,27 @@ async def _compile_with_progress(
     if state is None:
         state = CompilationState()
 
-    console.print("[dim]Processing:[/]")
+    # Show variables section if any are defined
+    if config_vars:
+        console.print()
+        console.print("[cyan bold]Variables[/]")
+        console.print()
+        for name, var_config in config_vars.items():
+            if vars and name in vars:
+                # CLI override
+                console.print(f"  {name} = {vars[name]}")
+            elif var_config.default is not None:
+                # Default value
+                console.print(f"  {name} = {var_config.default} [dim](default)[/]")
+            else:
+                # Required but not provided - will error later
+                console.print(f"  {name} = [dim italic]<not set>[/]")
+        console.print()
+
+    console.print()
+    console.print("[cyan bold]Compiling...[/]")
+    console.print()
+
     with Live(
         console=console,
         refresh_per_second=10,
@@ -280,12 +313,26 @@ async def _compile_with_progress(
                 all_outputs.append((file_path, is_new))
 
     if all_outputs:
+        # Format output path for display
+        output_display = ""
+        if output_dir:
+            try:
+                output_display = f"~/{output_dir.relative_to(Path.home())}/"
+            except ValueError:
+                output_display = f"{output_dir}/"
+
         console.print()
-        console.print("[dim]Output:[/]")
+        console.print()
+        if output_display:
+            console.print(f"[cyan bold]Output Files[/] [dim]→ {output_display}[/]")
+        else:
+            console.print("[cyan bold]Output Files[/]")
+        console.print()
 
         # Group by directory (None for root-level files)
         from collections import defaultdict
 
+        indent = "  "
         by_dir: dict[str | None, list[tuple[str, bool]]] = defaultdict(list)
         for path, is_new in all_outputs:
             if "/" in path:
@@ -294,20 +341,20 @@ async def _compile_with_progress(
             else:
                 by_dir[None].append((path, is_new))
 
-        # Print root-level files first
+        # Root-level files first
         for file_name, is_new in sorted(by_dir.get(None, [])):
             icon = "[green]✓[/green]" if is_new else "[green]»[/green]"
-            console.print(f"{icon} {file_name}")
+            console.print(f"{indent}{icon} {file_name}")
 
         # Then directories with tree structure for their contents
         for dir_name in sorted(k for k in by_dir if k is not None):
-            console.print(f"[dim]{dir_name}/[/]")
+            console.print(f"{indent}[dim]{dir_name}/[/]")
             files = sorted(by_dir[dir_name])
             for j, (file_name, is_new) in enumerate(files):
                 is_last_file = j == len(files) - 1
                 branch = "└── " if is_last_file else "├── "
                 icon = "[green]✓[/green]" if is_new else "[green]»[/green]"
-                console.print(f"[dim]{branch}[/]{icon} {file_name}")
+                console.print(f"{indent}[dim]{branch}[/]{icon} {file_name}")
 
     return result
 
@@ -388,18 +435,19 @@ async def run(
 
         # Print banner (includes project info) before starting
         if not no_banner:
-            _print_banner(project_name, project_file, output_dir)
+            _print_banner(project_name, project_file, output_dir, config.output.target)
         else:
             print_project_info(project_file, project_name, output_dir)
 
         # Compile with progress display
         result = await _compile_with_progress(
             project_dir=project,
-            output_dir=output,
+            output_dir=output_dir,
             force=no_cache,
             ephemeral=ephemeral,
             vars=vars_dict,
             state=state,
+            config_vars=config.vars,
         )
         assert isinstance(result, CompileResult)
 
@@ -483,12 +531,89 @@ This is your first model. Run `colin run` to compile it.
 """
 
 
+def _get_builtin_blueprints() -> dict[str, Path]:
+    """Get built-in blueprint paths."""
+    blueprints_dir = Path(__file__).parent.parent / "blueprints"
+    if not blueprints_dir.exists():
+        return {}
+    return {
+        d.name: d for d in blueprints_dir.iterdir() if d.is_dir() and (d / "colin.toml").exists()
+    }
+
+
+def _resolve_blueprint(name_or_path: str) -> Path:
+    """Resolve a blueprint name or path to an actual path.
+
+    Args:
+        name_or_path: Built-in blueprint name or filesystem path.
+
+    Returns:
+        Path to the blueprint directory.
+
+    Raises:
+        SystemExit: If blueprint not found.
+    """
+    # Check filesystem path first
+    path = Path(name_or_path)
+    if path.exists():
+        if not (path / "colin.toml").exists():
+            err_console.print(f"[red]Error:[/] Not a valid blueprint: {path}")
+            err_console.print("[dim]Blueprint directories must contain colin.toml[/]")
+            sys.exit(1)
+        return path.resolve()
+
+    # Check built-in blueprints
+    builtins = _get_builtin_blueprints()
+    if name_or_path in builtins:
+        return builtins[name_or_path]
+
+    # Not found
+    err_console.print(f"[red]Error:[/] Blueprint not found: {name_or_path}")
+    if builtins:
+        console.print("[dim]Available blueprints:[/]")
+        for bp_name in sorted(builtins):
+            console.print(f"  - {bp_name}")
+    sys.exit(1)
+
+
+def _copy_blueprint(blueprint_path: Path, target_dir: Path) -> list[Path]:
+    """Copy blueprint files to target directory.
+
+    Args:
+        blueprint_path: Source blueprint directory.
+        target_dir: Target project directory.
+
+    Returns:
+        List of created file paths (relative to target_dir).
+    """
+    import shutil
+
+    created: list[Path] = []
+
+    for src in blueprint_path.rglob("*"):
+        if src.is_file():
+            # Skip blueprint metadata
+            if src.name == "blueprint.toml":
+                continue
+
+            rel_path = src.relative_to(blueprint_path)
+            dst = target_dir / rel_path
+
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            created.append(rel_path)
+
+    return sorted(created)
+
+
 def init(
     project: Path = Path("."),
     *,
     name: str | None = None,
     models: str = "models",
     output: str = "output",
+    blueprint: Annotated[str | None, cyclopts.Parameter(name=["-b", "--blueprint"])] = None,
+    list_blueprints: Annotated[bool, cyclopts.Parameter(name=["--list"])] = False,
 ) -> None:
     """Initialize a new Colin project.
 
@@ -499,7 +624,35 @@ def init(
         name: Project name (default: directory name).
         models: Source documents directory (default: models).
         output: Compiled output directory (default: output).
+        blueprint: Initialize from a blueprint (name or path).
+        list_blueprints: List available blueprints and exit.
     """
+    # Handle --list
+    if list_blueprints:
+        builtins = _get_builtin_blueprints()
+        if not builtins:
+            console.print("[dim]No built-in blueprints available.[/]")
+            return
+
+        console.print("[bold]Available blueprints:[/]")
+        console.print()
+        for bp_name, bp_path in sorted(builtins.items()):
+            # Try to read description from blueprint.toml
+            bp_toml = bp_path / "blueprint.toml"
+            description = ""
+            if bp_toml.exists():
+                import tomli
+
+                data = tomli.loads(bp_toml.read_text())
+                description = data.get("blueprint", {}).get("description", "")
+
+            console.print(f"  [cyan]{bp_name}[/]")
+            if description:
+                console.print(f"    {description}")
+        console.print()
+        console.print("[dim]Use: colin init -b <name> [project][/]")
+        return
+
     project_dir = project.resolve()
     cwd = Path.cwd()
 
@@ -512,39 +665,80 @@ def init(
         sys.exit(1)
 
     try:
-        # Create directories
+        # Create project directory
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / models).mkdir(parents=True, exist_ok=True)
 
-        # Build colin.toml content
-        toml_lines = ["[project]", f'name = "{project_name}"']
-        if models != "models":
-            toml_lines.append(f'models = "{models}"')
-        if output != "output":
-            toml_lines.append(f'output = "{output}"')
-        toml_content = "\n".join(toml_lines) + "\n"
+        if blueprint:
+            # Initialize from blueprint
+            blueprint_path = _resolve_blueprint(blueprint)
+            created_files = _copy_blueprint(blueprint_path, project_dir)
 
-        # Write colin.toml
-        colin_toml = project_dir / "colin.toml"
-        colin_toml.write_text(toml_content)
+            # Update colin.toml with generated project ID
+            colin_toml = project_dir / "colin.toml"
+            if colin_toml.exists():
+                import tomli
+                import tomli_w
 
-        # Write hello.md
-        hello_md = project_dir / models / "hello.md"
-        hello_md.write_text(_DEFAULT_HELLO_MD)
+                content = tomli.loads(colin_toml.read_text())
+                if "project" not in content:
+                    content["project"] = {}
+                if name:
+                    content["project"]["name"] = name
+                # Always generate a new ID for the new project
+                proj_name = content.get("project", {}).get("name", project_name)
+                content["project"]["id"] = generate_project_id(proj_name)
+                colin_toml.write_text(tomli_w.dumps(content))
 
-        # Show what was created
-        try:
-            project_display = project_dir.relative_to(cwd)
-        except ValueError:
-            project_display = project_dir
+            # Show what was created
+            try:
+                project_display = project_dir.relative_to(cwd)
+            except ValueError:
+                project_display = project_dir
 
-        console.print("[dim]Created:[/]")
-        if project_dir != cwd:
-            console.print(f"[green]→[/green] {project_display}/colin.toml")
-            console.print(f"[green]→[/green] {project_display}/{models}/hello.md")
+            console.print(f"[dim]Created from blueprint '[cyan]{blueprint}[/]':[/]")
+            for f in created_files[:10]:  # Show first 10 files
+                if project_dir != cwd:
+                    console.print(f"[green]→[/green] {project_display}/{f}")
+                else:
+                    console.print(f"[green]→[/green] {f}")
+            if len(created_files) > 10:
+                console.print(f"[dim]  ... and {len(created_files) - 10} more files[/]")
+
         else:
-            console.print("[green]→[/green] colin.toml")
-            console.print(f"[green]→[/green] {models}/hello.md")
+            # Default initialization
+            (project_dir / models).mkdir(parents=True, exist_ok=True)
+
+            # Build colin.toml content
+            project_id = generate_project_id(project_name)
+            toml_lines = ["[project]", f'name = "{project_name}"', f'id = "{project_id}"']
+            if models != "models":
+                toml_lines.append(f'models = "{models}"')
+            if output != "output":
+                toml_lines.append(f'output = "{output}"')
+            toml_content = "\n".join(toml_lines) + "\n"
+
+            # Write colin.toml
+            colin_toml = project_dir / "colin.toml"
+            colin_toml.write_text(toml_content)
+
+            # Write hello.md
+            hello_md = project_dir / models / "hello.md"
+            hello_md.write_text(_DEFAULT_HELLO_MD)
+
+            # Show what was created
+            try:
+                project_display = project_dir.relative_to(cwd)
+            except ValueError:
+                project_display = project_dir
+
+            console.print("[dim]Created:[/]")
+            if project_dir != cwd:
+                console.print(f"[green]→[/green] {project_display}/colin.toml")
+                console.print(f"[green]→[/green] {project_display}/{models}/hello.md")
+            else:
+                console.print("[green]→[/green] colin.toml")
+                console.print(f"[green]→[/green] {models}/hello.md")
+
         console.print()
 
         if project_dir == cwd:
