@@ -12,14 +12,13 @@ from colin.compiler.namespace import Namespace, build_namespace
 from colin.providers.base import Provider
 from colin.providers.http import HTTPProvider
 from colin.providers.llm import LLMProvider
-from colin.providers.mcp import MCPProvider
 
 logger = logging.getLogger(__name__)
 
 _PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
     "http": HTTPProvider,
     "llm": LLMProvider,
-    "mcp": MCPProvider,
+    "mcp": "colin.providers.mcp:MCPProvider",  # Lazy import to avoid circular dependency
     "s3": "colin.providers.s3:S3Provider",  # Lazy import
 }
 

@@ -3,6 +3,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any, ClassVar
 
+from colin.compiler.namespace import MCPNamespace, Namespace
 from colin.models import Ref
 from colin.providers.base import Provider
 from colin.providers.manager import ProviderManager
@@ -71,3 +72,82 @@ async def test_namespace_default_instance_fallback() -> None:
     assert await providers.s3.read("config.json") == "default:config.json"  # type: ignore[attr-defined]
     assert await providers.s3.dev.read("config.json") == "dev:config.json"  # type: ignore[attr-defined]
     assert await providers.s3["default"].read("config.json") == "default:config.json"  # type: ignore[index]
+
+
+class TestMCPNamespace:
+    """Tests for MCPNamespace with list_servers() support."""
+
+    def test_list_servers_returns_instance_names(self) -> None:
+        """list_servers() returns all configured server names."""
+        type_map = {
+            "github": Namespace({"resource": lambda: None}, name="mcp.github"),
+            "stripe": Namespace({"resource": lambda: None}, name="mcp.stripe"),
+            "linear": Namespace({"resource": lambda: None}, name="mcp.linear"),
+        }
+        mcp_ns = MCPNamespace(type_map, name="mcp")
+
+        result = mcp_ns.list_servers()
+
+        assert result == ["github", "linear", "stripe"]
+
+    def test_list_servers_excludes_internal_keys(self) -> None:
+        """list_servers() excludes keys starting with underscore."""
+        type_map = {
+            "github": Namespace({}, name="mcp.github"),
+            "__default__": Namespace({}, name="mcp"),
+            "_internal": Namespace({}, name="mcp._internal"),
+        }
+        mcp_ns = MCPNamespace(type_map, name="mcp")
+
+        result = mcp_ns.list_servers()
+
+        assert result == ["github"]
+
+    def test_list_servers_empty(self) -> None:
+        """list_servers() returns empty list when no servers configured."""
+        mcp_ns = MCPNamespace({}, name="mcp")
+
+        result = mcp_ns.list_servers()
+
+        assert result == []
+
+    def test_getitem_access(self) -> None:
+        """Servers can be accessed via [] syntax."""
+        github_ns = Namespace({"resource": "fake"}, name="mcp.github")
+        type_map = {"github": github_ns}
+        mcp_ns = MCPNamespace(type_map, name="mcp")
+
+        result = mcp_ns["github"]
+
+        assert result is github_ns
+
+    def test_dot_access(self) -> None:
+        """Servers can be accessed via dot syntax."""
+        github_ns = Namespace({"resource": "fake"}, name="mcp.github")
+        type_map = {"github": github_ns}
+        mcp_ns = MCPNamespace(type_map, name="mcp")
+
+        result = mcp_ns.github  # type: ignore[attr-defined]
+
+        assert result is github_ns
+
+    def test_list_servers_accessible_as_attribute(self) -> None:
+        """list_servers is accessible as an attribute."""
+        mcp_ns = MCPNamespace({"github": Namespace({}, name="mcp.github")}, name="mcp")
+
+        assert callable(mcp_ns.list_servers)
+        assert mcp_ns.list_servers() == ["github"]
+
+
+def test_mcp_namespace_in_manager() -> None:
+    """MCP provider uses MCPNamespace in manager."""
+    manager = ProviderManager()
+    manager.register(DummyProvider("mcp", "github"), instance="github")
+    manager.register(DummyProvider("mcp", "stripe"), instance="stripe")
+
+    providers = manager.namespace()
+
+    # MCP namespace should have list_servers
+    mcp_ns = providers.mcp  # type: ignore[attr-defined]
+    assert isinstance(mcp_ns, MCPNamespace)
+    assert mcp_ns.list_servers() == ["github", "stripe"]

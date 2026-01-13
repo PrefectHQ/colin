@@ -27,8 +27,8 @@ class TestEphemeralMode:
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         manifest_path = build_dir / "manifest.json"
@@ -56,8 +56,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # Compile in ephemeral mode
@@ -81,8 +81,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # Compile in ephemeral mode
@@ -108,8 +108,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # Compile in ephemeral mode
@@ -137,8 +137,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # First, compile normally to populate cache
@@ -176,8 +176,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # Compile with both flags
@@ -207,8 +207,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # Verify .colin doesn't exist
@@ -239,8 +239,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # Compile in ephemeral mode
@@ -267,8 +267,8 @@ output = "output"
         (tmp_path / "colin.toml").write_text("""
 [project]
 name = "test"
-models = "models"
-output = "output"
+model-path = "models"
+output-path = "output"
 """)
 
         # First, compile normally to populate cache
