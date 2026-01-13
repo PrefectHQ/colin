@@ -1,11 +1,14 @@
 """Run, init, and clean commands."""
 
 import asyncio
+import shutil
 import sys
 from pathlib import Path
 from typing import Annotated
 
 import cyclopts
+import tomli
+import tomli_w
 from rich.align import Align
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
@@ -586,8 +589,6 @@ def _copy_blueprint(blueprint_path: Path, target_dir: Path) -> list[Path]:
     Returns:
         List of created file paths (relative to target_dir).
     """
-    import shutil
-
     created: list[Path] = []
 
     for src in blueprint_path.rglob("*"):
@@ -641,8 +642,6 @@ def init(
             bp_toml = bp_path / "blueprint.toml"
             description = ""
             if bp_toml.exists():
-                import tomli
-
                 data = tomli.loads(bp_toml.read_text())
                 description = data.get("blueprint", {}).get("description", "")
 
@@ -676,9 +675,6 @@ def init(
             # Update colin.toml with generated project ID
             colin_toml = project_dir / "colin.toml"
             if colin_toml.exists():
-                import tomli
-                import tomli_w
-
                 content = tomli.loads(colin_toml.read_text())
                 if "project" not in content:
                     content["project"] = {}
@@ -703,6 +699,21 @@ def init(
                     console.print(f"[green]→[/green] {f}")
             if len(created_files) > 10:
                 console.print(f"[dim]  ... and {len(created_files) - 10} more files[/]")
+
+            # Show blueprint instructions if present
+            bp_toml = blueprint_path / "blueprint.toml"
+            if bp_toml.exists():
+                bp_data = tomli.loads(bp_toml.read_text())
+                instructions = bp_data.get("blueprint", {}).get("instructions", "")
+                if instructions:
+                    console.print()
+                    console.print("[cyan bold]Instructions:[/]")
+                    if project_dir != cwd:
+                        console.print(f"  cd {project_display}")
+                        console.print()
+                    for line in instructions.strip().splitlines():
+                        console.print(f"  {line}")
+                    return  # Skip generic message
 
         else:
             # Default initialization
