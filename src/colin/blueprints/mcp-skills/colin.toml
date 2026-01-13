@@ -1,0 +1,20 @@
+[project]
+name = "mcp-skills"
+
+[project.output]
+target = "claude-skill"
+
+# Add your MCP server:
+# [[providers.mcp]]
+# name = "source"
+# url = "http://localhost:8000/mcp"
+# Or for stdio:
+# command = "uvx"
+# args = ["your-mcp-server"]
+
+[vars]
+# Override the skill folder name (defaults to server name)
+# mcp_provider_name = "my-custom-name"
+
+# Set to false to skip script generation
+generate_scripts = true
