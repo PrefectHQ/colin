@@ -83,7 +83,9 @@ def _wrap_provider_functions(
             # Use empty hash for builtins without explicit config
             config_hash = provider_manager.get_config_hash(provider_type, connection)
             if config_hash is None:
-                config_hash = "0" * 16  # Sentinel for builtin/unconfigured
+                from colin.providers.base import BUILTIN_CONFIG_HASH
+
+                config_hash = BUILTIN_CONFIG_HASH
             context.track_provider_config(provider_type, connection, config_hash)
             return await func(*args, **kwargs)
 

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from colin.api.project import ProjectConfig
+from colin.api.project import ProjectConfig, ProjectOutputConfig
 from colin.compiler import CompileEngine
 from colin.providers.storage.file import FileStorage
 
@@ -242,3 +243,170 @@ Report includes {{ ref('base.md').content }}
         assert (output_dir / "reports" / "weekly.md").exists()
         weekly_output = (output_dir / "reports" / "weekly.md").read_text()
         assert "Base content" in weekly_output
+
+    async def test_output_manifest_default(self, tmp_path: Path) -> None:
+        """Test that output manifest is written with default plugin."""
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
+
+        # Create colin.toml for project ID
+        (tmp_path / "colin.toml").write_text("""\
+[project]
+name = "test-project"
+id = "test-project-abc123"
+""")
+
+        (source_dir / "hello.md").write_text("""\
+---
+name: Hello
+---
+Hello World
+""")
+
+        config = ProjectConfig(
+            name="test-project",
+            id="test-project-abc123",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
+        artifact_storage = FileStorage(base_path=compiled_dir)
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+        )
+
+        await engine.compile_all()
+
+        # Verify output manifest exists at root
+        manifest_path = output_dir / ".colin-manifest.json"
+        assert manifest_path.exists()
+
+        manifest = json.loads(manifest_path.read_text())
+        assert manifest["project_id"] == "test-project-abc123"
+        assert "hello.md" in manifest["files"]
+
+    async def test_output_manifest_skill_target(self, tmp_path: Path) -> None:
+        """Test that skill target writes per-subdirectory manifests."""
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output" / "skills"
+        output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
+
+        # Create colin.toml for project ID
+        (tmp_path / "colin.toml").write_text("""\
+[project]
+name = "test-skills"
+id = "test-skills-xyz789"
+
+[project.output]
+target = "skill"
+path = "output/skills"
+""")
+
+        # Create skill files with subdirectory structure
+        (source_dir / "stripe.md").write_text("""\
+---
+colin:
+  output:
+    path: stripe/SKILL.md
+---
+Stripe skill
+""")
+
+        (source_dir / "github.md").write_text("""\
+---
+colin:
+  output:
+    path: github/SKILL.md
+---
+GitHub skill
+""")
+
+        config = ProjectConfig(
+            name="test-skills",
+            id="test-skills-xyz789",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+            output=ProjectOutputConfig(target="skill", path="output/skills"),
+        )
+        artifact_storage = FileStorage(base_path=compiled_dir)
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+        )
+
+        await engine.compile_all()
+
+        # Verify per-subdirectory manifests
+        stripe_manifest = output_dir / "stripe" / ".colin-manifest.json"
+        github_manifest = output_dir / "github" / ".colin-manifest.json"
+
+        assert stripe_manifest.exists()
+        assert github_manifest.exists()
+
+        stripe_data = json.loads(stripe_manifest.read_text())
+        assert stripe_data["project_id"] == "test-skills-xyz789"
+        assert "SKILL.md" in stripe_data["files"]
+
+        github_data = json.loads(github_manifest.read_text())
+        assert github_data["project_id"] == "test-skills-xyz789"
+        assert "SKILL.md" in github_data["files"]
+
+    async def test_output_manifest_ephemeral_skips(self, tmp_path: Path) -> None:
+        """Test that ephemeral mode skips manifest writing."""
+        source_dir = tmp_path / "models"
+        source_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True)
+        build_dir = tmp_path / ".colin"
+        build_dir.mkdir()
+        compiled_dir = build_dir / "compiled"
+        compiled_dir.mkdir()
+
+        (tmp_path / "colin.toml").write_text("""\
+[project]
+name = "test-project"
+id = "test-project-abc123"
+""")
+
+        (source_dir / "hello.md").write_text("""\
+---
+name: Hello
+---
+Hello World
+""")
+
+        config = ProjectConfig(
+            name="test-project",
+            id="test-project-abc123",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
+        artifact_storage = FileStorage(base_path=compiled_dir)
+        engine = CompileEngine(
+            config=config,
+            artifact_storage=artifact_storage,
+            ephemeral=True,
+        )
+
+        await engine.compile_all()
+
+        # Verify NO output manifest in ephemeral mode
+        manifest_path = output_dir / ".colin-manifest.json"
+        assert not manifest_path.exists()

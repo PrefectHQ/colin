@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from colin.resources import Resource
 
 
+# Sentinel hash for built-in providers with no user configuration
+BUILTIN_CONFIG_HASH = "0" * 16
+
+
 class Provider(BaseModel):
     """Base class for all providers.
 
