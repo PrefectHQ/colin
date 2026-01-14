@@ -19,6 +19,14 @@ class TestGetProviderClass:
 
         assert cls is HTTPProvider
 
+    def test_returns_file_provider(self) -> None:
+        """Returns FileProvider class directly."""
+        cls = _get_provider_class("file")
+
+        from colin.providers.file import FileProvider
+
+        assert cls is FileProvider
+
     def test_lazy_imports_s3_provider(self) -> None:
         """Lazy imports S3 provider when requested."""
         # This test assumes aioboto3 is available (or mocked)
