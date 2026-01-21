@@ -1,0 +1,232 @@
+---
+title: Agent Skills
+sidebarTitle: Agent Skills
+icon: wand-magic-sparkles
+---
+
+Agent skills are an open standard for giving AI agents domain-specific expertise. Tools like Claude Code, Cursor, Codex, and Gemini CLI can discover and load skills dynamically to perform better at specific tasks.
+
+Colin compiles skills from live sources. Instead of static markdown files that go stale, you write templates that pull from your actual infrastructure—GitHub repos, incident history, internal APIs. When those sources change, Colin recompiles. Your skills stay fresh automatically.
+
+## The Standard
+
+A skill is a folder containing markdown files with YAML frontmatter. The standard uses **progressive disclosure**: agents load just enough information to decide what to do, then reveal more details as needed.
+
+```
+my-skill/
+├── SKILL.md          # Loaded first: name, description, overview
+├── deploying.md      # Loaded when relevant
+└── troubleshooting.md
+```
+
+The `SKILL.md` frontmatter tells agents when to use the skill:
+
+```yaml
+---
+name: deployment-process
+description: How to deploy code to staging and production
+---
+```
+
+At startup, agents pre-load skill names and descriptions. This metadata is enough to know when each skill applies. The body loads only when the skill is invoked.
+
+## Why Colin?
+
+Skills have the same problem as any documentation: they drift from reality. Someone writes a deployment skill, then six months later CI changed, environments got renamed, the approval flow is different. The skill is wrong. The agent gives bad advice.
+
+Colin keeps skills fresh by compiling them from live sources:
+
+```markdown
+---
+name: deployment-process
+description: How to deploy to staging and production
+---
+
+# Deployment
+
+{{ ref('infrastructure/environments').content }}
+
+## Steps
+
+{{ colin.mcp.github.resource('repo://acme/platform/docs/DEPLOY.md').content }}
+
+## Recent Issues
+
+{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | extract('what went wrong and how it was fixed') }}
+```
+
+Run `colin run`. The skill compiles from your infrastructure doc, the latest deployment guide from GitHub, and recent incidents from PagerDuty. Tomorrow, when the deployment guide changes, Colin knows—and recompiles.
+
+## Output to Skills Directories
+
+Configure Colin to write directly to your agent's skills folder:
+
+```toml colin.toml
+[project.output]
+target = "claude-skill"
+scope = "user"
+```
+
+With `scope = "user"`, skills write to `~/.claude/skills/` and become available in all Claude Code sessions. With `scope = "project"`, they write to `.claude/skills/` relative to your project.
+
+Other agents use different locations. You can target any path:
+
+```toml colin.toml
+[project.output]
+target = "skill"
+path = "~/.codex/skills/"
+```
+
+The `skill` target uses per-subdirectory manifests, so multiple skill projects can coexist without interfering.
+
+## Generating Skills from MCP Servers
+
+The `mcp-skills` blueprint generates complete skill sets from any MCP server automatically.
+
+```bash
+colin init my-skills -b mcp-skills
+cd my-skills
+colin mcp add source "npx -y @your-org/mcp-server"
+colin run
+```
+
+Colin connects to the server, discovers its tools, and generates:
+
+```
+server-name/
+├── SKILL.md           # Server overview with tool list
+├── greet.md           # Tool documentation
+├── calculate.md       # Tool documentation
+└── scripts/
+    ├── greet.py       # Executable wrapper
+    └── calculate.py
+```
+
+Each tool gets its own documentation file with parameter schemas and usage instructions. The LLM writes concise descriptions automatically.
+
+To customize:
+
+```toml colin.toml
+[vars]
+mcp_provider_name = "custom-name"   # Override folder name
+generate_scripts = false            # Disable script generation
+```
+
+## Writing Skills Manually
+
+For skills not generated from MCP servers, create templates that compile to proper skill format.
+
+A minimal skill:
+
+```markdown models/my-skill/SKILL.md
+---
+name: code-review
+description: Guidelines for reviewing pull requests
+---
+
+# Code Review Process
+
+{{ ref('engineering/review-checklist').content }}
+
+## Style Guide
+
+{{ colin.mcp.github.resource('repo://acme/platform/STYLE.md').content }}
+```
+
+For skills with multiple files, use `{% file %}` blocks:
+
+```markdown models/skill-generator.md
+---
+colin:
+  output:
+    publish: false
+---
+
+{% file "my-skill/SKILL.md" publish=true %}
+---
+name: onboarding
+description: New engineer onboarding checklist
+---
+
+# Onboarding
+
+{{ ref('hr/onboarding-steps').content }}
+{% endfile %}
+
+{% file "my-skill/first-week.md" publish=true %}
+# First Week
+
+{{ colin.mcp.notion.resource('pages/first-week-guide').content }}
+{% endfile %}
+```
+
+## Keeping Skills Fresh
+
+Colin tracks dependencies automatically. When you use `ref()` or fetch from MCP servers, Colin records the version. On the next run, it checks if versions changed and recompiles affected skills.
+
+For time-sensitive content, set expiration:
+
+```yaml
+---
+colin:
+  cache:
+    expires: 1d
+---
+```
+
+This forces recompilation daily, even if sources haven't changed. Useful for skills that should always reflect the latest data.
+
+## Example: Team Context Skill
+
+A skill that keeps agents informed about your team:
+
+```markdown models/team/SKILL.md
+---
+name: team-context
+description: Information about the engineering team, current projects, and how we work
+---
+
+# Engineering Team
+
+{{ ref('company/engineering-org').content }}
+
+## Current Sprint
+
+{{ colin.mcp.linear.resource('team/engineering/current-sprint') | extract('active projects and blockers') }}
+
+## On-Call
+
+{{ colin.mcp.pagerduty.resource('schedules/engineering') | extract('who is on call this week') }}
+
+## Recent Decisions
+
+{{ colin.mcp.notion.resource('databases/engineering-decisions?last=30d') | extract('key decisions and rationale') }}
+```
+
+Configure to write to Claude Code:
+
+```toml colin.toml
+[project]
+name = "team-context"
+
+[project.output]
+target = "claude-skill"
+scope = "user"
+
+[[providers.mcp]]
+name = "linear"
+command = "npx"
+args = ["-y", "@linear/mcp-server"]
+
+[[providers.mcp]]
+name = "pagerduty"
+command = "npx"
+args = ["@pagerduty/mcp-server"]
+
+[[providers.mcp]]
+name = "notion"
+command = "npx"
+args = ["@anthropic/mcp-server-notion"]
+```
+
+Run `colin run` and the skill appears in Claude Code immediately. Set up a cron job or CI step to keep it current.

@@ -324,7 +324,6 @@ Private files are accessible via `ref().content` but `ref().path` raises an erro
 colin init [name]      # Create a new project
 colin run              # Compile all documents
 colin run --no-cache   # Force full recompile
-colin status           # Show dependency graph
 colin clean            # Remove outputs and cache
 ```
 

@@ -6,7 +6,7 @@ A minimal Colin project demonstrating the core features.
 
 - `models/greeting.md` - A simple base document
 - `models/welcome.md` - Uses `ref()` to include the greeting
-- `models/summary.md` - Uses `ref()`, `| llm_extract()`, and `{% llm %}` blocks
+- `models/summary.md` - Uses `ref()`, `| extract()`, and `{% llm %}` blocks
 
 ## Run It
 
@@ -29,4 +29,4 @@ export ANTHROPIC_API_KEY=your-key-here
 
 1. **Dependency order**: `greeting` compiles first because `welcome` and `summary` depend on it
 2. **ref() inclusion**: The greeting content appears inline in `welcome.md`
-3. **LLM tracking**: Run `colin status` to see LLM call metadata
+3. **LLM caching**: Run `colin run` twice—the second run uses cached LLM responses
