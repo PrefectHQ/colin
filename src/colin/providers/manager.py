@@ -10,12 +10,14 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from colin.api.project import ProjectConfig, ProviderInstanceConfig
 from colin.compiler.namespace import Namespace, build_namespace
 from colin.providers.base import Provider
+from colin.providers.file import FileProvider
 from colin.providers.http import HTTPProvider
 from colin.providers.llm import LLMProvider
 
 logger = logging.getLogger(__name__)
 
 _PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
+    "file": FileProvider,
     "http": HTTPProvider,
     "llm": LLMProvider,
     "mcp": "colin.providers.mcp:MCPProvider",  # Lazy import to avoid circular dependency
@@ -158,6 +160,9 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
             )
 
         # Register builtin providers if not configured
+        if "file" not in manager._registry.types:
+            manager.register(FileProvider())
+
         if "http" not in manager._registry.types:
             manager.register(HTTPProvider())
 
