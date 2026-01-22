@@ -129,6 +129,10 @@ This provides full isolation: no reading from `.colin/`, no writing to `.colin/`
 The `colin update` command updates an output directory from its source project:
 
 ```bash
+# Update a specific output directory
+colin update ~/.config/claude/skills
+
+# Or run from within the output directory
 cd ~/.config/claude/skills
 colin update
 ```
@@ -142,7 +146,7 @@ This is useful for:
 
 The `colin update` command:
 
-- Reads `.colin-manifest.json` from the current directory
+- Reads `.colin-manifest.json` from the specified directory (or current directory)
 - Uses stored `--var` overrides by default (override again with `--var`)
 - Supports `--no-cache`, `--ephemeral`, `--quiet`, and `--no-banner` flags
 
