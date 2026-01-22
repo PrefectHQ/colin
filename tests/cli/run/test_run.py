@@ -127,6 +127,50 @@ def test_run_warns_about_stale_files(
     assert "colin clean" in output
 
 
+def test_run_warns_in_output_directory(
+    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch, capsys
+):
+    """colin run warns when run in an output directory."""
+    project_output = test_project / "output"
+
+    # First run to create output with manifest
+    cli("run", "--quiet")
+
+    # Remove colin.toml from output to make it look like pure output dir
+    # (output dir has manifest but no colin.toml)
+    # Note: we chdir to output, which has manifest but no colin.toml
+    monkeypatch.chdir(project_output)
+
+    # Running `colin run` here should warn and then fail (no colin.toml)
+    try:
+        cli("run")
+    except SystemExit:
+        pass  # Expected to fail, we just want the warning
+
+    captured = capsys.readouterr()
+    # Rich console may output to stdout or stderr
+    output = strip_ansi(captured.err + captured.out)
+    assert "looks like an output directory" in output.lower()
+    assert "colin update" in output
+
+
+def test_update_warns_in_source_project(
+    test_project: Path, mock_agent, cli: Callable[..., None], capsys
+):
+    """colin update warns when run in a source project directory."""
+    # Run update in a source project (has colin.toml but no manifest)
+    try:
+        cli("update")
+    except SystemExit:
+        pass  # Expected to fail (no manifest), we just want the warning
+
+    captured = capsys.readouterr()
+    # Rich console may output to stdout or stderr
+    output = strip_ansi(captured.err + captured.out)
+    assert "looks like a source project" in output.lower()
+    assert "colin run" in output
+
+
 async def test_provider_llm_model_config(
     tmp_path: Path, monkeypatch, mock_agent, cli: Callable[..., None]
 ):
@@ -238,10 +282,10 @@ async def test_provider_llm_model_config(
         set_compile_context(None)
 
 
-def test_run_update_from_output_directory(
+def test_update_from_output_directory(
     test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
 ):
-    """colin run --update updates outputs from their source project."""
+    """colin update updates outputs from their source project."""
     project_output = test_project / "output"
 
     # First run to create output with manifest
@@ -254,46 +298,22 @@ def test_run_update_from_output_directory(
     assert "project_config" in manifest
     assert manifest["project_config"].endswith("colin.toml")
 
-    # Change to output directory and run --update
+    # Change to output directory and run update
     monkeypatch.chdir(project_output)
-    cli("run", "--update", "--quiet")
+    cli("update", "--quiet")
 
     # Should still have output
     assert (project_output / "greeting.md").exists()
 
 
-def test_run_update_errors_with_output_flag(
-    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch, capsys
-):
-    """colin run --update --output errors (conflicting flags)."""
-
-    project_output = test_project / "output"
-
-    # First run to create output
-    cli("run", "--quiet")
-
-    # Change to output directory
-    monkeypatch.chdir(project_output)
-
-    # --update with --output should error
-    try:
-        cli("run", "--update", "--output", "/tmp")
-    except SystemExit as e:
-        assert e.code == 1
-
-    captured = capsys.readouterr()
-    output = strip_ansi(captured.err)
-    assert "--output cannot be used with --update" in output
-
-
-def test_run_update_errors_without_manifest(
+def test_update_errors_without_manifest(
     tmp_path: Path, cli: Callable[..., None], monkeypatch, capsys
 ):
-    """colin run --update errors in directory without manifest."""
+    """colin update errors in directory without manifest."""
     monkeypatch.chdir(tmp_path)
 
     try:
-        cli("run", "--update")
+        cli("update")
     except SystemExit as e:
         assert e.code == 1
 
@@ -302,10 +322,10 @@ def test_run_update_errors_without_manifest(
     assert ".colin-manifest.json" in output
 
 
-def test_run_update_errors_with_invalid_json(
+def test_update_errors_with_invalid_json(
     tmp_path: Path, cli: Callable[..., None], monkeypatch, capsys
 ):
-    """colin run --update errors gracefully on invalid JSON manifest."""
+    """colin update errors gracefully on invalid JSON manifest."""
     monkeypatch.chdir(tmp_path)
 
     # Create an invalid JSON manifest
@@ -313,7 +333,7 @@ def test_run_update_errors_with_invalid_json(
     manifest_path.write_text("{ invalid json }")
 
     try:
-        cli("run", "--update")
+        cli("update")
     except SystemExit as e:
         assert e.code == 1
 
@@ -322,10 +342,10 @@ def test_run_update_errors_with_invalid_json(
     assert "Invalid JSON" in output
 
 
-def test_run_update_uses_stored_vars(
+def test_update_uses_stored_vars(
     test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
 ):
-    """colin run --update uses vars stored in manifest."""
+    """colin update uses vars stored in manifest."""
     project_output = test_project / "output"
 
     # Run with a var
@@ -336,27 +356,27 @@ def test_run_update_uses_stored_vars(
     manifest = json.loads(manifest_path.read_text())
     assert manifest.get("vars", {}).get("test_var") == "original_value"
 
-    # Change to output and run --update (should use stored vars)
+    # Change to output and run update (should use stored vars)
     monkeypatch.chdir(project_output)
-    cli("run", "--update", "--quiet")
+    cli("update", "--quiet")
 
     # Manifest should still have the var
     manifest = json.loads(manifest_path.read_text())
     assert manifest.get("vars", {}).get("test_var") == "original_value"
 
 
-def test_run_update_cli_vars_override_stored(
+def test_update_cli_vars_override_stored(
     test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
 ):
-    """colin run --update --var overrides stored vars."""
+    """colin update --var overrides stored vars."""
     project_output = test_project / "output"
 
     # Run with a var
     cli("run", "--quiet", "--var", "test_var=original_value")
 
-    # Change to output and run --update with override
+    # Change to output and run update with override
     monkeypatch.chdir(project_output)
-    cli("run", "--update", "--quiet", "--var", "test_var=new_value")
+    cli("update", "--quiet", "--var", "test_var=new_value")
 
     # Manifest should have the new value
     manifest_path = project_output / ".colin-manifest.json"
