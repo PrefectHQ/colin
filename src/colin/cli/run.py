@@ -604,7 +604,6 @@ async def update(
         sys.exit(1)
 
     project_config = manifest_data.get("project_config")
-    output_root = manifest_data.get("output_root")
     stored_vars = manifest_data.get("vars", {})
 
     if not project_config:
@@ -617,9 +616,10 @@ async def update(
         err_console.print(f"[red]Error:[/] Source project not found: {project_config}")
         sys.exit(1)
 
-    # Determine paths
+    # Determine paths - always output to current directory, not stored output_root
+    # (supports moving/copying outputs to new locations like ~/.config/claude/skills)
     project = project_file.parent
-    output = Path(output_root) if output_root else target_dir
+    output = target_dir
 
     # Merge stored vars with CLI overrides (CLI wins)
     if stored_vars:
