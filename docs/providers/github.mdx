@@ -143,30 +143,35 @@ Each entry in a directory listing:
 
 ## Dependency Tracking
 
-Use `ref()` to track GitHub resources for staleness detection:
+By default, `file()` and `ls()` automatically track dependencies (`watch=True`). Documents recompile when tracked resources change:
 
 ```jinja
-{# Fetched but not tracked #}
+{# Automatically tracked — recompiles when file changes #}
 {{ github.prefect.file("README.md") }}
 
-{# Tracked — document recompiles when file changes #}
+{# Explicit ref() is equivalent but unnecessary #}
 {{ ref(github.prefect.file("README.md")) }}
+
+{# Opt out of tracking with watch=False #}
+{{ github.prefect.file("README.md", watch=False) }}
 ```
 
-Track a directory listing to recompile when files are added or removed:
+Directory listings are also tracked by default:
 
 ```jinja
-{% for entry in ref(github.prefect.ls("examples/")) %}
+{# Recompiles when files are added or removed #}
+{% for entry in github.prefect.ls("examples/") %}
 - {{ entry.name }}
 {% endfor %}
 ```
 
-Track individual files from a listing:
+When iterating over a listing, each `file()` call creates its own tracked dependency:
 
 ```jinja
 {% for entry in github.prefect.ls("examples/") %}
 {% if entry.type == "file" %}
-{{ ref(github.prefect.file(entry.path)) }}
+{# Each file tracked independently #}
+{{ github.prefect.file(entry.path) }}
 {% endif %}
 {% endfor %}
 ```
