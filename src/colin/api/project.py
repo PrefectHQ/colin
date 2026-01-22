@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import re
 import secrets
 import string
 from pathlib import Path
@@ -23,6 +25,47 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 VarType = Literal["string", "bool", "int", "float", "date", "timestamp"]
+
+# Pattern for ${VAR_NAME} environment variable references
+_ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
+
+
+def _expand_env_vars(value: str) -> str:
+    """Expand ${VAR_NAME} patterns in a string with environment variable values.
+
+    Args:
+        value: String potentially containing ${VAR_NAME} patterns.
+
+    Returns:
+        String with env vars expanded. Unset vars become empty string.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        var_name = match.group(1)
+        return os.environ.get(var_name, "")
+
+    return _ENV_VAR_PATTERN.sub(replace, value)
+
+
+def _expand_env_vars_recursive(data: Any) -> Any:
+    """Recursively expand environment variables in a data structure.
+
+    Processes dicts, lists, and strings. Other types pass through unchanged.
+
+    Args:
+        data: Data structure (typically from TOML parsing).
+
+    Returns:
+        Same structure with ${VAR_NAME} patterns expanded in strings.
+    """
+    if isinstance(data, dict):
+        return {k: _expand_env_vars_recursive(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_expand_env_vars_recursive(item) for item in data]
+    elif isinstance(data, str):
+        return _expand_env_vars(data)
+    else:
+        return data
 
 
 def generate_project_id(name: str) -> str:
@@ -465,6 +508,9 @@ def load_project(path: Path) -> ProjectConfig:
     """
     with open(path, "rb") as f:
         data = tomli.load(f)
+
+    # Expand ${VAR_NAME} patterns with environment variable values
+    data = _expand_env_vars_recursive(data)
 
     if "mcp" in data:
         raise ValueError("MCP servers must be configured under [[providers.mcp]]")

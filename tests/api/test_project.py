@@ -6,6 +6,8 @@ import pytest
 
 from colin.api.project import (
     ProjectConfig,
+    _expand_env_vars,
+    _expand_env_vars_recursive,
     _parse_providers,
     _parse_vars,
     clean_project,
@@ -458,6 +460,89 @@ class TestParseVars:
 
         with pytest.raises(ValueError, match="collide.*case-insensitive"):
             _parse_vars(data)
+
+
+class TestEnvVarExpansion:
+    """Tests for environment variable expansion in config."""
+
+    def test_expand_single_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Single env var is expanded."""
+        monkeypatch.setenv("MY_TOKEN", "secret123")
+
+        result = _expand_env_vars("token=${MY_TOKEN}")
+
+        assert result == "token=secret123"
+
+    def test_expand_multiple_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Multiple env vars in same string are expanded."""
+        monkeypatch.setenv("USER", "alice")
+        monkeypatch.setenv("HOST", "example.com")
+
+        result = _expand_env_vars("${USER}@${HOST}")
+
+        assert result == "alice@example.com"
+
+    def test_unset_var_becomes_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Unset env var expands to empty string."""
+        monkeypatch.delenv("UNSET_VAR", raising=False)
+
+        result = _expand_env_vars("prefix${UNSET_VAR}suffix")
+
+        assert result == "prefixsuffix"
+
+    def test_no_vars_unchanged(self) -> None:
+        """String without env vars is unchanged."""
+        result = _expand_env_vars("no variables here")
+
+        assert result == "no variables here"
+
+    def test_recursive_expands_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Dict values are recursively expanded."""
+        monkeypatch.setenv("SECRET", "hunter2")
+
+        data = {"token": "${SECRET}", "nested": {"key": "${SECRET}"}}
+        result = _expand_env_vars_recursive(data)
+
+        assert result == {"token": "hunter2", "nested": {"key": "hunter2"}}
+
+    def test_recursive_expands_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """List items are recursively expanded."""
+        monkeypatch.setenv("VAL", "expanded")
+
+        data = ["${VAL}", {"inner": "${VAL}"}]
+        result = _expand_env_vars_recursive(data)
+
+        assert result == ["expanded", {"inner": "expanded"}]
+
+    def test_recursive_preserves_non_strings(self) -> None:
+        """Non-string values pass through unchanged."""
+        data = {"count": 42, "enabled": True, "ratio": 3.14}
+        result = _expand_env_vars_recursive(data)
+
+        assert result == {"count": 42, "enabled": True, "ratio": 3.14}
+
+    def test_load_project_expands_env_vars(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_project expands env vars in provider config."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret123")
+
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[[providers.github]]
+name = "myrepo"
+repo = "owner/repo"
+token = "${GITHUB_TOKEN}"
+""")
+
+        config = load_project(config_file)
+
+        # Check the provider config has the expanded token
+        provider_config = config.providers["github.myrepo"]
+        assert provider_config.config["token"] == "ghp_secret123"
 
 
 class TestLoadProject:
