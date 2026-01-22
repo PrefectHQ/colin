@@ -36,8 +36,8 @@ class TestGitHubFileResource:
 
         assert resource.version == "abc123def456"
 
-    def test_str_returns_content(self) -> None:
-        """__str__ returns the content for template use."""
+    def test_str_returns_descriptive_string(self) -> None:
+        """__str__ returns a descriptive string, not content."""
         ref = Ref(
             provider="github",
             connection="myrepo",
@@ -53,7 +53,10 @@ class TestGitHubFileResource:
             resolved_sha="abc123",
         )
 
-        assert str(resource) == "# Hello World"
+        result = str(resource)
+        assert result.startswith("<GitHubFileResource(")
+        assert result.endswith(")>")
+        assert resource.content == "# Hello World"
 
     def test_ref_returns_valid_ref(self) -> None:
         """ref() returns a Ref with correct fields."""

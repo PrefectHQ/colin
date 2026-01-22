@@ -73,5 +73,12 @@ class Resource:
         return hashlib.sha256(self._content.encode()).hexdigest()[:16]
 
     def __str__(self) -> str:
-        """Return content for template use."""
-        return self.content
+        """Return a descriptive string, not content.
+
+        To render content in templates, use .content explicitly:
+            {{ resource.content }}
+
+        This prevents accidental content dumping and makes templates
+        self-documenting about what they're including.
+        """
+        return f"<{self.__class__.__name__}({self._ref.key()})>"

@@ -39,8 +39,8 @@ class TestHTTPResource:
         assert len(resource.version) == 16
         assert all(c in "0123456789abcdef" for c in resource.version)
 
-    def test_str_returns_content(self) -> None:
-        """__str__ returns the content for template use."""
+    def test_str_returns_descriptive_string(self) -> None:
+        """__str__ returns a descriptive string, not content."""
         ref = Ref(
             provider="http", connection="", method="get", args={"url": "example.com/data.json"}
         )
@@ -50,7 +50,10 @@ class TestHTTPResource:
             url="https://example.com/data.json",
         )
 
-        assert str(resource) == '{"key": "value"}'
+        result = str(resource)
+        assert result.startswith("<HTTPResource(")
+        assert result.endswith(")>")
+        assert resource.content == '{"key": "value"}'
 
     def test_ref_returns_valid_ref(self) -> None:
         """ref() returns a Ref with correct fields."""
