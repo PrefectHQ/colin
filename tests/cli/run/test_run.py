@@ -235,3 +235,115 @@ async def test_provider_llm_model_config(
         assert llm_call.model == "gpt-4o"
     finally:
         set_compile_context(None)
+
+
+def test_run_update_from_output_directory(
+    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
+):
+    """colin run --update updates outputs from their source project."""
+    project_output = test_project / "output"
+
+    # First run to create output with manifest
+    cli("run", "--quiet")
+    assert (project_output / "greeting.md").exists()
+
+    # Verify manifest has project_config
+    import json
+
+    manifest_path = project_output / ".colin-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert "project_config" in manifest
+    assert manifest["project_config"].endswith("colin.toml")
+
+    # Change to output directory and run --update
+    monkeypatch.chdir(project_output)
+    cli("run", "--update", "--quiet")
+
+    # Should still have output
+    assert (project_output / "greeting.md").exists()
+
+
+def test_run_update_errors_with_output_flag(
+    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch, capsys
+):
+    """colin run --update --output errors (conflicting flags)."""
+
+    project_output = test_project / "output"
+
+    # First run to create output
+    cli("run", "--quiet")
+
+    # Change to output directory
+    monkeypatch.chdir(project_output)
+
+    # --update with --output should error
+    try:
+        cli("run", "--update", "--output", "/tmp")
+    except SystemExit as e:
+        assert e.code == 1
+
+    captured = capsys.readouterr()
+    output = strip_ansi(captured.err)
+    assert "--output cannot be used with --update" in output
+
+
+def test_run_update_errors_without_manifest(
+    tmp_path: Path, cli: Callable[..., None], monkeypatch, capsys
+):
+    """colin run --update errors in directory without manifest."""
+    monkeypatch.chdir(tmp_path)
+
+    try:
+        cli("run", "--update")
+    except SystemExit as e:
+        assert e.code == 1
+
+    captured = capsys.readouterr()
+    output = strip_ansi(captured.err)
+    assert ".colin-manifest.json" in output
+
+
+def test_run_update_uses_stored_vars(
+    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
+):
+    """colin run --update uses vars stored in manifest."""
+    import json
+
+    project_output = test_project / "output"
+
+    # Run with a var
+    cli("run", "--quiet", "--var", "test_var=original_value")
+
+    # Check manifest stored the var
+    manifest_path = project_output / ".colin-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest.get("vars", {}).get("test_var") == "original_value"
+
+    # Change to output and run --update (should use stored vars)
+    monkeypatch.chdir(project_output)
+    cli("run", "--update", "--quiet")
+
+    # Manifest should still have the var
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest.get("vars", {}).get("test_var") == "original_value"
+
+
+def test_run_update_cli_vars_override_stored(
+    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
+):
+    """colin run --update --var overrides stored vars."""
+    import json
+
+    project_output = test_project / "output"
+
+    # Run with a var
+    cli("run", "--quiet", "--var", "test_var=original_value")
+
+    # Change to output and run --update with override
+    monkeypatch.chdir(project_output)
+    cli("run", "--update", "--quiet", "--var", "test_var=new_value")
+
+    # Manifest should have the new value
+    manifest_path = project_output / ".colin-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest.get("vars", {}).get("test_var") == "new_value"
