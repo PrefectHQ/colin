@@ -292,6 +292,10 @@ Both variants return a `RenderedOutput` object with `.content` and `.sections` p
 
 The default `output()` reads from the published output directory (`output/`). If someone manually edits the file after Colin compiles it, `output()` sees those changes. If the published file doesn't exist (first compile, private doc, or deleted file), it falls back to the cached version.
 
+<Note>
+The `.content` property reads from the file specified by the `cached` parameter, but `.sections` always reflects the section structure from the last compilation. Manual edits to section content won't appear in `.sections` until the document is recompiled.
+</Note>
+
 ```jinja
 {% if output() %}
 Current content: {{ output().content | length }} chars
