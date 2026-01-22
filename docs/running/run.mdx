@@ -133,7 +133,7 @@ cd ~/.config/claude/skills
 colin run --update
 ```
 
-When you compile a project, Colin stores the source project location and variable values in the output manifest. Later, you can update those outputs without knowing where the source project lives—Colin reads the manifest and recompiles from the original source.
+When you compile a project, Colin stores the source project location and any `--var` overrides in the output manifest. Later, you can update those outputs without knowing where the source project lives—Colin reads the manifest and recompiles from the original source.
 
 This is useful for:
 
@@ -143,7 +143,7 @@ This is useful for:
 The `--update` flag:
 
 - Reads `.colin-manifest.json` from the target directory
-- Uses stored variables by default (override with `--var`)
+- Uses stored `--var` overrides by default (override again with `--var`)
 - Cannot be combined with `--output` (the output location is implicit)
 - Works with other flags like `--no-cache` and `--ephemeral`
 

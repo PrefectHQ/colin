@@ -302,6 +302,26 @@ def test_run_update_errors_without_manifest(
     assert ".colin-manifest.json" in output
 
 
+def test_run_update_errors_with_invalid_json(
+    tmp_path: Path, cli: Callable[..., None], monkeypatch, capsys
+):
+    """colin run --update errors gracefully on invalid JSON manifest."""
+    monkeypatch.chdir(tmp_path)
+
+    # Create an invalid JSON manifest
+    manifest_path = tmp_path / ".colin-manifest.json"
+    manifest_path.write_text("{ invalid json }")
+
+    try:
+        cli("run", "--update")
+    except SystemExit as e:
+        assert e.code == 1
+
+    captured = capsys.readouterr()
+    output = strip_ansi(captured.err)
+    assert "Invalid JSON" in output
+
+
 def test_run_update_uses_stored_vars(
     test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
 ):

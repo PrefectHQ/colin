@@ -435,7 +435,13 @@ async def run(
             err_console.print("[dim]--update requires a Colin output directory[/]")
             sys.exit(1)
 
-        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        try:
+            manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            err_console.print(f"[red]Error:[/] Invalid JSON in {manifest_path}")
+            err_console.print(f"[dim]{e}[/]")
+            sys.exit(1)
+
         project_config = manifest_data.get("project_config")
         output_root = manifest_data.get("output_root")
         stored_vars = manifest_data.get("vars", {})
