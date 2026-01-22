@@ -127,25 +127,25 @@ def test_run_warns_about_stale_files(
     assert "colin clean" in output
 
 
-def test_run_warns_in_output_directory(
-    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch, capsys
+def test_run_suggests_update_in_output_directory(
+    test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch, capsys, tmp_path
 ):
-    """colin run warns when run in an output directory."""
-    project_output = test_project / "output"
+    """colin run suggests `colin update` when run in a standalone output directory."""
+    # Create output in a separate location (not inside project)
+    standalone_output = tmp_path / "standalone_output"
+    standalone_output.mkdir()
 
-    # First run to create output with manifest
-    cli("run", "--quiet")
+    # Run to create output with manifest in the standalone location
+    cli("run", "--quiet", "--output", str(standalone_output))
 
-    # Remove colin.toml from output to make it look like pure output dir
-    # (output dir has manifest but no colin.toml)
-    # Note: we chdir to output, which has manifest but no colin.toml
-    monkeypatch.chdir(project_output)
+    # Change to standalone output directory (has manifest but no colin.toml anywhere up)
+    monkeypatch.chdir(standalone_output)
 
-    # Running `colin run` here should warn and then fail (no colin.toml)
+    # Running `colin run` here should fail and suggest `colin update`
     try:
         cli("run")
     except SystemExit:
-        pass  # Expected to fail, we just want the warning
+        pass  # Expected to fail
 
     captured = capsys.readouterr()
     # Rich console may output to stdout or stderr
@@ -154,15 +154,15 @@ def test_run_warns_in_output_directory(
     assert "colin update" in output
 
 
-def test_update_warns_in_source_project(
+def test_update_suggests_run_in_source_project(
     test_project: Path, mock_agent, cli: Callable[..., None], capsys
 ):
-    """colin update warns when run in a source project directory."""
+    """colin update suggests `colin run` when run in a source project directory."""
     # Run update in a source project (has colin.toml but no manifest)
     try:
         cli("update")
     except SystemExit:
-        pass  # Expected to fail (no manifest), we just want the warning
+        pass  # Expected to fail (no manifest)
 
     captured = capsys.readouterr()
     # Rich console may output to stdout or stderr

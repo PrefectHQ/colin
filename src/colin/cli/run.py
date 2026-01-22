@@ -418,18 +418,6 @@ async def run(
             key, value = item.split("=", 1)
             vars_dict[key] = value
 
-    # Warn if this looks like an output directory (has manifest but no colin.toml HERE)
-    project_dir = project.resolve()
-    has_manifest = (project_dir / ".colin-manifest.json").exists()
-    has_config_here = (project_dir / "colin.toml").exists()
-    if has_manifest and not has_config_here:
-        err_console.print(
-            "[yellow]Warning:[/] This looks like an output directory "
-            "(found .colin-manifest.json but no colin.toml)."
-        )
-        err_console.print("[dim]Did you mean `colin update`?[/]")
-        err_console.print()
-
     try:
         # Get project info for display
         project_dir = project.resolve()
@@ -544,7 +532,13 @@ async def run(
         sys.exit(1)
     except ProjectNotInitializedError as e:
         err_console.print(f"[red]Error:[/] {e}")
-        err_console.print("[dim]Run `colin init` to create a new project[/]")
+        # Check if this looks like an output directory
+        if (project.resolve() / ".colin-manifest.json").exists():
+            err_console.print(
+                "[dim]This looks like an output directory. Did you mean `colin update`?[/]"
+            )
+        else:
+            err_console.print("[dim]Run `colin init` to create a new project[/]")
         sys.exit(1)
     except ValueError as e:
         err_console.print(f"[red]Error:[/] {e}")
@@ -591,19 +585,15 @@ async def update(
 
     target_dir = directory.resolve()
 
-    # Warn if this looks like a source project (has colin.toml)
-    if find_project_file(target_dir) is not None:
-        err_console.print(
-            "[yellow]Warning:[/] This looks like a source project (found colin.toml)."
-        )
-        err_console.print("[dim]Did you mean `colin run`?[/]")
-        err_console.print()
-
     # Read manifest
     manifest_path = target_dir / ".colin-manifest.json"
     if not manifest_path.exists():
         err_console.print(f"[red]Error:[/] No .colin-manifest.json found in {target_dir}")
-        err_console.print("[dim]`colin update` requires a Colin output directory[/]")
+        # Check if this looks like a source project
+        if (target_dir / "colin.toml").exists():
+            err_console.print("[dim]This looks like a source project. Did you mean `colin run`?[/]")
+        else:
+            err_console.print("[dim]`colin update` requires a Colin output directory[/]")
         sys.exit(1)
 
     try:
