@@ -124,13 +124,17 @@ This provides full isolation: no reading from `.colin/`, no writing to `.colin/`
 | `--ephemeral` | ✓ | ✗ | ✓ |
 | `--no-cache --ephemeral` | ✗ | ✗ | ✓ |
 
-### Update Mode
+## Updating Outputs
 
-The `--update` flag updates an output directory from its source project:
+The `colin update` command updates an output directory from its source project:
 
 ```bash
+# Update a specific output directory
+colin update ~/.config/claude/skills
+
+# Or run from within the output directory
 cd ~/.config/claude/skills
-colin run --update
+colin update
 ```
 
 When you compile a project, Colin stores the source project location and any `--var` overrides in the output manifest. Later, you can update those outputs without knowing where the source project lives—Colin reads the manifest and recompiles from the original source.
@@ -140,19 +144,18 @@ This is useful for:
 - **Distributed skills**: Update installed skills without tracking their source locations
 - **Team workflows**: Developers can update outputs in shared locations
 
-The `--update` flag:
+The `colin update` command:
 
-- Reads `.colin-manifest.json` from the target directory
+- Reads `.colin-manifest.json` from the specified directory (or current directory)
 - Uses stored `--var` overrides by default (override again with `--var`)
-- Cannot be combined with `--output` (the output location is implicit)
-- Works with other flags like `--no-cache` and `--ephemeral`
+- Supports `--no-cache`, `--ephemeral`, `--quiet`, and `--no-banner` flags
 
 ```bash
 # Force full rebuild during update
-colin run --update --no-cache
+colin update --no-cache
 
 # Override a stored variable
-colin run --update --var api_key=new_value
+colin update --var api_key=new_value
 ```
 
 ## Incremental Builds
