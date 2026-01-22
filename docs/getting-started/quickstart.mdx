@@ -76,7 +76,7 @@ Colin detected the dependency and compiled `company.md` first, then `about.md`.
 
 ## Transform Content with Extract
 
-The `| extract()` filter uses an LLM to pull specific information from a document:
+The `| llm_extract()` filter uses an LLM to pull specific information from a document:
 
 ```markdown models/pitch.md
 ---
@@ -85,11 +85,11 @@ name: Sales Pitch
 
 # Why Acme?
 
-{{ ref('company') | extract('the single most compelling benefit for enterprise buyers') }}
+{{ ref('company') | llm_extract('the single most compelling benefit for enterprise buyers') }}
 
 # Key Stats
 
-{{ ref('company') | extract('quantitative metrics as bullet points') }}
+{{ ref('company') | llm_extract('quantitative metrics as bullet points') }}
 ```
 
 Compile again:
@@ -148,6 +148,6 @@ You've learned the basics:
 - Initialize a project with `colin init`
 - Create documents with frontmatter
 - Reference other documents with `ref()`
-- Transform content with `| extract()`
+- Transform content with `| llm_extract()`
 - Use `{% llm %}` blocks for multi-source synthesis
 - Compile with `colin run`

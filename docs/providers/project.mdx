@@ -136,7 +136,7 @@ Transform referenced content using filters:
 name: Executive Summary
 ---
 
-{{ ref('full-report') | extract('the 3 most important findings') }}
+{{ ref('full-report') | llm_extract('the 3 most important findings') }}
 ```
 
 The `extract()` filter passes the `RefResult` through an LLM with your prompt. Since `RefResult` carries metadata, the LLM sees the document name and description alongside its content.

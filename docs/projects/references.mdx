@@ -107,7 +107,7 @@ name: Executive Summary
 
 # Key Points
 
-{{ ref('full-report') | extract('the 3 most important findings') }}
+{{ ref('full-report') | llm_extract('the 3 most important findings') }}
 ```
 
 The `extract()` filter passes the `RefResult` through an LLM with your prompt. Since `RefResult` knows its content, the filter can access what it needs.
@@ -116,7 +116,7 @@ Other useful patterns:
 
 ```markdown
 {# Extract specific information #}
-{{ ref('customer-calls') | extract('top customer complaints') }}
+{{ ref('customer-calls') | llm_extract('top customer complaints') }}
 
 {# Chain multiple refs in an LLM block #}
 {% llm %}

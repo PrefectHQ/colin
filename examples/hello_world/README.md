@@ -6,7 +6,7 @@ A minimal Colin project demonstrating the core features.
 
 - `models/greeting.md` - A simple base document
 - `models/welcome.md` - Uses `ref()` to include the greeting
-- `models/summary.md` - Uses `ref()`, `| extract()`, and `{% llm %}` blocks
+- `models/summary.md` - Uses `ref()`, `| llm_extract()`, and `{% llm %}` blocks
 
 ## Run It
 

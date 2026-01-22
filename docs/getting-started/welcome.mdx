@@ -21,7 +21,7 @@ colin:
 
 # What Customers Are Saying
 
-{{ colin.mcp.intercom.resource('feedback/recent').content | extract('top 3 themes') }}
+{{ colin.mcp.intercom.resource('feedback/recent').content | llm_extract('top 3 themes') }}
 ```
 
 ```markdown Output
@@ -44,7 +44,7 @@ customers including Fortune 100 companies.
 
 </CodeGroup>
 
-The `ref()` function fetches content from another document and registers a dependency—so Colin recompiles this document when `company` changes. The `| extract()` filter passes content through an LLM with your prompt. MCP resources pull live data from external systems.
+The `ref()` function fetches content from another document and registers a dependency—so Colin recompiles this document when `company` changes. The `| llm_extract()` filter passes content through an LLM with your prompt. MCP resources pull live data from external systems.
 
 ## Why Colin?
 

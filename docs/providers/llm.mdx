@@ -128,7 +128,7 @@ name: Key Points
 The function works as a filter for more readable chaining:
 
 ```markdown
-{{ ref('sources/report') | extract('the top 5 key findings') }}
+{{ ref('sources/report') | llm_extract('the top 5 key findings') }}
 ```
 
 Both syntaxes are equivalent. The filter syntax reads more naturally when working with refs.
@@ -141,13 +141,13 @@ name: Executive Brief
 ---
 
 ## Summary
-{{ ref('sources/report') | extract('a one-paragraph executive summary') }}
+{{ ref('sources/report') | llm_extract('a one-paragraph executive summary') }}
 
 ## Risks
-{{ ref('sources/report') | extract('identified risks and mitigation strategies') }}
+{{ ref('sources/report') | llm_extract('identified risks and mitigation strategies') }}
 
 ## Action Items
-{{ ref('sources/report') | extract('immediate action items with owners') }}
+{{ ref('sources/report') | llm_extract('immediate action items with owners') }}
 ```
 
 When you pass a `RefResult` to `extract()`, Colin includes document metadata in the prompt context. The LLM sees the document name, description, URI, and content—helping it understand the source material.
@@ -242,7 +242,7 @@ colin run context/analysis.md --no-cache
 LLM calls have associated costs. Colin's caching minimizes redundant calls, but you can further optimize by using cheaper models for simple tasks:
 
 ```markdown
-{{ ref('data') | extract('word count', model='anthropic:claude-haiku-3') }}
+{{ ref('data') | llm_extract('word count', model='anthropic:claude-haiku-3') }}
 ```
 
 Structure documents to avoid redundant extraction. Extract once into an intermediate document:
@@ -252,7 +252,7 @@ Structure documents to avoid redundant extraction. Extract once into an intermed
 name: Extracted Data
 ---
 
-{{ ref('sources/raw') | extract('structured summary') }}
+{{ ref('sources/raw') | llm_extract('structured summary') }}
 ```
 
 Other documents can then reference the extracted content without re-running the LLM:

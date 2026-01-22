@@ -52,7 +52,7 @@ description: How to deploy to staging and production
 
 ## Recent Issues
 
-{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | extract('what went wrong and how it was fixed') }}
+{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | llm_extract('what went wrong and how it was fixed') }}
 ```
 
 Run `colin run`. The skill compiles from your infrastructure doc, the latest deployment guide from GitHub, and recent incidents from PagerDuty. Tomorrow, when the deployment guide changes, Colin knows—and recompiles.
@@ -192,15 +192,15 @@ description: Information about the engineering team, current projects, and how w
 
 ## Current Sprint
 
-{{ colin.mcp.linear.resource('team/engineering/current-sprint') | extract('active projects and blockers') }}
+{{ colin.mcp.linear.resource('team/engineering/current-sprint') | llm_extract('active projects and blockers') }}
 
 ## On-Call
 
-{{ colin.mcp.pagerduty.resource('schedules/engineering') | extract('who is on call this week') }}
+{{ colin.mcp.pagerduty.resource('schedules/engineering') | llm_extract('who is on call this week') }}
 
 ## Recent Decisions
 
-{{ colin.mcp.notion.resource('databases/engineering-decisions?last=30d') | extract('key decisions and rationale') }}
+{{ colin.mcp.notion.resource('databases/engineering-decisions?last=30d') | llm_extract('key decisions and rationale') }}
 ```
 
 Configure to write to Claude Code:
