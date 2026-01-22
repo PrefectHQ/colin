@@ -135,7 +135,7 @@ async def test_provider_llm_model_config(
     import tomli
     import tomli_w
 
-    from colin.api.project import load_project
+    from colin.api.project import ProjectConfig, load_project
     from colin.cli.run import init
     from colin.compiler.cache import set_compile_context
     from colin.compiler.context import CompileContext
@@ -172,10 +172,18 @@ async def test_provider_llm_model_config(
 
     # Verify the model is actually used when calling extract
     project_provider = ProjectProvider(base_path=tmp_path)
+    config = ProjectConfig(
+        name="test",
+        project_root=tmp_path,
+        model_path=tmp_path / "models",
+        output_path=tmp_path / "output",
+        manifest_path=tmp_path / ".colin" / "manifest.json",
+    )
     compile_ctx = CompileContext(
         manifest=Manifest(),
         document_uri="project://test.md",
         project_provider=project_provider,
+        config=config,
     )
 
     # Mock infer_model to return test model for "openai:gpt-4o" to avoid API key requirement

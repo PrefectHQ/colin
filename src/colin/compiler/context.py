@@ -13,7 +13,9 @@ from colin.models import CompiledDocument, LLMCall, Ref
 from colin.resources import Resource
 
 if TYPE_CHECKING:
+    from colin.api.project import ProjectConfig
     from colin.compiler.extensions.file_block import FileOutput
+    from colin.compiler.rendered import RenderedOutput
     from colin.models import Manifest
     from colin.providers.project import ProjectProvider, ProjectResource
 
@@ -31,6 +33,8 @@ class CompileContext:
         manifest: Manifest,
         document_uri: str,
         project_provider: ProjectProvider,
+        config: ProjectConfig,
+        output_format: str = "markdown",
         compiled_outputs: dict[str, CompiledDocument] | None = None,
         doc_state: OperationState | None = None,
     ) -> None:
@@ -40,12 +44,16 @@ class CompileContext:
             manifest: The manifest for caching and metadata.
             document_uri: URI of the document being compiled.
             project_provider: Provider for reading compiled outputs (refs).
+            config: Project configuration for path resolution.
+            output_format: Output format for this document (e.g., "markdown", "json").
             compiled_outputs: Already-compiled documents from current run.
             doc_state: Optional state for progress tracking.
         """
         self.manifest = manifest
         self.document_uri = document_uri
         self.project_provider = project_provider
+        self.config = config
+        self.output_format = output_format
         self.compiled_outputs = compiled_outputs or {}
         self.doc_state = doc_state
 
@@ -281,3 +289,48 @@ class CompileContext:
         """
         self.llm_calls[call.call_id] = call
         self.total_cost += call.cost_usd
+
+    async def output(self, *, cached: bool = False) -> RenderedOutput | None:
+        """Read this document's own output without tracking.
+
+        Unlike ref(), this does NOT create a dependency or affect staleness tracking.
+        Used for accessing previous output to preserve manual edits or compare versions.
+
+        Usage in templates:
+            {{ output() }}              # Read from published output (may have manual edits)
+            {{ output(cached=True) }}   # Read from Colin's artifact cache
+
+        Args:
+            cached: If True, read from .colin/compiled/ (what Colin produced).
+                    If False (default), read from output/ (may have manual edits),
+                    falling back to cached if published doesn't exist.
+
+        Returns:
+            RenderedOutput with .content and .sections, or None if not found.
+        """
+        from colin.compiler.rendered import RenderedOutput
+
+        doc_meta = self.manifest.get_document(self.document_uri)
+        if doc_meta is None or doc_meta.output_path is None:
+            return None
+
+        cached_path = self.config.build_path / "compiled" / doc_meta.output_path
+        published_path = self.config.output_path / doc_meta.output_path
+
+        if cached:
+            # Read from artifact cache (.colin/compiled/)
+            file_path = cached_path
+        else:
+            # Read from published output (output/), fall back to cached
+            # This handles: first compile, private docs, deleted output files
+            file_path = published_path if published_path.exists() else cached_path
+
+        if not file_path.exists():
+            return None
+
+        content = file_path.read_text(encoding="utf-8")
+        return RenderedOutput(
+            content=content,
+            sections=doc_meta.sections,
+            output_format=self.output_format,
+        )

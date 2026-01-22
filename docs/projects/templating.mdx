@@ -166,10 +166,10 @@ Each part of the document renders exactly once.
 
 ### Accessing Content
 
-Colin makes two special variables available inside defer blocks:
+Inside defer blocks, the `rendered` variable contains the full first-pass output of the document, including its sections:
 
-- `rendered` contains the full first-pass output of the document, as well as each of the document's sections.
-- `previous_rendered` contains the cached output from the document's last compilation.
+- `rendered.content` — the complete document output from the first pass
+- `rendered.sections` — format-aware access to named sections
 
 Here's how you might use a defer block to build a table of contents:
 
@@ -261,13 +261,14 @@ Write a 2-sentence executive summary of this document:
 
 #### Change Tracking
 
-Compare against `previous_rendered` to detect and report changes:
+Use the `output()` function to compare against previous versions:
 
 ```jinja
 {% defer %}
-{% if previous_rendered %}
+{% set prev = output(cached=True) %}
+{% if prev %}
 **Changes since last compile:**
-- Content: {{ rendered.content | length - previous_rendered.content | length }} characters difference
+- Content: {{ rendered.content | length - prev.content | length }} characters difference
 {% else %}
 *First version of this document.*
 {% endif %}
@@ -275,6 +276,69 @@ Compare against `previous_rendered` to detect and report changes:
 ```
 
 This pattern is useful for documents that need to track their own evolution, like changelogs or audit trails.
+
+## Output Function
+
+The `output()` function lets any template access its own previous output. This enables workflows where documents evolve over time rather than being regenerated from scratch.
+
+```jinja
+{{ output() }}              {# reads from published output (output/) #}
+{{ output(cached=True) }}   {# reads from Colin's artifact cache (.colin/compiled/) #}
+```
+
+Both variants return a `RenderedOutput` object with `.content` and `.sections` properties, or `None` if no previous output exists.
+
+### Published vs Cached
+
+The default `output()` reads from the published output directory (`output/`). If someone manually edits the file after Colin compiles it, `output()` sees those changes. If the published file doesn't exist (first compile, private doc, or deleted file), it falls back to the cached version.
+
+<Note>
+The `.content` property reads from the file specified by the `cached` parameter, but `.sections` always reflects the section structure from the last compilation. Manual edits to section content won't appear in `.sections` until the document is recompiled.
+</Note>
+
+```jinja
+{% if output() %}
+Current content: {{ output().content | length }} chars
+{% endif %}
+```
+
+Use `output(cached=True)` to read exactly what Colin produced, ignoring any manual edits:
+
+```jinja
+{% set cached = output(cached=True) %}
+{% set published = output() %}
+{% if cached and published and cached.content != published.content %}
+Warning: Published file has been manually edited
+{% endif %}
+```
+
+### Edit-in-Place Workflow
+
+The `output()` function enables collaborative editing where Colin and humans both contribute:
+
+1. Colin compiles a document
+2. A user manually edits the published output
+3. Colin recompiles—the template sees and preserves the manual edits
+
+```jinja
+---
+name: Evolving Document
+---
+{% set prev = output() %}
+{% if prev %}
+{{ prev.content }}
+
+---
+*Updated by Colin on {{ now().strftime('%Y-%m-%d') }}*
+{% else %}
+# Initial Version
+This document will evolve over time.
+{% endif %}
+```
+
+<Tip>
+The `output()` function does not create a dependency that triggers recompilation. Reading your own output won't cause infinite rebuild loops.
+</Tip>
 
 ## LLM Blocks
 

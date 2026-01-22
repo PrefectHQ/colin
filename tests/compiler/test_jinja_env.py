@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from colin.api.project import ProjectConfig
 from colin.compiler.context import CompileContext
 from colin.compiler.extensions.filters import create_llm_extract_filter
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
@@ -15,10 +16,18 @@ from colin.providers.project import ProjectProvider
 def test_bind_context_sets_colin_namespace(tmp_path: Path) -> None:
     """colin namespace exposes providers."""
     project_provider = ProjectProvider(base_path=tmp_path)
+    config = ProjectConfig(
+        name="test",
+        project_root=tmp_path,
+        model_path=tmp_path / "models",
+        output_path=tmp_path / "output",
+        manifest_path=tmp_path / ".colin" / "manifest.json",
+    )
     context = CompileContext(
         manifest=Manifest(),
         document_uri="project://test.md",
         project_provider=project_provider,
+        config=config,
     )
 
     provider_manager = ProviderManager()
