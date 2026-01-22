@@ -106,21 +106,25 @@ class GitHubListingResource(Resource):
 class GitHubProvider(Provider):
     """Provider for fetching files from GitHub repositories.
 
-    Template usage:
+    Template usage (default provider, no config needed):
+        {{ github.file("owner/repo", "README.md") }}
+        {{ github.file("owner/repo", "src/main.py", ref="v1.0") }}
+
+    Template usage (named instance with pre-configured repo):
         {{ github.myrepo.file("README.md") }}
         {{ github.myrepo.file("src/main.py", ref="v1.0") }}
 
     Configuration:
         [[providers.github]]
         name = "myrepo"
-        repo = "owner/repo"
-        token = "${GITHUB_TOKEN}"  # Optional
+        repo = "owner/repo"      # Pre-configured repo
+        token = "${GITHUB_TOKEN}"  # Optional, for private repos / rate limits
     """
 
     namespace: ClassVar[str] = "github"
 
-    repo: str
-    """Repository in "owner/repo" format."""
+    repo: str | None = None
+    """Repository in "owner/repo" format. Optional for default provider."""
 
     token: str | None = None
     """GitHub token for private repos and higher rate limits."""
@@ -155,12 +159,38 @@ class GitHubProvider(Provider):
             headers["Authorization"] = f"Bearer {self.token}"
         return headers
 
-    async def _resolve_ref(self, ref: str) -> str:
+    def _resolve_repo_and_path(self, repo_or_path: str, path: str | None) -> tuple[str, str]:
+        """Resolve repo and path from arguments.
+
+        Args:
+            repo_or_path: Either "owner/repo" (if path given) or file path (if repo configured).
+            path: File path when repo_or_path is a repo, None otherwise.
+
+        Returns:
+            Tuple of (repo, path).
+
+        Raises:
+            ValueError: If repo cannot be determined.
+        """
+        if path is not None:
+            # repo_or_path is the repo, path is the file path
+            return repo_or_path, path
+        elif self.repo is not None:
+            # repo_or_path is the file path, use configured repo
+            return self.repo, repo_or_path
+        else:
+            raise ValueError(
+                "No repository specified. Either configure a repo in colin.toml "
+                "or use github.file('owner/repo', 'path')."
+            )
+
+    async def _resolve_ref(self, repo: str, ref: str) -> str:
         """Resolve a git ref to a commit SHA.
 
         Uses caching to avoid repeated API calls for the same ref.
 
         Args:
+            repo: Repository in "owner/repo" format.
             ref: Git ref (branch, tag, or SHA).
 
         Returns:
@@ -169,38 +199,40 @@ class GitHubProvider(Provider):
         if self._sha_cache is None:
             self._sha_cache = {}
 
-        if ref in self._sha_cache:
-            return self._sha_cache[ref]
+        cache_key = f"{repo}:{ref}"
+        if cache_key in self._sha_cache:
+            return self._sha_cache[cache_key]
 
         client = self._require_client()
-        url = f"https://api.github.com/repos/{self.repo}/commits/{ref}"
+        url = f"https://api.github.com/repos/{repo}/commits/{ref}"
 
         response = await client.get(url, headers=self._headers())
 
         if response.status_code == 404:
-            raise FileNotFoundError(f"Ref not found: {ref} in {self.repo}")
+            raise FileNotFoundError(f"Ref not found: {ref} in {repo}")
 
         if response.status_code == 401:
             raise PermissionError(
-                f"Authentication required for {self.repo}. Set token in provider config."
+                f"Authentication required for {repo}. Set token in provider config."
             )
 
         if response.status_code == 403:
             raise PermissionError(
-                f"Access denied or rate limited for {self.repo}. "
+                f"Access denied or rate limited for {repo}. "
                 "Consider setting a GitHub token for higher rate limits."
             )
 
         response.raise_for_status()
 
         sha = response.json()["sha"]
-        self._sha_cache[ref] = sha
+        self._sha_cache[cache_key] = sha
         return sha
 
-    async def _fetch_raw(self, path: str, sha: str) -> str:
+    async def _fetch_raw(self, repo: str, path: str, sha: str) -> str:
         """Fetch file content from raw.githubusercontent.com.
 
         Args:
+            repo: Repository in "owner/repo" format.
             path: File path in the repository.
             sha: Commit SHA.
 
@@ -208,47 +240,62 @@ class GitHubProvider(Provider):
             File content as string.
         """
         client = self._require_client()
-        url = f"https://raw.githubusercontent.com/{self.repo}/{sha}/{path}"
+        url = f"https://raw.githubusercontent.com/{repo}/{sha}/{path}"
 
         response = await client.get(url)
 
         if response.status_code == 404:
-            raise FileNotFoundError(f"File not found: {path} at {sha[:7]} in {self.repo}")
+            raise FileNotFoundError(f"File not found: {path} at {sha[:7]} in {repo}")
 
         response.raise_for_status()
         return response.text
 
     @validate_call
-    async def file(self, path: str, ref: str = "HEAD", watch: bool = True) -> GitHubFileResource:
-        """Fetch a file from the GitHub repository.
+    async def file(
+        self,
+        repo_or_path: str,
+        path: str | None = None,
+        *,
+        ref: str = "HEAD",
+        watch: bool = True,
+    ) -> GitHubFileResource:
+        """Fetch a file from a GitHub repository.
 
-        Template usage:
+        Template usage (default provider, no config needed):
+            {{ github.file("owner/repo", "README.md") }}
+            {{ github.file("owner/repo", "src/main.py", ref="v1.0") }}
+
+        Template usage (named instance with pre-configured repo):
             {{ github.myrepo.file("README.md") }}
             {{ github.myrepo.file("src/main.py", ref="v1.0") }}
 
         Args:
-            path: File path in the repository.
+            repo_or_path: Repository ("owner/repo") if no repo configured,
+                otherwise file path in the repository.
+            path: File path when repo is first arg, None when using configured repo.
             ref: Git ref (branch, tag, or SHA). Defaults to HEAD.
             watch: Whether to track this ref for staleness.
 
         Returns:
             GitHubFileResource with content and metadata.
         """
-        resolved_sha = await self._resolve_ref(ref)
-        content = await self._fetch_raw(path, resolved_sha)
+        repo, file_path = self._resolve_repo_and_path(repo_or_path, path)
+
+        resolved_sha = await self._resolve_ref(repo, ref)
+        content = await self._fetch_raw(repo, file_path, resolved_sha)
 
         colin_ref = Ref(
             provider=self.namespace,
             connection=self._connection,
             method="file",
-            args={"path": path, "ref": ref},
+            args={"repo": repo, "path": file_path, "ref": ref},
         )
 
         resource = GitHubFileResource(
             content=content,
             ref=colin_ref,
-            path=path,
-            repo=self.repo,
+            path=file_path,
+            repo=repo,
             git_ref=ref,
             resolved_sha=resolved_sha,
         )
@@ -262,27 +309,46 @@ class GitHubProvider(Provider):
 
     @validate_call
     async def ls(
-        self, path: str = "", ref: str = "HEAD", watch: bool = True
+        self,
+        repo_or_path: str = "",
+        path: str | None = None,
+        *,
+        ref: str = "HEAD",
+        watch: bool = True,
     ) -> GitHubListingResource:
-        """List directory contents in the GitHub repository.
+        """List directory contents in a GitHub repository.
 
-        Template usage:
+        Template usage (default provider, no config needed):
+            {% for entry in github.ls("owner/repo", "src/") %}
+            - {{ entry.name }} ({{ entry.type }})
+            {% endfor %}
+
+        Template usage (named instance with pre-configured repo):
             {% for entry in github.myrepo.ls("src/") %}
             - {{ entry.name }} ({{ entry.type }})
             {% endfor %}
 
         Args:
-            path: Directory path in the repository. Empty string for root.
+            repo_or_path: Repository ("owner/repo") if no repo configured,
+                otherwise directory path in the repository.
+            path: Directory path when repo is first arg, None when using configured repo.
             ref: Git ref (branch, tag, or SHA). Defaults to HEAD.
             watch: Whether to track this ref for staleness.
 
         Returns:
             GitHubListingResource with entries and metadata.
         """
-        resolved_sha = await self._resolve_ref(ref)
+        # Handle special case: ls() with no args on configured provider lists root
+        if repo_or_path == "" and path is None and self.repo is not None:
+            repo = self.repo
+            dir_path = ""
+        else:
+            repo, dir_path = self._resolve_repo_and_path(repo_or_path, path)
+
+        resolved_sha = await self._resolve_ref(repo, ref)
 
         client = self._require_client()
-        url = f"https://api.github.com/repos/{self.repo}/contents/{path}"
+        url = f"https://api.github.com/repos/{repo}/contents/{dir_path}"
 
         response = await client.get(
             url,
@@ -291,7 +357,7 @@ class GitHubProvider(Provider):
         )
 
         if response.status_code == 404:
-            raise FileNotFoundError(f"Path not found: {path} at {ref} in {self.repo}")
+            raise FileNotFoundError(f"Path not found: {dir_path} at {ref} in {repo}")
 
         response.raise_for_status()
 
@@ -299,7 +365,7 @@ class GitHubProvider(Provider):
 
         # Handle case where path is a file, not a directory
         if isinstance(items, dict):
-            raise ValueError(f"Path is a file, not a directory: {path}")
+            raise ValueError(f"Path is a file, not a directory: {dir_path}")
 
         entries = [
             GitHubEntry(
@@ -316,14 +382,14 @@ class GitHubProvider(Provider):
             provider=self.namespace,
             connection=self._connection,
             method="ls",
-            args={"path": path, "ref": ref},
+            args={"repo": repo, "path": dir_path, "ref": ref},
         )
 
         resource = GitHubListingResource(
             content="\n".join(e.path for e in entries),
             ref=colin_ref,
-            path=path,
-            repo=self.repo,
+            path=dir_path,
+            repo=repo,
             git_ref=ref,
             entries=entries,
             tree_sha=resolved_sha,
@@ -345,11 +411,15 @@ class GitHubProvider(Provider):
         Returns:
             Current resolved SHA.
         """
+        repo = ref.args.get("repo") or self.repo
+        if repo is None:
+            raise ValueError("No repository in ref args or provider config")
         git_ref = ref.args.get("ref", "HEAD")
         # Clear cache to get fresh resolution
-        if self._sha_cache is not None and git_ref in self._sha_cache:
-            del self._sha_cache[git_ref]
-        return await self._resolve_ref(git_ref)
+        cache_key = f"{repo}:{git_ref}"
+        if self._sha_cache is not None and cache_key in self._sha_cache:
+            del self._sha_cache[cache_key]
+        return await self._resolve_ref(repo, git_ref)
 
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         return {"file": self.file, "ls": self.ls}

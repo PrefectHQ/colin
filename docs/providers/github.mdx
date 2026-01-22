@@ -6,9 +6,24 @@ icon: github
 
 The GitHub provider fetches files and directory listings from GitHub repositories. It uses the GitHub API for ref resolution and raw.githubusercontent.com for fast content delivery.
 
+## Quick Start
+
+The GitHub provider works without configuration. Pass the repository as the first argument:
+
+```jinja
+{{ github.file("PrefectHQ/prefect", "README.md").content }}
+{{ github.file("owner/repo", "src/main.py", ref="v1.0").content }}
+```
+
+For frequently accessed repositories, configure named instances to avoid repeating the repo:
+
+```jinja
+{{ github.prefect.file("README.md").content }}
+```
+
 ## Configuration
 
-Configure the GitHub provider in `colin.toml`:
+Named instances are optional but useful for repositories you access frequently or that require authentication:
 
 ```toml colin.toml
 [[providers.github]]
@@ -62,13 +77,28 @@ For private repositories, a token with appropriate permissions is required.
 
 ### file()
 
-Fetch a file from the repository:
+Fetch a file from a repository. Without configuration, pass the repo as the first argument:
 
 ```jinja
-{{ github.prefect.file("README.md") }}
-{{ github.prefect.file("src/prefect/flows.py", ref="main") }}
-{{ github.prefect.file("config.py", ref="v3.0.0") }}
+{# Default provider: repo as first argument #}
+{{ github.file("PrefectHQ/prefect", "README.md").content }}
+{{ github.file("owner/repo", "src/main.py", ref="v1.0").content }}
+
+{# Named instance: repo pre-configured #}
+{{ github.prefect.file("README.md").content }}
+{{ github.prefect.file("src/prefect/flows.py", ref="main").content }}
 ```
+
+**Default provider arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `repo` | Yes | — | Repository in `owner/repo` format |
+| `path` | Yes | — | File path in the repository |
+| `ref` | No | `"HEAD"` | Git ref (branch, tag, or commit SHA) |
+| `watch` | No | `True` | Track for staleness detection |
+
+**Named instance arguments** (repo already configured):
 
 | Argument | Required | Default | Description |
 | :------- | :------- | :------ | :---------- |
@@ -80,13 +110,30 @@ Returns a `GitHubFileResource` with the file content.
 
 ### ls()
 
-List directory contents:
+List directory contents. Without configuration, pass the repo as the first argument:
 
 ```jinja
+{# Default provider: repo as first argument #}
+{% for entry in github.ls("PrefectHQ/prefect", "src/prefect/") %}
+- {{ entry.name }} ({{ entry.type }})
+{% endfor %}
+
+{# Named instance: repo pre-configured #}
 {% for entry in github.prefect.ls("src/prefect/") %}
 - {{ entry.name }} ({{ entry.type }})
 {% endfor %}
 ```
+
+**Default provider arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `repo` | Yes | — | Repository in `owner/repo` format |
+| `path` | No | `""` | Directory path (empty for root) |
+| `ref` | No | `"HEAD"` | Git ref (branch, tag, or commit SHA) |
+| `watch` | No | `True` | Track for staleness detection |
+
+**Named instance arguments** (repo already configured):
 
 | Argument | Required | Default | Description |
 | :------- | :------- | :------ | :---------- |
@@ -147,13 +194,13 @@ By default, `file()` and `ls()` automatically track dependencies (`watch=True`).
 
 ```jinja
 {# Automatically tracked — recompiles when file changes #}
-{{ github.prefect.file("README.md") }}
+{{ github.prefect.file("README.md").content }}
 
 {# Explicit ref() is equivalent but unnecessary #}
-{{ ref(github.prefect.file("README.md")) }}
+{{ ref(github.prefect.file("README.md")).content }}
 
 {# Opt out of tracking with watch=False #}
-{{ github.prefect.file("README.md", watch=False) }}
+{{ github.prefect.file("README.md", watch=False).content }}
 ```
 
 Directory listings are also tracked by default:
@@ -171,7 +218,7 @@ When iterating over a listing, each `file()` call creates its own tracked depend
 {% for entry in github.prefect.ls("examples/") %}
 {% if entry.type == "file" %}
 {# Each file tracked independently #}
-{{ github.prefect.file(entry.path) }}
+{{ github.prefect.file(entry.path).content }}
 {% endif %}
 {% endfor %}
 ```
@@ -209,7 +256,7 @@ name: External Docs
 
 # API Reference
 
-{{ ref(github.prefect.file("docs/api/flows.md", ref="main")) }}
+{{ github.prefect.file("docs/api/flows.md", ref="main").content }}
 ```
 
 ### Generate Index from Directory
@@ -223,12 +270,12 @@ name: Examples Index
 
 # Examples
 
-{% for entry in ref(github.prefect.ls("examples/")) %}
+{% for entry in github.prefect.ls("examples/") %}
 {% if entry.type == "file" and entry.name.endswith(".py") %}
 ## {{ entry.name }}
 
 ```python
-{{ ref(github.prefect.file(entry.path)) }}
+{{ github.prefect.file(entry.path).content }}
 ```
 
 {% endif %}
@@ -247,6 +294,20 @@ name: V3 Configuration
 Configuration for Prefect v3.0.0:
 
 ```python
-{{ ref(github.prefect.file("src/prefect/settings.py", ref="v3.0.0")) }}
+{{ github.prefect.file("src/prefect/settings.py", ref="v3.0.0").content }}
 ```
+```
+
+### Quick Access Without Configuration
+
+Fetch files from any repository without pre-configuring it:
+
+```jinja models/any-repo.md
+---
+name: External Reference
+---
+
+# License from another repo
+
+{{ github.file("anthropics/claude-code", "LICENSE").content }}
 ```

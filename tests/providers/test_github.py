@@ -178,10 +178,11 @@ class TestGitHubProvider:
 
         assert provider.namespace == "github"
 
-    def test_repo_required(self) -> None:
-        """repo is a required field."""
-        with pytest.raises(Exception):  # Pydantic validation error
-            GitHubProvider()  # type: ignore[call-arg]
+    def test_repo_optional(self) -> None:
+        """repo is optional for default provider."""
+        provider = GitHubProvider()
+
+        assert provider.repo is None
 
     def test_token_optional(self) -> None:
         """token is optional."""
@@ -233,7 +234,7 @@ class TestGitHubProviderResolveRef:
         mock_client.get = AsyncMock(return_value=mock_response)
         provider._client = mock_client
 
-        result = await provider._resolve_ref("main")
+        result = await provider._resolve_ref("owner/repo", "main")
 
         assert result == "abc123def456"
         mock_client.get.assert_called_once()
@@ -253,9 +254,9 @@ class TestGitHubProviderResolveRef:
         provider._client = mock_client
 
         # First call
-        await provider._resolve_ref("main")
+        await provider._resolve_ref("owner/repo", "main")
         # Second call should use cache
-        result = await provider._resolve_ref("main")
+        result = await provider._resolve_ref("owner/repo", "main")
 
         assert result == "abc123"
         assert mock_client.get.call_count == 1  # Only one API call
@@ -273,7 +274,7 @@ class TestGitHubProviderResolveRef:
         provider._client = mock_client
 
         with pytest.raises(FileNotFoundError, match="Ref not found"):
-            await provider._resolve_ref("nonexistent")
+            await provider._resolve_ref("owner/repo", "nonexistent")
 
     async def test_raises_on_401(self) -> None:
         """_resolve_ref() raises PermissionError on 401."""
@@ -288,7 +289,7 @@ class TestGitHubProviderResolveRef:
         provider._client = mock_client
 
         with pytest.raises(PermissionError, match="Authentication required"):
-            await provider._resolve_ref("main")
+            await provider._resolve_ref("owner/private-repo", "main")
 
     async def test_raises_on_403(self) -> None:
         """_resolve_ref() raises PermissionError on 403 (rate limit)."""
@@ -303,7 +304,7 @@ class TestGitHubProviderResolveRef:
         provider._client = mock_client
 
         with pytest.raises(PermissionError, match="rate limited"):
-            await provider._resolve_ref("main")
+            await provider._resolve_ref("owner/repo", "main")
 
 
 class TestGitHubProviderFile:
@@ -479,7 +480,7 @@ class TestGitHubProviderGetRefVersion:
     async def test_re_resolves_ref(self) -> None:
         """get_ref_version() re-resolves the ref to get current SHA."""
         provider = GitHubProvider(repo="owner/repo")
-        provider._sha_cache = {"main": "old_sha"}  # Pre-cached
+        provider._sha_cache = {"owner/repo:main": "old_sha"}  # Pre-cached
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -493,7 +494,7 @@ class TestGitHubProviderGetRefVersion:
             provider="github",
             connection="myrepo",
             method="file",
-            args={"path": "README.md", "ref": "main"},
+            args={"repo": "owner/repo", "path": "README.md", "ref": "main"},
         )
         result = await provider.get_ref_version(ref)
 
@@ -534,3 +535,104 @@ class TestGitHubProviderGetFunctions:
         assert "ls" in funcs
         assert funcs["file"] == provider.file
         assert funcs["ls"] == provider.ls
+
+
+class TestGitHubProviderDefaultUsage:
+    """Tests for GitHubProvider default (repo-less) usage."""
+
+    async def test_file_with_repo_as_first_arg(self) -> None:
+        """file() accepts repo as first arg when no repo configured."""
+        provider = GitHubProvider()  # No repo configured
+        provider._sha_cache = {}
+
+        mock_commits_response = MagicMock()
+        mock_commits_response.status_code = 200
+        mock_commits_response.json.return_value = {"sha": "abc123"}
+
+        mock_raw_response = MagicMock()
+        mock_raw_response.status_code = 200
+        mock_raw_response.text = "# Hello"
+
+        mock_client = AsyncMock()
+
+        async def mock_get(url: str, **kwargs) -> MagicMock:
+            if "api.github.com" in url:
+                return mock_commits_response
+            return mock_raw_response
+
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        provider._client = mock_client
+
+        result = await provider.file("other/repo", "README.md")
+
+        assert result.repo == "other/repo"
+        assert result.path == "README.md"
+        assert result.content == "# Hello"
+
+    async def test_file_without_repo_raises(self) -> None:
+        """file() raises ValueError when no repo specified anywhere."""
+        provider = GitHubProvider()  # No repo configured
+        provider._sha_cache = {}
+        provider._client = AsyncMock()
+
+        with pytest.raises(ValueError, match="No repository specified"):
+            await provider.file("README.md")  # No repo given
+
+    async def test_ls_with_repo_as_first_arg(self) -> None:
+        """ls() accepts repo as first arg when no repo configured."""
+        provider = GitHubProvider()  # No repo configured
+        provider._sha_cache = {}
+
+        mock_commits_response = MagicMock()
+        mock_commits_response.status_code = 200
+        mock_commits_response.json.return_value = {"sha": "abc123"}
+
+        mock_contents_response = MagicMock()
+        mock_contents_response.status_code = 200
+        mock_contents_response.json.return_value = [
+            {"path": "src/a.py", "name": "a.py", "type": "file", "sha": "sha1", "size": 100},
+        ]
+
+        mock_client = AsyncMock()
+
+        async def mock_get(url: str, **kwargs) -> MagicMock:
+            if "commits" in url:
+                return mock_commits_response
+            return mock_contents_response
+
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        provider._client = mock_client
+
+        result = await provider.ls("other/repo", "src/")
+
+        assert result.repo == "other/repo"
+        assert result.path == "src/"
+        assert len(result.entries) == 1
+
+    async def test_configured_repo_used_when_only_path_given(self) -> None:
+        """file() uses configured repo when only path is given."""
+        provider = GitHubProvider(repo="configured/repo")
+        provider._sha_cache = {}
+
+        mock_commits_response = MagicMock()
+        mock_commits_response.status_code = 200
+        mock_commits_response.json.return_value = {"sha": "abc123"}
+
+        mock_raw_response = MagicMock()
+        mock_raw_response.status_code = 200
+        mock_raw_response.text = "# Hello"
+
+        mock_client = AsyncMock()
+
+        async def mock_get(url: str, **kwargs) -> MagicMock:
+            if "api.github.com" in url:
+                return mock_commits_response
+            return mock_raw_response
+
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        provider._client = mock_client
+
+        result = await provider.file("README.md")  # Only path, repo from config
+
+        assert result.repo == "configured/repo"
+        assert result.path == "README.md"

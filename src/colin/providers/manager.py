@@ -164,6 +164,10 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
         if "file" not in manager._registry.types:
             manager.register(FileProvider())
 
+        if "github" not in manager._registry.types:
+            github_cls = _get_provider_class("github")
+            manager.register(github_cls())
+
         if "http" not in manager._registry.types:
             manager.register(HTTPProvider())
 
