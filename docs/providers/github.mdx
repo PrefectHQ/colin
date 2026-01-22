@@ -11,14 +11,14 @@ The GitHub provider fetches files and directory listings from GitHub repositorie
 The GitHub provider works without configuration. Pass the repository as the first argument:
 
 ```jinja
-{{ github.file("PrefectHQ/prefect", "README.md").content }}
-{{ github.file("owner/repo", "src/main.py", ref="v1.0").content }}
+{{ colin.github.file("PrefectHQ/prefect", "README.md").content }}
+{{ colin.github.file("owner/repo", "src/main.py", ref="v1.0").content }}
 ```
 
 For frequently accessed repositories, configure named instances to avoid repeating the repo:
 
 ```jinja
-{{ github.prefect.file("README.md").content }}
+{{ colin.github.prefect.file("README.md").content }}
 ```
 
 ## Configuration
@@ -38,7 +38,7 @@ token = "${GITHUB_TOKEN}"
 | `repo` | Yes | Repository in `owner/repo` format |
 | `token` | No | GitHub token for private repos and higher rate limits |
 
-Each configured repository becomes accessible as `github.{name}` in templates.
+Each configured repository becomes accessible as `colin.github.{name}` in templates.
 
 ### Multiple Repositories
 
@@ -58,8 +58,8 @@ token = "${GITHUB_TOKEN}"
 Access each by name:
 
 ```jinja
-{{ github.prefect.file("README.md") }}
-{{ github.docs.file("index.md") }}
+{{ colin.github.prefect.file("README.md") }}
+{{ colin.github.docs.file("index.md") }}
 ```
 
 ### Authentication
@@ -81,12 +81,12 @@ Fetch a file from a repository. Without configuration, pass the repo as the firs
 
 ```jinja
 {# Default provider: repo as first argument #}
-{{ github.file("PrefectHQ/prefect", "README.md").content }}
-{{ github.file("owner/repo", "src/main.py", ref="v1.0").content }}
+{{ colin.github.file("PrefectHQ/prefect", "README.md").content }}
+{{ colin.github.file("owner/repo", "src/main.py", ref="v1.0").content }}
 
 {# Named instance: repo pre-configured #}
-{{ github.prefect.file("README.md").content }}
-{{ github.prefect.file("src/prefect/flows.py", ref="main").content }}
+{{ colin.github.prefect.file("README.md").content }}
+{{ colin.github.prefect.file("src/prefect/flows.py", ref="main").content }}
 ```
 
 **Default provider arguments:**
@@ -114,12 +114,12 @@ List directory contents. Without configuration, pass the repo as the first argum
 
 ```jinja
 {# Default provider: repo as first argument #}
-{% for entry in github.ls("PrefectHQ/prefect", "src/prefect/") %}
+{% for entry in colin.github.ls("PrefectHQ/prefect", "src/prefect/") %}
 - {{ entry.name }} ({{ entry.type }})
 {% endfor %}
 
 {# Named instance: repo pre-configured #}
-{% for entry in github.prefect.ls("src/prefect/") %}
+{% for entry in colin.github.prefect.ls("src/prefect/") %}
 - {{ entry.name }} ({{ entry.type }})
 {% endfor %}
 ```
@@ -171,7 +171,7 @@ Returned by `ls()`:
 Supports iteration:
 
 ```jinja
-{% for entry in github.prefect.ls("src/") %}
+{% for entry in colin.github.prefect.ls("src/") %}
 {{ entry.name }}
 {% endfor %}
 ```
@@ -194,20 +194,20 @@ By default, `file()` and `ls()` automatically track dependencies (`watch=True`).
 
 ```jinja
 {# Automatically tracked — recompiles when file changes #}
-{{ github.prefect.file("README.md").content }}
+{{ colin.github.prefect.file("README.md").content }}
 
 {# Explicit ref() is equivalent but unnecessary #}
-{{ ref(github.prefect.file("README.md")).content }}
+{{ ref(colin.github.prefect.file("README.md")).content }}
 
 {# Opt out of tracking with watch=False #}
-{{ github.prefect.file("README.md", watch=False).content }}
+{{ colin.github.prefect.file("README.md", watch=False).content }}
 ```
 
 Directory listings are also tracked by default:
 
 ```jinja
 {# Recompiles when files are added or removed #}
-{% for entry in github.prefect.ls("examples/") %}
+{% for entry in colin.github.prefect.ls("examples/") %}
 - {{ entry.name }}
 {% endfor %}
 ```
@@ -215,10 +215,10 @@ Directory listings are also tracked by default:
 When iterating over a listing, each `file()` call creates its own tracked dependency:
 
 ```jinja
-{% for entry in github.prefect.ls("examples/") %}
+{% for entry in colin.github.prefect.ls("examples/") %}
 {% if entry.type == "file" %}
 {# Each file tracked independently #}
-{{ github.prefect.file(entry.path).content }}
+{{ colin.github.prefect.file(entry.path).content }}
 {% endif %}
 {% endfor %}
 ```
@@ -256,7 +256,7 @@ name: External Docs
 
 # API Reference
 
-{{ github.prefect.file("docs/api/flows.md", ref="main").content }}
+{{ colin.github.prefect.file("docs/api/flows.md", ref="main").content }}
 ```
 
 ### Generate Index from Directory
@@ -270,12 +270,12 @@ name: Examples Index
 
 # Examples
 
-{% for entry in github.prefect.ls("examples/") %}
+{% for entry in colin.github.prefect.ls("examples/") %}
 {% if entry.type == "file" and entry.name.endswith(".py") %}
 ## {{ entry.name }}
 
 ```python
-{{ github.prefect.file(entry.path).content }}
+{{ colin.github.prefect.file(entry.path).content }}
 ```
 
 {% endif %}
@@ -294,7 +294,7 @@ name: V3 Configuration
 Configuration for Prefect v3.0.0:
 
 ```python
-{{ github.prefect.file("src/prefect/settings.py", ref="v3.0.0").content }}
+{{ colin.github.prefect.file("src/prefect/settings.py", ref="v3.0.0").content }}
 ```
 ```
 
@@ -309,5 +309,5 @@ name: External Reference
 
 # License from another repo
 
-{{ github.file("anthropics/claude-code", "LICENSE").content }}
+{{ colin.github.file("anthropics/claude-code", "LICENSE").content }}
 ```

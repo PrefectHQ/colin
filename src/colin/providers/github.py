@@ -107,12 +107,12 @@ class GitHubProvider(Provider):
     """Provider for fetching files from GitHub repositories.
 
     Template usage (default provider, no config needed):
-        {{ github.file("owner/repo", "README.md") }}
-        {{ github.file("owner/repo", "src/main.py", ref="v1.0") }}
+        {{ colin.github.file("owner/repo", "README.md").content }}
+        {{ colin.github.file("owner/repo", "src/main.py", ref="v1.0").content }}
 
     Template usage (named instance with pre-configured repo):
-        {{ github.myrepo.file("README.md") }}
-        {{ github.myrepo.file("src/main.py", ref="v1.0") }}
+        {{ colin.github.myrepo.file("README.md").content }}
+        {{ colin.github.myrepo.file("src/main.py", ref="v1.0").content }}
 
     Configuration:
         [[providers.github]]
@@ -228,8 +228,11 @@ class GitHubProvider(Provider):
         self._sha_cache[cache_key] = sha
         return sha
 
-    async def _fetch_raw(self, repo: str, path: str, sha: str) -> str:
-        """Fetch file content from raw.githubusercontent.com.
+    async def _fetch_file(self, repo: str, path: str, sha: str) -> str:
+        """Fetch file content from GitHub.
+
+        For public repos (no token), uses raw.githubusercontent.com for speed.
+        For authenticated requests (with token), uses the API to access private repos.
 
         Args:
             repo: Repository in "owner/repo" format.
@@ -240,9 +243,17 @@ class GitHubProvider(Provider):
             File content as string.
         """
         client = self._require_client()
-        url = f"https://raw.githubusercontent.com/{repo}/{sha}/{path}"
 
-        response = await client.get(url)
+        if self.token:
+            # Use API with auth for private repo access
+            url = f"https://api.github.com/repos/{repo}/contents/{path}"
+            headers = self._headers()
+            headers["Accept"] = "application/vnd.github.raw+json"
+            response = await client.get(url, params={"ref": sha}, headers=headers)
+        else:
+            # Use raw.githubusercontent.com for public repos (faster, no rate limit)
+            url = f"https://raw.githubusercontent.com/{repo}/{sha}/{path}"
+            response = await client.get(url)
 
         if response.status_code == 404:
             raise FileNotFoundError(f"File not found: {path} at {sha[:7]} in {repo}")
@@ -262,12 +273,12 @@ class GitHubProvider(Provider):
         """Fetch a file from a GitHub repository.
 
         Template usage (default provider, no config needed):
-            {{ github.file("owner/repo", "README.md") }}
-            {{ github.file("owner/repo", "src/main.py", ref="v1.0") }}
+            {{ colin.github.file("owner/repo", "README.md").content }}
+            {{ colin.github.file("owner/repo", "src/main.py", ref="v1.0").content }}
 
         Template usage (named instance with pre-configured repo):
-            {{ github.myrepo.file("README.md") }}
-            {{ github.myrepo.file("src/main.py", ref="v1.0") }}
+            {{ colin.github.myrepo.file("README.md").content }}
+            {{ colin.github.myrepo.file("src/main.py", ref="v1.0").content }}
 
         Args:
             repo_or_path: Repository ("owner/repo") if no repo configured,
@@ -282,7 +293,7 @@ class GitHubProvider(Provider):
         repo, file_path = self._resolve_repo_and_path(repo_or_path, path)
 
         resolved_sha = await self._resolve_ref(repo, ref)
-        content = await self._fetch_raw(repo, file_path, resolved_sha)
+        content = await self._fetch_file(repo, file_path, resolved_sha)
 
         colin_ref = Ref(
             provider=self.namespace,
@@ -319,12 +330,12 @@ class GitHubProvider(Provider):
         """List directory contents in a GitHub repository.
 
         Template usage (default provider, no config needed):
-            {% for entry in github.ls("owner/repo", "src/") %}
+            {% for entry in colin.github.ls("owner/repo", "src/") %}
             - {{ entry.name }} ({{ entry.type }})
             {% endfor %}
 
         Template usage (named instance with pre-configured repo):
-            {% for entry in github.myrepo.ls("src/") %}
+            {% for entry in colin.github.myrepo.ls("src/") %}
             - {{ entry.name }} ({{ entry.type }})
             {% endfor %}
 
