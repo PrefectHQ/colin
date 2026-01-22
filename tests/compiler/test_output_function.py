@@ -246,7 +246,6 @@ Done
 
     doc = output_project.manifest.get_document("project://cached_vs_manual.md")
     assert doc is not None
-    original_output = (output_project.compiled_path / doc.output_path).read_text()
 
     # Manually edit the published output file
     published_path = output_project.output_path / doc.output_path
