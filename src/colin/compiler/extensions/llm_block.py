@@ -139,7 +139,7 @@ class LLMBlockExtension(Extension):
             return "[ERROR: No caller provided to LLM block]"
 
         # caller is actually an async callable
-        body_content = await caller()  # type: ignore[misc]
+        body_content = await caller()
 
         # Access the LLM namespace from the environment
         # This is attached by the compiler before rendering

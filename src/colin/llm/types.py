@@ -41,7 +41,7 @@ def create_classification_model(labels: list[str | bool], multi: bool = False) -
         class ClassificationOutput(BaseModel):
             """Multi-label classification output."""
 
-            labels: list[LabelLiteral]  # type: ignore[valid-type]
+            labels: list[LabelLiteral]
 
         return ClassificationOutput
     else:
@@ -49,6 +49,6 @@ def create_classification_model(labels: list[str | bool], multi: bool = False) -
         class ClassificationOutput(BaseModel):
             """Single-label classification output."""
 
-            label: LabelLiteral  # type: ignore[valid-type]
+            label: LabelLiteral
 
         return ClassificationOutput

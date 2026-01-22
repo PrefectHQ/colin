@@ -68,10 +68,9 @@ async def test_namespace_default_instance_fallback() -> None:
 
     providers = manager.namespace()
 
-    # type: ignore needed - Namespace returns object, but works at runtime
-    assert await providers.s3.read("config.json") == "default:config.json"  # type: ignore[attr-defined]
-    assert await providers.s3.dev.read("config.json") == "dev:config.json"  # type: ignore[attr-defined]
-    assert await providers.s3["default"].read("config.json") == "default:config.json"  # type: ignore[index]
+    assert await providers.s3.read("config.json") == "default:config.json"  # type: ignore[unresolved-attribute]
+    assert await providers.s3.dev.read("config.json") == "dev:config.json"  # type: ignore[unresolved-attribute]
+    assert await providers.s3["default"].read("config.json") == "default:config.json"  # type: ignore[not-subscriptable]
 
 
 class TestMCPNamespace:
@@ -127,7 +126,7 @@ class TestMCPNamespace:
         type_map = {"github": github_ns}
         mcp_ns = MCPNamespace(type_map, name="mcp")
 
-        result = mcp_ns.github  # type: ignore[attr-defined]
+        result = mcp_ns.github
 
         assert result is github_ns
 
@@ -148,6 +147,6 @@ def test_mcp_namespace_in_manager() -> None:
     providers = manager.namespace()
 
     # MCP namespace should have list_servers
-    mcp_ns = providers.mcp  # type: ignore[attr-defined]
+    mcp_ns = providers.mcp
     assert isinstance(mcp_ns, MCPNamespace)
     assert mcp_ns.list_servers() == ["github", "stripe"]

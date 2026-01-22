@@ -101,4 +101,4 @@ class DeferBlockExtension(Extension):
                 return f"{start}{end}"
 
         # Second pass (or no context): render with provided rendered
-        return await caller(rendered)  # type: ignore[misc]
+        return await caller(rendered)
