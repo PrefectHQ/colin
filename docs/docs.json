@@ -65,6 +65,7 @@
             "pages": [
               "providers/providers",
               "providers/project",
+              "providers/github",
               "providers/http",
               "providers/mcp",
               "providers/llm",

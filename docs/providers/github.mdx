@@ -1,0 +1,247 @@
+---
+title: GitHub Provider
+sidebarTitle: GitHub
+icon: github
+---
+
+The GitHub provider fetches files and directory listings from GitHub repositories. It uses the GitHub API for ref resolution and raw.githubusercontent.com for fast content delivery.
+
+## Configuration
+
+Configure the GitHub provider in `colin.toml`:
+
+```toml colin.toml
+[[providers.github]]
+name = "prefect"
+repo = "PrefectHQ/prefect"
+token = "${GITHUB_TOKEN}"
+```
+
+| Field | Required | Description |
+| :---- | :------- | :---------- |
+| `name` | Yes | Provider instance name for template access |
+| `repo` | Yes | Repository in `owner/repo` format |
+| `token` | No | GitHub token for private repos and higher rate limits |
+
+Each configured repository becomes accessible as `github.{name}` in templates.
+
+### Multiple Repositories
+
+Configure multiple repositories as separate provider instances:
+
+```toml colin.toml
+[[providers.github]]
+name = "prefect"
+repo = "PrefectHQ/prefect"
+
+[[providers.github]]
+name = "docs"
+repo = "PrefectHQ/prefect-docs"
+token = "${GITHUB_TOKEN}"
+```
+
+Access each by name:
+
+```jinja
+{{ github.prefect.file("README.md") }}
+{{ github.docs.file("index.md") }}
+```
+
+### Authentication
+
+Without a token, requests are subject to GitHub's anonymous rate limit (60 requests per hour). With a token, the limit increases to 5,000 requests per hour.
+
+For private repositories, a token with appropriate permissions is required.
+
+## Template Functions
+
+| Function | Purpose |
+| :------- | :------ |
+| `file()` | Fetch a file's content |
+| `ls()` | List directory contents |
+
+### file()
+
+Fetch a file from the repository:
+
+```jinja
+{{ github.prefect.file("README.md") }}
+{{ github.prefect.file("src/prefect/flows.py", ref="main") }}
+{{ github.prefect.file("config.py", ref="v3.0.0") }}
+```
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `path` | Yes | — | File path in the repository |
+| `ref` | No | `"HEAD"` | Git ref (branch, tag, or commit SHA) |
+| `watch` | No | `True` | Track for staleness detection |
+
+Returns a `GitHubFileResource` with the file content.
+
+### ls()
+
+List directory contents:
+
+```jinja
+{% for entry in github.prefect.ls("src/prefect/") %}
+- {{ entry.name }} ({{ entry.type }})
+{% endfor %}
+```
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `path` | No | `""` | Directory path (empty for root) |
+| `ref` | No | `"HEAD"` | Git ref (branch, tag, or commit SHA) |
+| `watch` | No | `True` | Track for staleness detection |
+
+Returns a `GitHubListingResource` that can be iterated to get entries.
+
+## Objects
+
+### GitHubFileResource
+
+Returned by `file()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | File content |
+| `path` | `str` | File path in the repository |
+| `repo` | `str` | Repository in `owner/repo` format |
+| `git_ref` | `str` | Original git ref |
+| `resolved_sha` | `str` | Resolved commit SHA |
+
+### GitHubListingResource
+
+Returned by `ls()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | Newline-separated list of paths |
+| `entries` | `list[GitHubEntry]` | Directory entries |
+| `path` | `str` | Directory path |
+| `tree_sha` | `str` | Tree SHA for versioning |
+
+Supports iteration:
+
+```jinja
+{% for entry in github.prefect.ls("src/") %}
+{{ entry.name }}
+{% endfor %}
+```
+
+### GitHubEntry
+
+Each entry in a directory listing:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `path` | `str` | Full path from repository root |
+| `name` | `str` | Filename only |
+| `type` | `str` | `"file"` or `"dir"` |
+| `sha` | `str` | Blob or tree SHA |
+| `size` | `int \| None` | File size in bytes (None for directories) |
+
+## Dependency Tracking
+
+Use `ref()` to track GitHub resources for staleness detection:
+
+```jinja
+{# Fetched but not tracked #}
+{{ github.prefect.file("README.md") }}
+
+{# Tracked — document recompiles when file changes #}
+{{ ref(github.prefect.file("README.md")) }}
+```
+
+Track a directory listing to recompile when files are added or removed:
+
+```jinja
+{% for entry in ref(github.prefect.ls("examples/")) %}
+- {{ entry.name }}
+{% endfor %}
+```
+
+Track individual files from a listing:
+
+```jinja
+{% for entry in github.prefect.ls("examples/") %}
+{% if entry.type == "file" %}
+{{ ref(github.prefect.file(entry.path)) }}
+{% endif %}
+{% endfor %}
+```
+
+## Staleness Detection
+
+The GitHub provider resolves git refs (branches, tags) to commit SHAs for versioning:
+
+| Ref Type | Behavior |
+| :------- | :------- |
+| Branch (`main`) | Resolves to tip SHA; recompiles when branch advances |
+| Tag (`v1.0`) | Resolves to tagged commit SHA; stable unless tag is moved |
+| SHA (`abc123`) | Immutable; never triggers recompilation |
+
+When checking staleness, Colin re-resolves the ref. If the resolved SHA differs from the cached version, the document is marked stale.
+
+## Error Handling
+
+| Status | Exception | Description |
+| :----- | :-------- | :---------- |
+| 404 | `FileNotFoundError` | Ref, path, or file not found |
+| 401 | `PermissionError` | Authentication required (private repo) |
+| 403 | `PermissionError` | Rate limited or access denied |
+
+## Examples
+
+### Include External Documentation
+
+Pull documentation from another repository:
+
+```jinja models/external-docs.md
+---
+name: External Docs
+---
+
+# API Reference
+
+{{ ref(github.prefect.file("docs/api/flows.md", ref="main")) }}
+```
+
+### Generate Index from Directory
+
+Create an index of example files:
+
+```jinja models/examples-index.md
+---
+name: Examples Index
+---
+
+# Examples
+
+{% for entry in ref(github.prefect.ls("examples/")) %}
+{% if entry.type == "file" and entry.name.endswith(".py") %}
+## {{ entry.name }}
+
+```python
+{{ ref(github.prefect.file(entry.path)) }}
+```
+
+{% endif %}
+{% endfor %}
+```
+
+### Pin to a Specific Version
+
+Reference files from a tagged release:
+
+```jinja models/v3-config.md
+---
+name: V3 Configuration
+---
+
+Configuration for Prefect v3.0.0:
+
+```python
+{{ ref(github.prefect.file("src/prefect/settings.py", ref="v3.0.0")) }}
+```
+```

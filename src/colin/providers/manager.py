@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
     "file": FileProvider,
+    "github": "colin.providers.github:GitHubProvider",  # Lazy import
     "http": HTTPProvider,
     "llm": LLMProvider,
     "mcp": "colin.providers.mcp:MCPProvider",  # Lazy import to avoid circular dependency
