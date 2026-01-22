@@ -1,7 +1,7 @@
 # Colin Architecture
 
 > **Status**: MVP in development
-> **Last Updated**: 2026-01-05
+> **Last Updated**: 2026-01-21
 
 Colin (**Co**ntext **Lin**eage) is a context engine for the AI era. It takes interconnected source documents, resolves dependencies, applies transformations (including LLM calls), and produces outputs your agents can use.
 
@@ -419,6 +419,4 @@ Current implementation excludes:
 - Remote `colin://` refs
 - `{% pin %}` blocks
 - Watch mode
-- Skills output format
-- Actual LLM calls (stub only)
 - Parallelization of LLM calls

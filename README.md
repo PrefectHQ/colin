@@ -31,7 +31,7 @@ name: Deployment Guide
 
 ## Recent Issues
 
-{{ colin.mcp.pagerduty.resource('incidents/last-30-days') | extract('deployment-related incidents and their resolutions') }}
+{{ colin.mcp.pagerduty.resource('incidents/last-30-days') | llm_extract('deployment-related incidents and their resolutions') }}
 ```
 
 Run `colin run`. Colin fetches your infrastructure doc, pulls the latest deployment guide from GitHub, queries PagerDuty for recent incidents, uses an LLM to extract the deployment-related ones, and compiles it all into a single document.
@@ -66,7 +66,7 @@ Colin templates are Jinja2 markdown. A few things they can do:
 
 - **Fetch from HTTP** — `colin.http.get('https://...')` pulls from APIs.
 
-- **Extract with LLMs** — `content | extract('the key points')` uses an LLM to pull specific information from any content.
+- **Extract with LLMs** — `content | llm_extract('the key points')` uses an LLM to pull specific information from any content.
 
 - **Synthesize with LLMs** — `{% llm %}...{% endllm %}` sends content to an LLM for freeform processing.
 
@@ -122,10 +122,10 @@ name: Standup Context
 {{ colin.mcp.linear.resource('projects/current-sprint').content }}
 
 ## Blockers
-{{ colin.mcp.linear.resource('projects/current-sprint') | extract('blocked tickets and why') }}
+{{ colin.mcp.linear.resource('projects/current-sprint') | llm_extract('blocked tickets and why') }}
 
 ## Yesterday's Deploys
-{{ colin.mcp.github.resource('repo://acme/api/deployments/yesterday') | extract('what shipped and any issues') }}
+{{ colin.mcp.github.resource('repo://acme/api/deployments/yesterday') | llm_extract('what shipped and any issues') }}
 ```
 
 ```bash
@@ -163,11 +163,11 @@ Without `.content`, resources render as their content automatically:
 ### extract() — LLM Extraction
 
 ```jinja
-{{ ref('meeting-notes') | extract('action items with owners') }}
+{{ ref('meeting-notes') | llm_extract('action items with owners') }}
 
-{{ colin.mcp.slack.resource('channels/support/today') | extract('urgent customer issues') }}
+{{ colin.mcp.slack.resource('channels/support/today') | llm_extract('urgent customer issues') }}
 
-{{ colin.http.get('https://api.example.com/logs') | extract('errors in the last hour') }}
+{{ colin.http.get('https://api.example.com/logs') | llm_extract('errors in the last hour') }}
 ```
 
 Pipe any content to `extract()` with a prompt. The LLM pulls out exactly what you asked for. Results are cached—same input and prompt means no redundant API calls.
@@ -324,7 +324,6 @@ Private files are accessible via `ref().content` but `ref().path` raises an erro
 colin init [name]      # Create a new project
 colin run              # Compile all documents
 colin run --no-cache   # Force full recompile
-colin status           # Show dependency graph
 colin clean            # Remove outputs and cache
 ```
 
@@ -356,7 +355,7 @@ description: How to deploy code to staging and production environments
 
 ## Recent Issues
 
-{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | extract('what went wrong and how it was fixed') }}
+{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | llm_extract('what went wrong and how it was fixed') }}
 ```
 
 Run `colin run` and drop the compiled output into your skills directory. Your agent always has current knowledge.

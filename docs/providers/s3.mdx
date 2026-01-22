@@ -123,7 +123,7 @@ Process S3 content with LLM functions:
 name: Report Summary
 ---
 
-{{ ref('s3://reports-bucket/weekly/latest.md') | extract('key metrics and trends') }}
+{{ ref('s3://reports-bucket/weekly/latest.md') | llm_extract('key metrics and trends') }}
 ```
 
 Or use LLM blocks for complex synthesis:

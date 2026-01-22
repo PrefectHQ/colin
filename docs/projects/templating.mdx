@@ -213,7 +213,7 @@ Use a defer block to generate frontmatter values dynamically, based on the compl
 
 ```jinja
 ---
-name: {% defer %}{{ rendered.content | extract("A concise title") }}{% enddefer %}
+name: {% defer %}{{ rendered.content | llm_extract("A concise title") }}{% enddefer %}
 tags: {% defer %}{% llm %}Suggest 3-5 tags: {{ rendered.content }}{% endllm %}{% enddefer %}
 ---
 ```

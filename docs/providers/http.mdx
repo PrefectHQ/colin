@@ -141,7 +141,7 @@ name: GitHub Issues
 name: Issue Summary
 ---
 
-{{ ref('sources/github-issues') | extract('open issues with their priorities and assignees') }}
+{{ ref('sources/github-issues') | llm_extract('open issues with their priorities and assignees') }}
 ```
 
 ### Authenticated Requests

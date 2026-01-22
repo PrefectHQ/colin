@@ -92,7 +92,7 @@ LLM calls are expensive in both time and cost. Colin caches their results based 
 Without an explicit ID, Colin generates a cache key from the call's input:
 
 ```markdown
-{{ ref('sources/calls') | extract('top 5 complaints') }}
+{{ ref('sources/calls') | llm_extract('top 5 complaints') }}
 ```
 
 The cache key combines:
@@ -107,7 +107,7 @@ If all of these match a previous call, Colin returns the cached result without i
 With an explicit ID, the cache key is stable across prompt changes:
 
 ```markdown
-{{ ref('sources/calls') | extract('top 5 customer complaints', id='complaints') }}
+{{ ref('sources/calls') | llm_extract('top 5 customer complaints', id='complaints') }}
 ```
 
 Cache key: `complaints`
