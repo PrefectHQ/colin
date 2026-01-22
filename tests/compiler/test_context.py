@@ -79,8 +79,9 @@ class TestCompileContext:
         ref = result.ref()
         assert ref.provider == "project"
         assert ref.args["path"] == "doc.md"
-        # __str__ returns content for template use
-        assert str(result) == "Compiled content"
+        # __str__ returns descriptive string, .content has the content
+        assert str(result).startswith("<ProjectResource(")
+        assert result.content == "Compiled content"
 
     async def test_ref_not_compiled(self, context: CompileContext) -> None:
         # Without compiled_outputs or allow_stale, ref() raises RefNotCompiledError

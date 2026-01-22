@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
     "file": FileProvider,
+    "github": "colin.providers.github:GitHubProvider",  # Lazy import
     "http": HTTPProvider,
     "llm": LLMProvider,
     "mcp": "colin.providers.mcp:MCPProvider",  # Lazy import to avoid circular dependency
@@ -162,6 +163,10 @@ async def create_provider_manager(config: ProjectConfig) -> AsyncIterator[Provid
         # Register builtin providers if not configured
         if "file" not in manager._registry.types:
             manager.register(FileProvider())
+
+        if "github" not in manager._registry.types:
+            github_cls = _get_provider_class("github")
+            manager.register(github_cls())
 
         if "http" not in manager._registry.types:
             manager.register(HTTPProvider())
