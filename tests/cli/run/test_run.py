@@ -1,5 +1,6 @@
 """Tests for colin run and clean commands."""
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -248,8 +249,6 @@ def test_run_update_from_output_directory(
     assert (project_output / "greeting.md").exists()
 
     # Verify manifest has project_config
-    import json
-
     manifest_path = project_output / ".colin-manifest.json"
     manifest = json.loads(manifest_path.read_text())
     assert "project_config" in manifest
@@ -307,8 +306,6 @@ def test_run_update_uses_stored_vars(
     test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
 ):
     """colin run --update uses vars stored in manifest."""
-    import json
-
     project_output = test_project / "output"
 
     # Run with a var
@@ -332,8 +329,6 @@ def test_run_update_cli_vars_override_stored(
     test_project: Path, mock_agent, cli: Callable[..., None], monkeypatch
 ):
     """colin run --update --var overrides stored vars."""
-    import json
-
     project_output = test_project / "output"
 
     # Run with a var

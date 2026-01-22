@@ -1042,6 +1042,7 @@ class CompileEngine:
             manifest_data = {
                 "project_id": project_id,
                 "project_config": str(project_file),
+                "output_root": str(output_path),
                 "vars": self._variable_provider.cli_vars,
                 "files": location_files,
             }

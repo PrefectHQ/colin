@@ -437,6 +437,7 @@ async def run(
 
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
         project_config = manifest_data.get("project_config")
+        output_root = manifest_data.get("output_root")
         stored_vars = manifest_data.get("vars", {})
 
         if not project_config:
@@ -449,9 +450,10 @@ async def run(
             err_console.print(f"[red]Error:[/] Source not found: {project_config}")
             sys.exit(1)
 
-        # Pre-fill: project = source project dir, output = where we ran from
+        # Pre-fill: project = source project dir, output = output root from manifest
+        # (fallback to manifest dir for backwards compatibility)
         project = project_file.parent
-        output = target_dir
+        output = Path(output_root) if output_root else target_dir
 
         # Merge stored vars with CLI overrides (CLI wins)
         if stored_vars:
