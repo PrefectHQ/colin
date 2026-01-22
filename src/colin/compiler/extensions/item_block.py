@@ -70,7 +70,7 @@ class ItemBlockExtension(Extension):
             raise RuntimeError("No caller provided to item block")
 
         # Render the block body
-        body_content = await caller()  # type: ignore[misc]
+        body_content = await caller()
 
         # Wrap in markers for the renderer to detect
         return f"{ITEM_START_MARKER}\n{body_content}\n{ITEM_END_MARKER}"

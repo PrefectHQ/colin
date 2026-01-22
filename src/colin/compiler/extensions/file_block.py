@@ -145,7 +145,7 @@ class FileBlockExtension(Extension):
             )
 
         # Render the body content
-        body_content = await caller()  # type: ignore[misc]
+        body_content = await caller()
 
         # Extract sections and remove section/defer markers BEFORE format rendering
         # (JSON/YAML renderers can't parse content with section markers)

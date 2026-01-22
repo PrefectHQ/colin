@@ -91,7 +91,7 @@ class SectionBlockExtension(Extension):
             raise RuntimeError("No caller provided to section block")
 
         # Render the block body
-        body_content = await caller()  # type: ignore[misc]
+        body_content = await caller()
 
         # Wrap in markers for post-processing (like ItemBlockExtension)
         start = SECTION_START_MARKER.format(name=section_name)

@@ -1,6 +1,7 @@
 """Run, init, and clean commands."""
 
 import asyncio
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -387,6 +388,7 @@ async def run(
     project: Path = Path("."),
     *,
     output: Annotated[Path | None, cyclopts.Parameter(name=["-o", "--output"])] = None,
+    update: Annotated[bool, cyclopts.Parameter(name=["--update"])] = False,
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
     ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
@@ -398,6 +400,7 @@ async def run(
     Args:
         project: Project directory (default: current directory).
         output: Override output directory (default: from colin.toml).
+        update: Update an output directory from its manifest's source project.
         no_cache: Ignore cached results and recompile all documents.
         ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
         quiet: Hide progress display, show only final results.
@@ -416,6 +419,54 @@ async def run(
                 sys.exit(1)
             key, value = item.split("=", 1)
             vars_dict[key] = value
+
+    # Handle --update: pre-fill project/output/vars from manifest
+    if update:
+        if output is not None:
+            err_console.print("[red]Error:[/] --output cannot be used with --update")
+            err_console.print("[dim]--update always outputs to the manifest directory[/]")
+            sys.exit(1)
+
+        target_dir = project.resolve()
+        manifest_path = target_dir / ".colin-manifest.json"
+
+        if not manifest_path.exists():
+            err_console.print(f"[red]Error:[/] No .colin-manifest.json found in {target_dir}")
+            err_console.print("[dim]--update requires a Colin output directory[/]")
+            sys.exit(1)
+
+        try:
+            manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            err_console.print(f"[red]Error:[/] Invalid JSON in {manifest_path}")
+            err_console.print(f"[dim]{e}[/]")
+            sys.exit(1)
+
+        project_config = manifest_data.get("project_config")
+        output_root = manifest_data.get("output_root")
+        stored_vars = manifest_data.get("vars", {})
+
+        if not project_config:
+            err_console.print("[red]Error:[/] Manifest missing 'project_config'")
+            err_console.print("[dim]Re-run the source project to update the manifest[/]")
+            sys.exit(1)
+
+        project_file = Path(project_config)
+        if not project_file.exists():
+            err_console.print(f"[red]Error:[/] Source not found: {project_config}")
+            sys.exit(1)
+
+        # Pre-fill: project = source project dir, output = output root from manifest
+        # (fallback to manifest dir for backwards compatibility)
+        project = project_file.parent
+        output = Path(output_root) if output_root else target_dir
+
+        # Merge stored vars with CLI overrides (CLI wins)
+        if stored_vars:
+            if vars_dict:
+                stored_vars.update(vars_dict)
+            vars_dict = stored_vars
+
     try:
         # Get project info for display
         project_dir = project.resolve()

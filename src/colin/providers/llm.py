@@ -99,7 +99,7 @@ class LLMProvider(Provider):
 
         return None
 
-    async def load_address(self, payload: dict[str, Any]):  # type: ignore[override]
+    async def load_address(self, payload: dict[str, Any]):
         """LLM provider does not support load_address.
 
         LLM is a transformation provider that returns raw values (strings, labels),
@@ -173,7 +173,7 @@ class LLMProvider(Provider):
             try:
                 output_type: list[type] = [str]
                 agent_kwargs: dict[str, Any] = {
-                    "output_type": output_type,  # type: ignore[arg-type]
+                    "output_type": output_type,
                 }
                 if effective_instructions:
                     agent_kwargs["instructions"] = effective_instructions
@@ -295,11 +295,11 @@ class LLMProvider(Provider):
             try:
                 output_type: list[type] = [ClassificationModel]
                 agent_kwargs: dict[str, Any] = {
-                    "output_type": output_type,  # type: ignore[arg-type]
+                    "output_type": output_type,
                 }
                 if effective_instructions:
                     agent_kwargs["instructions"] = effective_instructions
-                agent: Agent[None, Any] = Agent(  # type: ignore[assignment]
+                agent: Agent[None, Any] = Agent(
                     effective_model,
                     **agent_kwargs,
                 )
@@ -307,9 +307,9 @@ class LLMProvider(Provider):
 
                 # Extract label(s) from structured output
                 if multi:
-                    output_value = result.output.labels  # type: ignore[attr-defined]
+                    output_value = result.output.labels
                 else:
-                    output_value = result.output.label  # type: ignore[attr-defined]
+                    output_value = result.output.label
 
                 # Record call (store as JSON for multi-label)
                 if multi:
@@ -413,7 +413,7 @@ class LLMProvider(Provider):
             try:
                 output_type: list[type] = [str]
                 agent_kwargs: dict[str, Any] = {
-                    "output_type": output_type,  # type: ignore[arg-type]
+                    "output_type": output_type,
                 }
                 if effective_instructions:
                     agent_kwargs["instructions"] = effective_instructions
