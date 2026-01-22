@@ -4,6 +4,7 @@ import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
+from colin.api.project import ProjectConfig
 from colin.compiler.cache import hash_args, set_compile_context
 from colin.compiler.context import CompileContext
 from colin.models import DocumentMeta, LLMCall, Manifest
@@ -20,10 +21,18 @@ class TestLLMProvider:
     @pytest.fixture
     def compile_ctx(self, tmp_path) -> CompileContext:
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         return CompileContext(
             manifest=Manifest(),
             document_uri="project://test.md",
             project_provider=project_provider,
+            config=config,
         )
 
     def test_model_defaults_to_none(self) -> None:
@@ -354,10 +363,18 @@ class TestPreviousOutput:
         manifest.set_document(doc_uri, doc_meta)
 
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         compile_ctx = CompileContext(
             manifest=manifest,
             document_uri=doc_uri,
             project_provider=project_provider,
+            config=config,
         )
 
         set_compile_context(compile_ctx)
@@ -397,10 +414,18 @@ class TestPreviousOutput:
         doc_uri = "project://test.md"
 
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         compile_ctx = CompileContext(
             manifest=manifest,
             document_uri=doc_uri,
             project_provider=project_provider,
+            config=config,
         )
 
         set_compile_context(compile_ctx)
@@ -435,10 +460,18 @@ class TestPreviousOutput:
         manifest = Manifest()
         doc_uri = "project://test.md"
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         compile_ctx = CompileContext(
             manifest=manifest,
             document_uri=doc_uri,
             project_provider=project_provider,
+            config=config,
         )
 
         set_compile_context(compile_ctx)
@@ -495,10 +528,18 @@ class TestPreviousOutput:
         manifest.set_document(doc_uri, doc_meta)
 
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         compile_ctx = CompileContext(
             manifest=manifest,
             document_uri=doc_uri,
             project_provider=project_provider,
+            config=config,
         )
 
         set_compile_context(compile_ctx)
@@ -555,10 +596,18 @@ class TestPreviousOutput:
         manifest.set_document(doc_uri, doc_meta)
 
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         compile_ctx = CompileContext(
             manifest=manifest,
             document_uri=doc_uri,
             project_provider=project_provider,
+            config=config,
         )
 
         set_compile_context(compile_ctx)
@@ -616,10 +665,18 @@ class TestPreviousOutput:
         manifest.set_document(doc_uri, doc_meta)
 
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         compile_ctx = CompileContext(
             manifest=manifest,
             document_uri=doc_uri,
             project_provider=project_provider,
+            config=config,
         )
 
         set_compile_context(compile_ctx)
@@ -682,10 +739,18 @@ class TestPreviousOutput:
         manifest.set_document(doc_uri, doc_meta)
 
         project_provider = ProjectProvider(base_path=tmp_path)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=tmp_path / "models",
+            output_path=tmp_path / "output",
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
         compile_ctx = CompileContext(
             manifest=manifest,
             document_uri=doc_uri,
             project_provider=project_provider,
+            config=config,
         )
 
         set_compile_context(compile_ctx)

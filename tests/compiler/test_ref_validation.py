@@ -34,11 +34,19 @@ class TestStrictRefValidation:
 
         manifest = Manifest()
         project_provider = ProjectProvider(base_path=output_dir)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
 
         context = CompileContext(
             manifest=manifest,
             document_uri="test-doc",
             project_provider=project_provider,
+            config=config,
         )
         return context, source_dir, output_dir
 
@@ -185,11 +193,19 @@ class TestPathTraversalPrevention:
 
         manifest = Manifest()
         project_provider = ProjectProvider(base_path=output_dir)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path / "project",
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=tmp_path / "project" / ".colin" / "manifest.json",
+        )
 
         context = CompileContext(
             manifest=manifest,
             document_uri="test-doc",
             project_provider=project_provider,
+            config=config,
         )
         return context, source_dir, output_dir
 

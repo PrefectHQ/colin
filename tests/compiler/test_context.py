@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from colin.api.project import ProjectConfig
 from colin.compiler import CompileContext
 from colin.exceptions import RefNotCompiledError
 from colin.models import CompiledDocument, Frontmatter, LLMCall, Manifest, Ref
@@ -22,11 +23,19 @@ class TestCompileContext:
 
         manifest = Manifest()
         project_provider = ProjectProvider(base_path=output_dir)
+        config = ProjectConfig(
+            name="test",
+            project_root=tmp_path,
+            model_path=source_dir,
+            output_path=output_dir,
+            manifest_path=tmp_path / ".colin" / "manifest.json",
+        )
 
         return CompileContext(
             manifest=manifest,
             document_uri="test-doc",
             project_provider=project_provider,
+            config=config,
         )
 
     async def test_ref_tracks_dependency(self, context: CompileContext, tmp_path: Path) -> None:

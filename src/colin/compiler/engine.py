@@ -18,7 +18,6 @@ from colin.compiler.cache import set_compile_context, set_used_cache_keys
 from colin.compiler.context import CompileContext
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
-from colin.compiler.rendered import RenderedOutput
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
@@ -671,6 +670,8 @@ class CompileEngine:
             manifest=self.manifest,
             document_uri=doc.uri,
             project_provider=self._project_provider,
+            config=self.config,
+            output_format=doc.frontmatter.colin.output.format,
             compiled_outputs=compiled_outputs,
             doc_state=doc_state,
         )
@@ -711,18 +712,11 @@ class CompileEngine:
                     output_format=doc.frontmatter.colin.output.format,
                 )
 
-                # Get previous rendered output from manifest
-                previous_rendered = await self._get_previous_rendered(
-                    doc.uri, doc.frontmatter.colin.output.format
-                )
-
-                # SECOND PASS: Render defer blocks with rendered/previous_rendered
-                # Note: We don't need to update env.globals anymore since we pass
-                # rendered/previous_rendered as parameters to the defer block callables
+                # SECOND PASS: Render defer blocks with rendered context
+                # Note: Use output(cached=True) in templates to access previous output
                 defer_outputs = {}
                 for defer_id, caller in context.defer_blocks.items():
-                    # Invoke caller with rendered and previous_rendered as parameters
-                    defer_content = await caller(rendered, previous_rendered)
+                    defer_content = await caller(rendered)
                     defer_outputs[defer_id] = defer_content
 
                 # Merge defer block outputs into first pass output
@@ -845,38 +839,6 @@ class CompileEngine:
             # Always write file outputs (they're dynamic, can't easily content-address)
             if not file_artifact_path.exists() or file_artifact_path.read_text() != content:
                 await self.artifact_storage.write(path, content)
-
-    async def _get_previous_rendered(self, uri: str, output_format: str) -> RenderedOutput | None:
-        """Get previous rendered output from manifest.
-
-        Args:
-            uri: Document URI.
-            output_format: Output format (for format-aware section parsing).
-
-        Returns:
-            Previous RenderedOutput if exists, None otherwise.
-        """
-        if self.manifest is None:
-            return None
-
-        doc_meta = self.manifest.get_document(uri)
-        if doc_meta is None or doc_meta.output_path is None:
-            return None
-
-        # Load previous output from artifact storage
-        try:
-            previous_content = await self.artifact_storage.read(doc_meta.output_path)
-            from colin.compiler.rendered import RenderedOutput
-
-            return RenderedOutput(
-                content=previous_content,
-                sections=doc_meta.sections,
-                output_format=output_format,
-            )
-        except FileNotFoundError:
-            return None
-        except Exception:
-            return None
 
     def _merge_defer_blocks(self, output: str, defer_outputs: dict[str, str]) -> str:
         """Replace defer markers with rendered defer block content.

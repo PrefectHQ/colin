@@ -20,8 +20,8 @@ class DeferBlockExtension(Extension):
     """Jinja extension for {% defer %}...{% enddefer %} blocks.
 
     Defer blocks are rendered in a second pass after the document is rendered,
-    with access to `rendered` and `previous_rendered` variables containing the
-    document's output and sections.
+    with access to the `rendered` variable containing the document's output
+    and sections.
 
     Usage:
         {% defer %}
@@ -35,8 +35,9 @@ class DeferBlockExtension(Extension):
         - rendered.content: Full document output from first pass
         - rendered.sections: SectionsAccessor for format-aware section access
 
-    The `previous_rendered` variable contains the same structure but from the
-    last cached compilation (None on first compile or cache miss).
+    To access previous output, use the output() function:
+        {{ output(cached=True) }}  # Previous Colin output
+        {{ output() }}             # Published output (may have manual edits)
     """
 
     tags = {"defer"}
@@ -59,28 +60,25 @@ class DeferBlockExtension(Extension):
 
         # Return CallBlock that will:
         # - First pass: emit marker placeholder and store callable
-        # - Second pass: invoke callable with rendered/previous_rendered as parameters
-        # The caller receives 'rendered' and 'previous_rendered' as block parameters
+        # - Second pass: invoke callable with rendered as parameter
+        # The caller receives 'rendered' as a block parameter
         return nodes.CallBlock(
             self.call_method("_render_defer", [nodes.Const(defer_id)], []),
-            [nodes.Name("rendered", "param"), nodes.Name("previous_rendered", "param")],
+            [nodes.Name("rendered", "param")],
             [],
             body,
         ).set_lineno(lineno)
 
-    async def _render_defer(
-        self, defer_id: str, rendered=None, previous_rendered=None, caller: object = None
-    ) -> str:
+    async def _render_defer(self, defer_id: str, rendered=None, caller: object = None) -> str:
         """Called during template rendering.
 
         First pass: Store the callable and emit a placeholder marker.
-        Second pass: Invoke callable with rendered/previous_rendered as parameters.
+        Second pass: Invoke callable with rendered as parameter.
 
         Args:
             defer_id: Unique identifier for this defer block.
             rendered: RenderedOutput for current rendering (None in first pass).
-            previous_rendered: RenderedOutput from previous compile (None in first pass).
-            caller: Async callable that renders the block body, receives rendered/previous_rendered.
+            caller: Async callable that renders the block body, receives rendered.
 
         Returns:
             Placeholder marker (first pass) or rendered content (second pass).
@@ -97,11 +95,10 @@ class DeferBlockExtension(Extension):
         if context is not None and hasattr(context, "defer_blocks"):
             if defer_id not in context.defer_blocks:
                 # First pass: store callable for second pass
-                # Caller expects (rendered, previous_rendered) parameters, pass None for now
                 context.defer_blocks[defer_id] = caller
                 start = DEFER_START_MARKER.format(id=defer_id)
                 end = DEFER_END_MARKER.format(id=defer_id)
                 return f"{start}{end}"
 
-        # Second pass (or no context): render with provided rendered/previous_rendered
-        return await caller(rendered, previous_rendered)  # type: ignore[misc]
+        # Second pass (or no context): render with provided rendered
+        return await caller(rendered)  # type: ignore[misc]

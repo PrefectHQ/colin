@@ -156,6 +156,7 @@ def bind_context_to_environment(
 
     # Core functions
     env.globals["ref"] = context.ref
+    env.globals["output"] = context.output
 
     # Providers namespace - exposed as `colin.*` in templates
     colin = provider_manager.namespace()
