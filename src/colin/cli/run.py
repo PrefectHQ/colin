@@ -837,7 +837,7 @@ def init(
                         console.print(f"  cd {project_display}")
                         console.print()
                     for line in instructions.strip().splitlines():
-                        console.print(f"  {line}")
+                        console.print(f"  {line}", markup=False)
                     return  # Skip generic message
 
         else:

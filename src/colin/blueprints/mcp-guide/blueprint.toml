@@ -1,0 +1,36 @@
+[blueprint]
+name = "mcp-guide"
+description = "Generate a skill that documents how to use an MCP server"
+instructions = """
+This blueprint generates a skill that teaches AI agents how to use an MCP
+server. It discovers the server's tools and creates documentation for each one.
+
+REQUIRED: Add an MCP server named "source"
+
+The template references `colin.mcp.source`, so you must configure an MCP
+server with that exact name. Choose the appropriate method:
+
+  For a local/stdio server:
+    colin mcp add source "npx -y @modelcontextprotocol/server-filesystem /path"
+    colin mcp add source "uvx mcp-server-git"
+    colin mcp add source "python -m my_server"
+
+  For a remote server:
+    colin mcp add source --url "https://api.example.com/mcp"
+
+Or edit colin.toml directly:
+
+  [[providers.mcp]]
+  name = "source"
+  command = "npx"
+  args = ["-y", "@your-org/mcp-server"]
+
+Then generate the skill:
+
+  colin run
+
+The output will contain:
+  - SKILL.md with server overview and tool list
+  - One file per tool with parameters and usage
+  - Executable Python scripts for each tool (optional)
+"""
