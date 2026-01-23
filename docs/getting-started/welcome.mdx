@@ -80,7 +80,7 @@ LLM calls are cached separately by input hash. If a document recompiles but the 
 
 **References**: `ref('other-doc')` fetches content from another document and registers a dependency. When `other-doc` changes, documents that reference it recompile. See [References](/projects/references).
 
-**Providers**: Built-in providers connect to external sources: [GitHub](/providers/github) repositories, [HTTP](/providers/http) endpoints, [S3](/providers/s3) buckets, and [MCP servers](/providers/mcp). Each provider tracks source versions for staleness detection.
+**Providers**: Built-in providers connect to external sources: [GitHub](/providers/github) repositories and issues, [Linear](/providers/linear) issues, [Notion](/providers/notion) pages, [HTTP](/providers/http) endpoints, [S3](/providers/s3) buckets, and [MCP servers](/providers/mcp). Each provider tracks source versions for staleness detection.
 
 **LLM Processing**: The `| llm_extract()` filter and `{% llm %}` blocks send content to language models. See [LLM Provider](/providers/llm) for the full API.
 
