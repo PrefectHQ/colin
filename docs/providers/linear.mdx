@@ -1,0 +1,158 @@
+---
+title: Linear
+description: Fetch issues from Linear workspaces
+---
+
+The Linear provider fetches issues from your Linear workspace using Linear's official MCP server. It handles OAuth authentication automatically.
+
+## Setup
+
+Add Linear to your project configuration:
+
+```toml
+[[providers.linear]]
+# No configuration needed - OAuth flow triggered on first use
+```
+
+On first use, Colin opens a browser for Linear OAuth authorization. Tokens are stored persistently at `~/.colin/mcp-oauth/`.
+
+## Functions
+
+### `issue(id)`
+
+Fetch a single issue by identifier or UUID.
+
+```jinja
+{{ colin.linear.issue("ENG-123").content }}
+{{ colin.linear.issue("ENG-123").title }}
+{{ colin.linear.issue("ENG-123").state }}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `id` | Yes | — | Issue identifier (e.g., "ENG-123") or UUID |
+| `watch` | No | `True` | Track for staleness detection |
+
+**Returns:** `LinearIssueResource` with:
+
+| Attribute | Description |
+| :-------- | :---------- |
+| `content` | Issue title and description as markdown |
+| `identifier` | Issue identifier (e.g., "ENG-123") |
+| `title` | Issue title |
+| `url` | Linear issue URL |
+| `state` | Current state (e.g., "In Progress", "Done") |
+| `priority` | Priority level (0=none, 1=urgent, 2=high, 3=medium, 4=low) |
+| `assignee` | Assignee name or None |
+| `issue_id` | Issue UUID |
+
+### `issues(...)`
+
+Search and list issues.
+
+```jinja
+{% for issue in colin.linear.issues(team="Engineering") %}
+- {{ issue.identifier }}: {{ issue.title }} ({{ issue.state }})
+{% endfor %}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `query` | No | — | Search query string |
+| `team` | No | — | Filter by team name or ID |
+| `assignee` | No | — | Filter by assignee (name, email, or "me") |
+| `state` | No | — | Filter by state name or ID |
+| `limit` | No | `20` | Maximum number of results |
+| `watch` | No | `True` | Track for staleness detection |
+
+**Returns:** `LinearIssuesResource` containing matching issues.
+
+Supports iteration and length:
+
+```jinja
+Found {{ colin.linear.issues(team="Engineering") | length }} issues
+
+{% for issue in colin.linear.issues(assignee="me", state="In Progress") %}
+- {{ issue.identifier }}: {{ issue.title }}
+{% endfor %}
+```
+
+## Dependency Tracking
+
+Both `issue()` and `issues()` track dependencies by default. Documents recompile when tracked issues change:
+
+```jinja
+{# Recompiles when the issue is updated #}
+{{ colin.linear.issue("ENG-123").content }}
+
+{# Recompiles when any matching issue changes #}
+{% for issue in colin.linear.issues(team="Engineering") %}
+{{ issue.title }}
+{% endfor %}
+```
+
+Opt out of tracking with `watch=False`:
+
+```jinja
+{{ colin.linear.issue("ENG-123", watch=False).content }}
+{{ colin.linear.issues(team="Engineering", watch=False) }}
+```
+
+## Staleness Detection
+
+The Linear provider uses `updatedAt` timestamps for staleness detection. When a tracked issue is modified in Linear, the document is marked stale and recompiled on the next build.
+
+## Examples
+
+### Sprint Status Report
+
+```jinja
+---
+title: Sprint Status
+---
+# Current Sprint
+
+{% set in_progress = colin.linear.issues(team="Engineering", state="In Progress") %}
+{% set done = colin.linear.issues(team="Engineering", state="Done") %}
+
+## In Progress ({{ in_progress | length }})
+
+{% for issue in in_progress %}
+- **{{ issue.identifier }}**: {{ issue.title }}
+  - Assignee: {{ issue.assignee or "Unassigned" }}
+{% endfor %}
+
+## Completed ({{ done | length }})
+
+{% for issue in done %}
+- {{ issue.identifier }}: {{ issue.title }}
+{% endfor %}
+```
+
+### Issue Detail Skill
+
+```jinja
+---
+title: Issue Tracker
+---
+# How to Use This Skill
+
+Ask me about any issue by its identifier (e.g., "What's the status of ENG-123?").
+
+## Recent Issues
+
+{% for issue in colin.linear.issues(assignee="me", limit=5) %}
+### {{ issue.identifier }}: {{ issue.title }}
+
+**State:** {{ issue.state }}
+**Priority:** {{ issue.priority or "None" }}
+
+{{ issue.content }}
+
+---
+{% endfor %}
+```

@@ -20,6 +20,7 @@ _PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
     "file": FileProvider,
     "github": "colin.providers.github:GitHubProvider",  # Lazy import
     "http": HTTPProvider,
+    "linear": "colin.providers.linear:LinearProvider",  # Lazy import
     "llm": LLMProvider,
     "mcp": "colin.providers.mcp:MCPProvider",  # Lazy import to avoid circular dependency
     "notion": "colin.providers.notion:NotionProvider",  # Lazy import
