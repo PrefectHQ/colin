@@ -22,6 +22,7 @@ _PROVIDER_CLASSES: dict[str, type[Provider] | str] = {
     "http": HTTPProvider,
     "llm": LLMProvider,
     "mcp": "colin.providers.mcp:MCPProvider",  # Lazy import to avoid circular dependency
+    "notion": "colin.providers.notion:NotionProvider",  # Lazy import
     "s3": "colin.providers.s3:S3Provider",  # Lazy import
 }
 

@@ -1,9 +1,11 @@
 [project]
-name = "hello_world"
+name = "notion_skills"
 model-path = "models"
 
 [project.output]
 path = "output"
 
 [providers]
-llm = [{ model = "anthropic:claude-haiku-4-5" }]
+notion = [
+    {},
+]
