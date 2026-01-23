@@ -791,6 +791,21 @@ def init(
         err_console.print(f"[red]Error:[/] Project already exists: {project_dir / 'colin.toml'}")
         sys.exit(1)
 
+    # Check if directory has existing files (guard against accidental overwrites)
+    if project_dir.exists():
+        # Files/directories to ignore when checking if directory is empty
+        ignored = {".git", ".venv", "venv", "__pycache__", ".DS_Store", ".python-version"}
+        existing = [f.name for f in project_dir.iterdir() if f.name not in ignored]
+        if existing:
+            err_console.print(
+                f"[red]Error:[/] Directory is not empty: {project_dir}\n"
+                f"  Found: {', '.join(sorted(existing)[:5])}"
+                + (f" and {len(existing) - 5} more" if len(existing) > 5 else "")
+            )
+            err_console.print("\n[dim]Run in an empty directory or specify a new path:[/]")
+            err_console.print("  colin init my-project")
+            sys.exit(1)
+
     try:
         # Create project directory
         project_dir.mkdir(parents=True, exist_ok=True)
