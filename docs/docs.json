@@ -68,6 +68,7 @@
               "providers/github",
               "providers/http",
               "providers/mcp",
+              "providers/notion",
               "providers/llm",
               "providers/s3"
             ]

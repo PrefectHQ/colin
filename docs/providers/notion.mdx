@@ -1,0 +1,253 @@
+---
+title: Notion Provider
+sidebarTitle: Notion
+icon: file-lines
+---
+
+The Notion provider fetches pages from your Notion workspace. It uses Notion's hosted MCP server for authentication, handling OAuth automatically on first use.
+
+## Quick Start
+
+The Notion provider works without configuration. OAuth is triggered automatically when you first access Notion:
+
+```jinja
+{{ colin.notion.page("https://notion.so/My-Page-abc123").content }}
+{{ colin.notion.page("abc123def456").content }}
+```
+
+Search your workspace for pages matching a query:
+
+```jinja
+{% for page in colin.notion.search("onboarding") %}
+## {{ page.title }}
+
+{{ page.content }}
+{% endfor %}
+```
+
+## Configuration
+
+The Notion provider requires no configuration. Add it to your project to enable Notion access:
+
+```toml colin.toml
+[[providers.notion]]
+# No configuration needed
+# OAuth flow triggered automatically on first use
+```
+
+On first use, Colin opens a browser window for Notion OAuth authentication. After authorization, credentials are cached for future use.
+
+## Template Functions
+
+| Function | Purpose |
+| :------- | :------ |
+| `page()` | Fetch a single page by URL or ID |
+| `search()` | Search for pages matching a query |
+
+### page()
+
+Fetch a Notion page by its URL or page ID:
+
+```jinja
+{# By URL #}
+{{ colin.notion.page("https://notion.so/My-Page-abc123").content }}
+
+{# By page ID #}
+{{ colin.notion.page("abc123def456").content }}
+
+{# Access metadata #}
+{% set page = colin.notion.page("abc123") %}
+Title: {{ page.title }}
+Last edited: {{ page.last_edited_time }}
+{{ page.content }}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `url_or_id` | Yes | — | Notion page URL or page ID |
+| `watch` | No | `True` | Track for staleness detection |
+
+Returns a `NotionPageResource` with page content and metadata.
+
+### search()
+
+Search your Notion workspace for pages matching a query:
+
+```jinja
+{% for page in colin.notion.search("product requirements") %}
+## {{ page.title }}
+
+{{ page.content }}
+
+---
+{% endfor %}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `query` | Yes | — | Search query string |
+| `limit` | No | `20` | Maximum number of results to return |
+| `watch` | No | `False` | Track for staleness detection |
+
+Returns a `NotionSearchResource` containing matching pages (up to limit).
+
+**Note:** Search results are not tracked for staleness by default. To track individual pages, use `page()` on each result you want to monitor. If you need fresh search results on every build, set `colin.cache: never` in your document frontmatter.
+
+## Objects
+
+### NotionPageResource
+
+Returned by `page()` and included in search results:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | Page content as markdown |
+| `page_id` | `str` | Notion page ID |
+| `title` | `str` | Page title |
+| `url` | `str` | Notion page URL |
+| `last_edited_time` | `datetime` | When the page was last modified |
+| `created_time` | `datetime` | When the page was created |
+| `is_archived` | `bool` | Whether the page is archived |
+
+### NotionSearchResource
+
+Returned by `search()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | Newline-separated page titles |
+| `query` | `str` | The search query used |
+| `pages` | `list[NotionPageResource]` | Matching pages (with search highlights as content) |
+
+Supports iteration and length:
+
+```jinja
+Found {{ colin.notion.search("docs") | length }} pages
+
+{% for page in colin.notion.search("docs") %}
+- {{ page.title }}
+{% endfor %}
+```
+
+Note: Search results contain highlights, not full page content. Use `page()` to fetch full content:
+
+```jinja
+{% for result in colin.notion.search("api docs") %}
+## {{ result.title }}
+{{ colin.notion.page(result.page_id).content }}
+{% endfor %}
+```
+
+## Dependency Tracking
+
+By default, `page()` tracks dependencies. Documents recompile when tracked pages change:
+
+```jinja
+{# Recompiles when the page is edited in Notion #}
+{{ colin.notion.page("abc123").content }}
+```
+
+Opt out of tracking with `watch=False`:
+
+```jinja
+{{ colin.notion.page("abc123", watch=False).content }}
+```
+
+**Searches are not tracked by default** because checking staleness would require re-running the search on every build. Instead, track individual pages from search results:
+
+```jinja
+{# Search is not tracked, but each page() call is #}
+{% for result in colin.notion.search("api docs") %}
+{{ colin.notion.page(result.page_id).content }}
+{% endfor %}
+```
+
+If you need fresh search results on every build, set the document to volatile:
+
+```yaml
+---
+colin:
+  cache: never
+---
+```
+
+## Staleness Detection
+
+The Notion provider uses `last_edited_time` for efficient staleness detection:
+
+| Resource | Version Strategy |
+| :------- | :--------------- |
+| `page()` | `last_edited_time` of the page |
+| `search()` | Hash of all result page IDs and their edit times |
+
+When checking staleness, Colin fetches page metadata without retrieving full content. If the edit time has changed, the document is marked stale and recompiled.
+
+## Examples
+
+### Build Agent Skills from Notion Docs
+
+Create agent skills from your team's documentation:
+
+```jinja models/onboarding-skill.md
+---
+name: Onboarding Skill
+description: Company onboarding information
+---
+
+# Onboarding Guide
+
+{% for page in colin.notion.search("onboarding") %}
+## {{ page.title }}
+
+{{ page.content }}
+
+{% endfor %}
+```
+
+### Include a Specific Page
+
+Reference a single page of documentation:
+
+```jinja models/api-reference.md
+---
+name: API Reference
+---
+
+{{ colin.notion.page("https://notion.so/API-Docs-abc123").content }}
+```
+
+### Generate Index from Search Results
+
+Create an index of all pages matching a topic:
+
+```jinja models/product-index.md
+---
+name: Product Documentation Index
+---
+
+# Product Documentation
+
+{% set results = colin.notion.search("product") %}
+
+Found {{ results | length }} documents:
+
+{% for page in results %}
+- [{{ page.title }}]({{ page.url }}) — Last updated: {{ page.last_edited_time.strftime("%Y-%m-%d") }}
+{% endfor %}
+```
+
+### Conditional Content Based on Page Status
+
+Filter out archived pages:
+
+```jinja
+{% for page in colin.notion.search("specs") %}
+{% if not page.is_archived %}
+{{ page.content }}
+{% endif %}
+{% endfor %}
+```
