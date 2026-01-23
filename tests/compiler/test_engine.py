@@ -414,3 +414,33 @@ value
         assert second_meta.source_hash != first_source_hash
         # Output path should now be JSON
         assert second_meta.output_path == "config.json"
+
+    async def test_template_false_skips_jinja_rendering(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        """Files with colin.template: false skip Jinja and pass through content."""
+        engine, source_dir, output_dir = engine_setup
+
+        # Write a file with Jinja syntax that should NOT be rendered
+        (source_dir / "docs.md").write_text("""\
+---
+name: Docs
+colin:
+  template: false
+---
+
+# Documentation
+
+Use `{{ ref('other-doc').content }}` to include content.
+
+{% file "example.md" %}
+This would normally be a file block.
+{% endfile %}
+""")
+        await engine.compile_all()
+
+        # Jinja syntax should be preserved literally
+        output = (output_dir / "docs.md").read_text()
+        assert "{{ ref('other-doc').content }}" in output
+        assert "{% file" in output
+        assert "{% endfile %}" in output
