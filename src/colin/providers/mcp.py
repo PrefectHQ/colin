@@ -198,6 +198,9 @@ class MCPProvider(Provider):
         elif ref.method == "list_resources":
             resources = await self.list_resources(watch=False)
             return str(len(resources))
+        elif ref.method == "list_skills":
+            skills = await self.list_skills(watch=False)
+            return ",".join(sorted(s.name for s in skills))
         elif ref.method == "server_info":
             info = await self.server_info(watch=False)
             return info.version
@@ -307,7 +310,7 @@ class MCPProvider(Provider):
         op = doc_state.child("mcp", detail=f"{self._connection}.list_skills") if doc_state else None
 
         with op if op else nullcontext():
-            # Get all resources (don't track list itself, we track individual manifests)
+            # Get all resources (we track list_skills separately)
             resources = await self.list_resources(watch=False)
             skills = []
 
@@ -342,6 +345,18 @@ class MCPProvider(Provider):
                         files=files,
                     )
                 )
+
+            # Track skill list so additions/removals trigger rebuilds
+            if watch and compile_ctx:
+                ref = Ref(
+                    provider=self.namespace,
+                    connection=self._connection,
+                    method="list_skills",
+                    args={},
+                )
+                # Version based on sorted skill names
+                version = ",".join(sorted(s.name for s in skills))
+                compile_ctx.track(ref, version)
 
             return skills
 
