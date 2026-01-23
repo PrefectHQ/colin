@@ -323,13 +323,15 @@ class NotionProvider(Provider):
         try:
             data = json.loads(raw_text)
         except json.JSONDecodeError:
-            # Fallback if not JSON
+            # Fallback if not JSON - use content hash for deterministic versioning
+            content_hash = int(hashlib.sha256(raw_text.encode()).hexdigest()[:8], 16)
+            epoch_seconds = content_hash % (50 * 365 * 24 * 3600)
             return {
                 "content": raw_text,
                 "page_id": hashlib.sha256(raw_text.encode()).hexdigest()[:16],
                 "title": "Untitled",
                 "url": "",
-                "last_edited_time": datetime.now(timezone.utc),
+                "last_edited_time": datetime.fromtimestamp(epoch_seconds, tz=timezone.utc),
                 "created_time": None,
                 "is_archived": False,
             }
@@ -338,8 +340,13 @@ class NotionProvider(Provider):
         # The text field contains the enhanced markdown content
         content = data.get("text", "")
 
+        # Extract page ID from URL
+        url = data.get("url", "")
+        page_id = url.split("/")[-1] if url else hashlib.sha256(content.encode()).hexdigest()[:16]
+
         # Try to extract timestamp from the text (format: "as of 2026-01-13T06:25:43.272Z")
-        last_edited = datetime.now(timezone.utc)
+        # Fall back to content-hash-based timestamp if not found (ensures deterministic versioning)
+        last_edited: datetime | None = None
         timestamp_match = re.search(r"as of (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)", content)
         if timestamp_match:
             try:
@@ -349,9 +356,13 @@ class NotionProvider(Provider):
             except ValueError:
                 pass
 
-        # Extract page ID from URL
-        url = data.get("url", "")
-        page_id = url.split("/")[-1] if url else hashlib.sha256(content.encode()).hexdigest()[:16]
+        if last_edited is None:
+            # Derive deterministic timestamp from content hash
+            # This ensures version stays stable when content hasn't changed
+            content_hash = int(hashlib.sha256(content.encode()).hexdigest()[:8], 16)
+            # Map hash to a timestamp (seconds since epoch, bounded to reasonable range)
+            epoch_seconds = content_hash % (50 * 365 * 24 * 3600)  # ~50 years range
+            last_edited = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
 
         return {
             "content": content,
