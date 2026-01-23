@@ -990,11 +990,7 @@ class CompileEngine:
         if self.ephemeral:
             return
 
-        # Get project ID (required for manifests)
-        from colin.api.project import ensure_project_id
-
         project_file = self.config.project_root / "colin.toml"
-        project_id = ensure_project_id(self.config, project_file)
 
         # Collect all published file paths with their content hashes
         published_files: dict[str, str] = {}  # path -> hash
@@ -1063,7 +1059,6 @@ class CompileEngine:
             manifest_dir = output_path / location if location else output_path
             manifest_path = manifest_dir / ".colin-manifest.json"
             manifest_data = {
-                "project_id": project_id,
                 "project_name": self.config.name,
                 "project_config": str(project_file),
                 "output_root": str(output_path),

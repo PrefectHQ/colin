@@ -27,7 +27,6 @@ from colin.api.project import (
     clean_output_directory,
     clean_project,
     find_project_file,
-    generate_project_id,
     get_stale_files,
     get_stale_files_by_project,
     get_stale_files_from_output,
@@ -806,9 +805,6 @@ def init(
                     content["project"] = {}
                 if name:
                     content["project"]["name"] = name
-                # Always generate a new ID for the new project
-                proj_name = content.get("project", {}).get("name", project_name)
-                content["project"]["id"] = generate_project_id(proj_name)
                 colin_toml.write_text(tomli_w.dumps(content))
 
             # Show what was created
@@ -846,8 +842,7 @@ def init(
             (project_dir / models).mkdir(parents=True, exist_ok=True)
 
             # Build colin.toml content
-            project_id = generate_project_id(project_name)
-            toml_lines = ["[project]", f'name = "{project_name}"', f'id = "{project_id}"']
+            toml_lines = ["[project]", f'name = "{project_name}"']
             if models != "models":
                 toml_lines.append(f'models = "{models}"')
             if output != "output":

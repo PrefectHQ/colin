@@ -255,11 +255,10 @@ Report includes {{ ref('base.md').content }}
         compiled_dir = build_dir / "compiled"
         compiled_dir.mkdir()
 
-        # Create colin.toml for project ID
+        # Create colin.toml
         (tmp_path / "colin.toml").write_text("""\
 [project]
 name = "test-project"
-id = "test-project-abc123"
 """)
 
         (source_dir / "hello.md").write_text("""\
@@ -271,7 +270,6 @@ Hello World
 
         config = ProjectConfig(
             name="test-project",
-            id="test-project-abc123",
             project_root=tmp_path,
             model_path=source_dir,
             output_path=output_dir,
@@ -290,7 +288,7 @@ Hello World
         assert manifest_path.exists()
 
         manifest = json.loads(manifest_path.read_text())
-        assert manifest["project_id"] == "test-project-abc123"
+        assert manifest["project_name"] == "test-project"
         assert "hello.md" in manifest["files"]
 
     async def test_output_manifest_skill_target(self, tmp_path: Path) -> None:
@@ -304,11 +302,10 @@ Hello World
         compiled_dir = build_dir / "compiled"
         compiled_dir.mkdir()
 
-        # Create colin.toml for project ID
+        # Create colin.toml
         (tmp_path / "colin.toml").write_text("""\
 [project]
 name = "test-skills"
-id = "test-skills-xyz789"
 
 [project.output]
 target = "skill"
@@ -336,7 +333,6 @@ GitHub skill
 
         config = ProjectConfig(
             name="test-skills",
-            id="test-skills-xyz789",
             project_root=tmp_path,
             model_path=source_dir,
             output_path=output_dir,
@@ -359,11 +355,11 @@ GitHub skill
         assert github_manifest.exists()
 
         stripe_data = json.loads(stripe_manifest.read_text())
-        assert stripe_data["project_id"] == "test-skills-xyz789"
+        assert stripe_data["project_name"] == "test-skills"
         assert "SKILL.md" in stripe_data["files"]
 
         github_data = json.loads(github_manifest.read_text())
-        assert github_data["project_id"] == "test-skills-xyz789"
+        assert github_data["project_name"] == "test-skills"
         assert "SKILL.md" in github_data["files"]
 
     async def test_output_manifest_ephemeral_skips(self, tmp_path: Path) -> None:
@@ -380,7 +376,6 @@ GitHub skill
         (tmp_path / "colin.toml").write_text("""\
 [project]
 name = "test-project"
-id = "test-project-abc123"
 """)
 
         (source_dir / "hello.md").write_text("""\
@@ -392,7 +387,6 @@ Hello World
 
         config = ProjectConfig(
             name="test-project",
-            id="test-project-abc123",
             project_root=tmp_path,
             model_path=source_dir,
             output_path=output_dir,

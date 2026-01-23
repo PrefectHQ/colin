@@ -7,8 +7,6 @@ import json
 import logging
 import os
 import re
-import secrets
-import string
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -68,51 +66,6 @@ def _expand_env_vars_recursive(data: Any) -> Any:
         return _expand_env_vars(data)
     else:
         return data
-
-
-def generate_project_id(name: str) -> str:
-    """Generate a unique project ID.
-
-    Format: {name}-{6 random alphanumeric chars}
-    Example: mcp-skills-x7k2m9
-
-    Args:
-        name: Project name to use as prefix.
-
-    Returns:
-        Unique project ID string.
-    """
-    # Use lowercase alphanumeric characters for the random suffix
-    alphabet = string.ascii_lowercase + string.digits
-    suffix = "".join(secrets.choice(alphabet) for _ in range(6))
-    return f"{name}-{suffix}"
-
-
-def ensure_project_id(config: ProjectConfig, project_file: Path) -> str:
-    """Ensure project has an ID, generating and saving one if missing.
-
-    For backward compatibility, existing projects without IDs get one generated
-    and saved to colin.toml.
-
-    Args:
-        config: Project configuration (may have id=None).
-        project_file: Path to colin.toml for saving.
-
-    Returns:
-        The project ID (existing or newly generated).
-    """
-    if config.id:
-        return config.id
-
-    # Generate new ID
-    new_id = generate_project_id(config.name)
-    config.id = new_id
-
-    # Save back to colin.toml
-    save_project(project_file, config)
-    logger.info("Generated project ID: %s", new_id)
-
-    return new_id
 
 
 PROJECT_FILE = "colin.toml"
@@ -673,10 +626,8 @@ def init_project(
 
     # Create colin.toml with full config
     project_name = name or directory.name
-    project_id = generate_project_id(project_name)
     config = ProjectConfig(
         name=project_name,
-        id=project_id,
         project_root=project_root,
         model_path=model_path,
         output_path=output_path,
@@ -887,9 +838,9 @@ def get_stale_files(
     stale: list[Path] = []
 
     # Check output/ for stale files using output manifests
-    # Filter by project_id to avoid affecting other projects in shared directories
+    # Filter by project_name to avoid affecting other projects in shared directories
     if output_dir.exists():
-        stale.extend(_get_stale_from_output_manifests(output_dir, project_id=config.id))
+        stale.extend(_get_stale_from_output_manifests(output_dir, project_name=config.name))
 
     # Optionally check .colin/compiled/ for stale files (uses internal manifest)
     if include_compiled and compiled_dir.exists():
@@ -976,7 +927,7 @@ def _is_ignored_file(path: Path, scope_dir: Path | None = None) -> bool:
 
 def _get_stale_from_output_manifests(
     output_dir: Path,
-    project_id: str | None = None,
+    project_name: str | None = None,
 ) -> list[Path]:
     """Find stale files in output directory using output manifests.
 
@@ -986,7 +937,7 @@ def _get_stale_from_output_manifests(
 
     Args:
         output_dir: Output directory to scan.
-        project_id: If provided, only consider manifests belonging to this project.
+        project_name: If provided, only consider manifests belonging to this project.
             Used for project-scoped cleaning to avoid affecting other projects
             in shared output directories.
 
@@ -1001,10 +952,10 @@ def _get_stale_from_output_manifests(
         if manifest_data is None:
             continue
 
-        # If project_id filter is set, skip manifests from other projects
-        if project_id is not None:
-            manifest_project_id = manifest_data.get("project_id")
-            if manifest_project_id != project_id:
+        # If project_name filter is set, skip manifests from other projects
+        if project_name is not None:
+            manifest_project_name = manifest_data.get("project_name")
+            if manifest_project_name != project_name:
                 continue
 
         # This manifest owns its directory - check for stale files

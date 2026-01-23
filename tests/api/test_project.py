@@ -12,150 +12,11 @@ from colin.api.project import (
     _parse_vars,
     clean_project,
     create_output_target,
-    ensure_project_id,
-    generate_project_id,
     get_stale_files,
-    init_project,
     load_project,
     save_project,
 )
 from colin.output import TARGET_REGISTRY
-
-
-class TestProjectId:
-    """Tests for project ID generation and handling."""
-
-    def test_generate_project_id_format(self) -> None:
-        """Project ID has format {name}-{6 alphanumeric chars}."""
-        project_id = generate_project_id("my-project")
-
-        parts = project_id.rsplit("-", 1)
-        assert len(parts) == 2
-        assert parts[0] == "my-project"
-        assert len(parts[1]) == 6
-        assert parts[1].isalnum()
-        assert parts[1].islower() or parts[1].isdigit()
-
-    def test_generate_project_id_unique(self) -> None:
-        """Each call generates a unique ID."""
-        ids = {generate_project_id("test") for _ in range(100)}
-        assert len(ids) == 100
-
-    def test_ensure_project_id_returns_existing(self, tmp_path: Path) -> None:
-        """ensure_project_id returns existing ID without modification."""
-        config_file = tmp_path / "colin.toml"
-        config_file.write_text("""\
-[project]
-name = "test-project"
-id = "test-project-abc123"
-""")
-        config = load_project(config_file)
-
-        result = ensure_project_id(config, config_file)
-
-        assert result == "test-project-abc123"
-        # File should not be modified
-        content = config_file.read_text()
-        assert 'id = "test-project-abc123"' in content
-
-    def test_ensure_project_id_generates_and_saves(self, tmp_path: Path) -> None:
-        """ensure_project_id generates and saves ID when missing."""
-        config_file = tmp_path / "colin.toml"
-        config_file.write_text("""\
-[project]
-name = "test-project"
-""")
-        config = load_project(config_file)
-        assert config.id is None
-
-        result = ensure_project_id(config, config_file)
-
-        # ID should be generated
-        assert result.startswith("test-project-")
-        assert len(result.rsplit("-", 1)[1]) == 6
-
-        # Config should be updated
-        assert config.id == result
-
-        # File should be updated
-        reloaded = load_project(config_file)
-        assert reloaded.id == result
-
-    def test_load_project_with_id(self, tmp_path: Path) -> None:
-        """load_project reads ID from colin.toml."""
-        config_file = tmp_path / "colin.toml"
-        config_file.write_text("""\
-[project]
-name = "test-project"
-id = "test-project-x7k2m9"
-""")
-
-        config = load_project(config_file)
-
-        assert config.id == "test-project-x7k2m9"
-
-    def test_load_project_without_id(self, tmp_path: Path) -> None:
-        """load_project returns None when ID is missing."""
-        config_file = tmp_path / "colin.toml"
-        config_file.write_text("""\
-[project]
-name = "test-project"
-""")
-
-        config = load_project(config_file)
-
-        assert config.id is None
-
-    def test_save_project_with_id(self, tmp_path: Path) -> None:
-        """save_project writes ID to colin.toml."""
-        config_file = tmp_path / "colin.toml"
-
-        config = ProjectConfig(
-            name="test-project",
-            id="test-project-abc123",
-            project_root=tmp_path,
-            model_path=tmp_path / "models",
-            output_path=tmp_path / "output",
-            manifest_path=tmp_path / ".colin" / "manifest.json",
-        )
-
-        save_project(config_file, config)
-
-        content = config_file.read_text()
-        assert 'id = "test-project-abc123"' in content
-
-        reloaded = load_project(config_file)
-        assert reloaded.id == "test-project-abc123"
-
-    def test_save_project_without_id(self, tmp_path: Path) -> None:
-        """save_project omits ID when None."""
-        config_file = tmp_path / "colin.toml"
-
-        config = ProjectConfig(
-            name="test-project",
-            id=None,
-            project_root=tmp_path,
-            model_path=tmp_path / "models",
-            output_path=tmp_path / "output",
-            manifest_path=tmp_path / ".colin" / "manifest.json",
-        )
-
-        save_project(config_file, config)
-
-        content = config_file.read_text()
-        assert "id = " not in content
-
-    def test_init_project_generates_id(self, tmp_path: Path) -> None:
-        """init_project generates a project ID."""
-        project_dir = tmp_path / "new-project"
-        project_dir.mkdir()
-
-        config_file, _ = init_project(project_dir)
-        config = load_project(config_file)
-
-        assert config.id is not None
-        assert config.id.startswith("new-project-")
-        assert len(config.id.rsplit("-", 1)[1]) == 6
 
 
 class TestParseProviders:
@@ -777,7 +638,7 @@ class TestGetStaleFiles:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
+        config_file.write_text('[project]\nname = "test"')
         config = load_project(config_file)
 
         # Create output directory with files
@@ -787,7 +648,7 @@ class TestGetStaleFiles:
         (output_dir / "stale.txt").write_text("stale content")
 
         # Create output manifest that only tracks tracked.md
-        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
+        output_manifest = {"project_name": "test", "files": {"tracked.md": "abc123"}}
         (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
 
         # Create internal manifest (still needed)
@@ -805,7 +666,7 @@ class TestGetStaleFiles:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
+        config_file.write_text('[project]\nname = "test"')
         config = load_project(config_file)
 
         # Create output directory with tracked files
@@ -813,8 +674,8 @@ class TestGetStaleFiles:
         output_dir.mkdir()
         (output_dir / "tracked.md").write_text("tracked content")
 
-        # Create output manifest listing the file (matching project_id)
-        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
+        # Create output manifest listing the file (matching project_name)
+        output_manifest = {"project_name": "test", "files": {"tracked.md": "abc123"}}
         (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
 
         # Create internal manifest
@@ -832,7 +693,7 @@ class TestGetStaleFiles:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "project-a"\nid = "project-a-123"')
+        config_file.write_text('[project]\nname = "project-a"')
         config = load_project(config_file)
 
         # Create shared output directory (like ~/.claude/skills/)
@@ -844,7 +705,7 @@ class TestGetStaleFiles:
         project_a_dir.mkdir()
         (project_a_dir / "tracked.md").write_text("tracked")
         (project_a_dir / "stale.md").write_text("stale from project a")
-        manifest_a = {"project_id": "project-a-123", "files": {"tracked.md": "abc"}}
+        manifest_a = {"project_name": "project-a", "files": {"tracked.md": "abc"}}
         (project_a_dir / ".colin-manifest.json").write_text(json.dumps(manifest_a))
 
         # Project B's subdirectory with its own manifest
@@ -852,7 +713,7 @@ class TestGetStaleFiles:
         project_b_dir.mkdir()
         (project_b_dir / "tracked.md").write_text("tracked")
         (project_b_dir / "other-stale.md").write_text("stale from project b")
-        manifest_b = {"project_id": "project-b-456", "files": {"tracked.md": "def"}}
+        manifest_b = {"project_name": "project-b", "files": {"tracked.md": "def"}}
         (project_b_dir / ".colin-manifest.json").write_text(json.dumps(manifest_b))
 
         # Create internal manifest
@@ -874,7 +735,7 @@ class TestGetStaleFiles:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
+        config_file.write_text('[project]\nname = "test"')
         config = load_project(config_file)
 
         # Create output directory with files but no manifest
@@ -946,7 +807,7 @@ class TestCleanProject:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
+        config_file.write_text('[project]\nname = "test"')
         config = load_project(config_file)
 
         output_dir = tmp_path / "output"
@@ -957,7 +818,7 @@ class TestCleanProject:
         stale_file.write_text("stale")
 
         # Create output manifest
-        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
+        output_manifest = {"project_name": "test", "files": {"tracked.md": "abc123"}}
         (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
 
         colin_dir = tmp_path / ".colin"
@@ -976,7 +837,7 @@ class TestCleanProject:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
+        config_file.write_text('[project]\nname = "test"')
         config = load_project(config_file)
 
         colin_dir = tmp_path / ".colin"
@@ -1001,7 +862,7 @@ class TestCleanProject:
         import json
 
         config_file = tmp_path / "colin.toml"
-        config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
+        config_file.write_text('[project]\nname = "test"')
         config = load_project(config_file)
 
         output_dir = tmp_path / "output"
@@ -1011,7 +872,7 @@ class TestCleanProject:
         stale_output.write_text("stale")
 
         # Create output manifest
-        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
+        output_manifest = {"project_name": "test", "files": {"tracked.md": "abc123"}}
         (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
 
         colin_dir = tmp_path / ".colin"
