@@ -887,8 +887,9 @@ def get_stale_files(
     stale: list[Path] = []
 
     # Check output/ for stale files using output manifests
+    # Filter by project_id to avoid affecting other projects in shared directories
     if output_dir.exists():
-        stale.extend(_get_stale_from_output_manifests(output_dir))
+        stale.extend(_get_stale_from_output_manifests(output_dir, project_id=config.id))
 
     # Optionally check .colin/compiled/ for stale files (uses internal manifest)
     if include_compiled and compiled_dir.exists():
@@ -973,7 +974,10 @@ def _is_ignored_file(path: Path, scope_dir: Path | None = None) -> bool:
     return False
 
 
-def _get_stale_from_output_manifests(output_dir: Path) -> list[Path]:
+def _get_stale_from_output_manifests(
+    output_dir: Path,
+    project_id: str | None = None,
+) -> list[Path]:
     """Find stale files in output directory using output manifests.
 
     Scans for .colin-manifest.json files. Each manifest defines what files
@@ -982,6 +986,9 @@ def _get_stale_from_output_manifests(output_dir: Path) -> list[Path]:
 
     Args:
         output_dir: Output directory to scan.
+        project_id: If provided, only consider manifests belonging to this project.
+            Used for project-scoped cleaning to avoid affecting other projects
+            in shared output directories.
 
     Returns:
         List of stale file paths.
@@ -993,6 +1000,12 @@ def _get_stale_from_output_manifests(output_dir: Path) -> list[Path]:
         manifest_data = _load_output_manifest(manifest_path)
         if manifest_data is None:
             continue
+
+        # If project_id filter is set, skip manifests from other projects
+        if project_id is not None:
+            manifest_project_id = manifest_data.get("project_id")
+            if manifest_project_id != project_id:
+                continue
 
         # This manifest owns its directory - check for stale files
         scope_dir = manifest_path.parent

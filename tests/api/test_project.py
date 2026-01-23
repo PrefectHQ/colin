@@ -813,8 +813,8 @@ class TestGetStaleFiles:
         output_dir.mkdir()
         (output_dir / "tracked.md").write_text("tracked content")
 
-        # Create output manifest listing the file
-        output_manifest = {"project_id": "any-project", "files": {"tracked.md": "abc123"}}
+        # Create output manifest listing the file (matching project_id)
+        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
         (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
 
         # Create internal manifest
@@ -826,6 +826,48 @@ class TestGetStaleFiles:
 
         # File is tracked in manifest - not stale
         assert result == []
+
+    def test_project_scoped_stale_ignores_other_projects(self, tmp_path: Path) -> None:
+        """get_stale_files only returns stale files from this project's manifests."""
+        import json
+
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text('[project]\nname = "project-a"\nid = "project-a-123"')
+        config = load_project(config_file)
+
+        # Create shared output directory (like ~/.claude/skills/)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Project A's subdirectory with its manifest
+        project_a_dir = output_dir / "project-a"
+        project_a_dir.mkdir()
+        (project_a_dir / "tracked.md").write_text("tracked")
+        (project_a_dir / "stale.md").write_text("stale from project a")
+        manifest_a = {"project_id": "project-a-123", "files": {"tracked.md": "abc"}}
+        (project_a_dir / ".colin-manifest.json").write_text(json.dumps(manifest_a))
+
+        # Project B's subdirectory with its own manifest
+        project_b_dir = output_dir / "project-b"
+        project_b_dir.mkdir()
+        (project_b_dir / "tracked.md").write_text("tracked")
+        (project_b_dir / "other-stale.md").write_text("stale from project b")
+        manifest_b = {"project_id": "project-b-456", "files": {"tracked.md": "def"}}
+        (project_b_dir / ".colin-manifest.json").write_text(json.dumps(manifest_b))
+
+        # Create internal manifest
+        colin_dir = tmp_path / ".colin"
+        colin_dir.mkdir()
+        (colin_dir / "manifest.json").write_text(json.dumps({"documents": {}}))
+
+        # Get stale files for project A - should only return project A's stale file
+        result = get_stale_files(config)
+
+        assert len(result) == 1
+        assert result[0].name == "stale.md"
+        assert "project-a" in str(result[0])
+        # Should NOT include project B's stale file
+        assert not any("project-b" in str(p) for p in result)
 
     def test_no_output_manifest_returns_empty(self, tmp_path: Path) -> None:
         """Without output manifest, no files are considered stale in output/."""
