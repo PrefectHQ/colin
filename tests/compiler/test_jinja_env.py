@@ -1,11 +1,18 @@
 """Tests for Jinja environment bindings."""
 
+import json
 from pathlib import Path
+
+import pytest
 
 from colin.api.project import ProjectConfig
 from colin.compiler.context import CompileContext
 from colin.compiler.extensions.filters import create_llm_extract_filter
-from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
+from colin.compiler.jinja_env import (
+    bind_context_to_environment,
+    create_jinja_environment,
+    from_json,
+)
 from colin.models import Manifest
 from colin.providers.http import HTTPProvider
 from colin.providers.llm import LLMProvider
@@ -130,3 +137,47 @@ async def test_llm_extract_filter_respects_explicit_cache_id(tmp_path: Path) -> 
 
     # Explicit ID used, auto counter continues
     assert captured_position_ids == ["extract_1", "custom_id", "extract_3"]
+
+
+class TestFromJsonFilter:
+    """Tests for from_json Jinja filter."""
+
+    def test_parses_object(self) -> None:
+        """from_json parses JSON object."""
+        result = from_json('{"name": "test", "count": 42}')
+        assert result == {"name": "test", "count": 42}
+
+    def test_parses_array(self) -> None:
+        """from_json parses JSON array."""
+        result = from_json("[1, 2, 3]")
+        assert result == [1, 2, 3]
+
+    def test_parses_string(self) -> None:
+        """from_json parses JSON string."""
+        result = from_json('"hello"')
+        assert result == "hello"
+
+    def test_parses_number(self) -> None:
+        """from_json parses JSON number."""
+        result = from_json("42")
+        assert result == 42
+
+    def test_parses_boolean(self) -> None:
+        """from_json parses JSON boolean."""
+        assert from_json("true") is True
+        assert from_json("false") is False
+
+    def test_parses_null(self) -> None:
+        """from_json parses JSON null."""
+        assert from_json("null") is None
+
+    def test_raises_on_invalid_json(self) -> None:
+        """from_json raises on invalid JSON."""
+        with pytest.raises(json.JSONDecodeError):
+            from_json("not valid json")
+
+    def test_filter_registered_in_environment(self) -> None:
+        """from_json filter registered in environment."""
+        env = create_jinja_environment()
+        assert "from_json" in env.filters
+        assert env.filters["from_json"] is from_json

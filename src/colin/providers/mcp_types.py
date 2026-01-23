@@ -41,3 +41,45 @@ class MCPServerInfo:
 
     website_url: str | None = None
     """Optional website URL for this server."""
+
+
+@dataclass
+class MCPResourceInfo:
+    """Lightweight resource info from list_resources()."""
+
+    uri: str
+    """Full MCP resource URI."""
+
+    name: str | None = None
+    """Resource name."""
+
+    description: str | None = None
+    """Optional description from server."""
+
+    mime_type: str | None = None
+    """MIME type of the resource content."""
+
+
+@dataclass
+class SkillFileInfo:
+    """A file within a skill."""
+
+    path: str
+    """Relative path within the skill (e.g., 'SKILL.md', 'tools/deploy.md')."""
+
+    hash: str | None = None
+    """SHA256 hash for change detection."""
+
+
+@dataclass
+class SkillInfo:
+    """Skill discovered from MCP server via skill:// scheme."""
+
+    name: str
+    """Skill identifier (from skill://{name}/...)."""
+
+    description: str | None = None
+    """Skill description from SKILL.md resource."""
+
+    files: list[SkillFileInfo] = field(default_factory=list)
+    """Files in this skill from manifest."""

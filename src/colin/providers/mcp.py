@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from typing import Any, ClassVar
@@ -15,7 +17,13 @@ from typing_extensions import Self
 from colin.compiler.cache import get_compile_context
 from colin.models import Ref
 from colin.providers.base import Provider
-from colin.providers.mcp_types import MCPServerConfig, MCPServerInfo
+from colin.providers.mcp_types import (
+    MCPResourceInfo,
+    MCPServerConfig,
+    MCPServerInfo,
+    SkillFileInfo,
+    SkillInfo,
+)
 from colin.resources import Resource
 
 # TypeAdapter for parsing MCP server config from TOML
@@ -114,10 +122,16 @@ class MCPProvider(Provider):
         """
         if not name:
             raise ValueError("MCP provider requires an instance name")
-        # Set keep_alive=False for stdio servers to ensure proper subprocess cleanup
-        # and avoid "Event loop is closed" warnings during shutdown.
-        if "command" in config and "keep_alive" not in config:
-            config = {**config, "keep_alive": False}
+        # For stdio servers, configure sensible defaults
+        if "command" in config:
+            # Set keep_alive=False to ensure proper subprocess cleanup
+            # and avoid "Event loop is closed" warnings during shutdown.
+            if "keep_alive" not in config:
+                config = {**config, "keep_alive": False}
+            # Suppress FastMCP server banner in subprocess output
+            env = config.get("env", {})
+            if "FASTMCP_SHOW_SERVER_BANNER" not in env:
+                config = {**config, "env": {**env, "FASTMCP_SHOW_SERVER_BANNER": "0"}}
         server = MCPServerAdapter.validate_python(config)
         return cls(name, server)
 
@@ -175,12 +189,15 @@ class MCPProvider(Provider):
     async def get_ref_version(self, ref: Ref) -> str:
         """Get current version for a ref.
 
-        For list_tools and server_info, we compute versions directly
-        without returning full Resource objects.
+        For list_tools, list_resources, and server_info, we compute versions
+        directly without returning full Resource objects.
         """
         if ref.method == "list_tools":
             tools = await self.list_tools(watch=False)
             return str(len(tools))
+        elif ref.method == "list_resources":
+            resources = await self.list_resources(watch=False)
+            return str(len(resources))
         elif ref.method == "server_info":
             info = await self.server_info(watch=False)
             return info.version
@@ -227,6 +244,106 @@ class MCPProvider(Provider):
                 compile_ctx.track(ref, resource.version)
 
             return resource
+
+    @validate_call
+    async def list_resources(self, watch: bool = True) -> list[MCPResourceInfo]:
+        """List available resources from the MCP server.
+
+        Returns lightweight resource info (URI, name, description) without
+        fetching full content. Use resource() to fetch specific resources.
+
+        Args:
+            watch: Whether to track this ref for staleness (default True).
+
+        Returns:
+            List of MCPResourceInfo objects.
+        """
+        compile_ctx = get_compile_context()
+        doc_state = compile_ctx.doc_state if compile_ctx else None
+        op = (
+            doc_state.child("mcp", detail=f"{self._connection}.list_resources")
+            if doc_state
+            else None
+        )
+
+        with op if op else nullcontext():
+            client = self._require_client()
+            resources = await client.list_resources()
+
+            if watch and compile_ctx:
+                ref = Ref(
+                    provider=self.namespace,
+                    connection=self._connection,
+                    method="list_resources",
+                    args={},
+                )
+                # Use resource count as version indicator
+                compile_ctx.track(ref, str(len(resources)))
+
+            return [
+                MCPResourceInfo(
+                    uri=str(r.uri),
+                    name=r.name,
+                    description=r.description,
+                    mime_type=r.mimeType,
+                )
+                for r in resources
+            ]
+
+    async def list_skills(self, watch: bool = True) -> list[SkillInfo]:
+        """List skills available from this MCP server.
+
+        Discovers skills by finding resources matching skill://{name}/SKILL.md
+        and fetching their manifests. Each manifest is tracked as a ref.
+
+        Args:
+            watch: Whether to track refs for staleness (default True).
+
+        Returns:
+            List of SkillInfo objects with name, description, and file list.
+        """
+        compile_ctx = get_compile_context()
+        doc_state = compile_ctx.doc_state if compile_ctx else None
+        op = doc_state.child("mcp", detail=f"{self._connection}.list_skills") if doc_state else None
+
+        with op if op else nullcontext():
+            # Get all resources (don't track list itself, we track individual manifests)
+            resources = await self.list_resources(watch=False)
+            skills = []
+
+            for r in resources:
+                # Match skill://{name}/SKILL.md pattern
+                match = re.match(r"^skill://([^/]+)/SKILL\.md$", r.uri)
+                if not match:
+                    continue
+
+                skill_name = match.group(1)
+
+                # Fetch manifest for file list
+                manifest_uri = f"skill://{skill_name}/_manifest"
+                try:
+                    manifest_resource = await self.resource(manifest_uri, watch=watch)
+                    manifest_data = json.loads(manifest_resource.content)
+                    files = [
+                        SkillFileInfo(
+                            path=f.get("path", ""),
+                            hash=f.get("hash"),
+                        )
+                        for f in manifest_data.get("files", [])
+                    ]
+                except Exception:
+                    # If manifest fails, still include skill with just SKILL.md
+                    files = [SkillFileInfo(path="SKILL.md")]
+
+                skills.append(
+                    SkillInfo(
+                        name=skill_name,
+                        description=r.description,
+                        files=files,
+                    )
+                )
+
+            return skills
 
     @validate_call
     async def prompt(self, name: str, watch: bool = True, **arguments: str) -> MCPPrompt:
@@ -375,6 +492,8 @@ class MCPProvider(Provider):
     def get_functions(self) -> dict[str, Callable[..., Awaitable[object]]]:
         return {
             "resource": self.resource,
+            "list_resources": self.list_resources,
+            "list_skills": self.list_skills,
             "prompt": self.prompt,
             "list_tools": self.list_tools,
             "server_info": self.server_info,

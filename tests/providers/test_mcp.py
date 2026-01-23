@@ -7,7 +7,13 @@ compiler.engine -> providers.manager -> mcp.py).
 
 import pytest
 
-from colin.providers.mcp_types import MCPServerConfig, MCPServerInfo
+from colin.providers.mcp_types import (
+    MCPResourceInfo,
+    MCPServerConfig,
+    MCPServerInfo,
+    SkillFileInfo,
+    SkillInfo,
+)
 
 
 class TestMCPProvider:
@@ -74,6 +80,8 @@ class TestMCPProvider:
         functions = provider.get_functions()
 
         assert "resource" in functions
+        assert "list_resources" in functions
+        assert "list_skills" in functions
         assert "prompt" in functions
         assert "list_tools" in functions
         assert "server_info" in functions
@@ -173,7 +181,9 @@ class TestMCPProviderConfig:
 
         assert config.command == "npx"
         assert config.args == ["-y", "@mcp/server"]
-        assert config.env == {"API_KEY": "secret"}
+        # User env is preserved, banner suppression added automatically
+        assert config.env["API_KEY"] == "secret"
+        assert config.env["FASTMCP_SHOW_SERVER_BANNER"] == "0"
         assert config.url is None
 
     async def test_config_for_remote_server(self, MCPProvider) -> None:
@@ -200,7 +210,8 @@ class TestMCPProviderConfig:
 
         assert config.command == "mcp-server"
         assert config.args == []
-        assert config.env == {}
+        # Banner suppression added automatically for stdio servers
+        assert config.env == {"FASTMCP_SHOW_SERVER_BANNER": "0"}
 
 
 class TestMCPProviderValidation:
@@ -244,3 +255,79 @@ class TestMCPProviderValidation:
             MCPProvider.from_config(
                 "test", {"url": "http://example.com", "headers": ["not", "dict"]}
             )
+
+
+class TestMCPResourceInfo:
+    """Tests for MCPResourceInfo dataclass."""
+
+    def test_required_uri(self) -> None:
+        """MCPResourceInfo requires uri."""
+        info = MCPResourceInfo(uri="skill://test/SKILL.md")
+
+        assert info.uri == "skill://test/SKILL.md"
+        assert info.name is None
+        assert info.description is None
+        assert info.mime_type is None
+
+    def test_all_fields(self) -> None:
+        """MCPResourceInfo with all optional fields."""
+        info = MCPResourceInfo(
+            uri="skill://test/SKILL.md",
+            name="SKILL.md",
+            description="Test skill",
+            mime_type="text/markdown",
+        )
+
+        assert info.uri == "skill://test/SKILL.md"
+        assert info.name == "SKILL.md"
+        assert info.description == "Test skill"
+        assert info.mime_type == "text/markdown"
+
+
+class TestSkillFileInfo:
+    """Tests for SkillFileInfo dataclass."""
+
+    def test_required_path(self) -> None:
+        """SkillFileInfo requires path."""
+        info = SkillFileInfo(path="SKILL.md")
+
+        assert info.path == "SKILL.md"
+        assert info.hash is None
+
+    def test_with_hash(self) -> None:
+        """SkillFileInfo with hash."""
+        info = SkillFileInfo(path="tools/deploy.md", hash="abc123def456")
+
+        assert info.path == "tools/deploy.md"
+        assert info.hash == "abc123def456"
+
+
+class TestSkillInfo:
+    """Tests for SkillInfo dataclass."""
+
+    def test_required_name(self) -> None:
+        """SkillInfo requires name."""
+        info = SkillInfo(name="my-skill")
+
+        assert info.name == "my-skill"
+        assert info.description is None
+        assert info.files == []
+
+    def test_with_files(self) -> None:
+        """SkillInfo with files."""
+        info = SkillInfo(
+            name="my-skill",
+            description="A test skill",
+            files=[
+                SkillFileInfo(path="SKILL.md", hash="abc123"),
+                SkillFileInfo(path="tools/run.md"),
+            ],
+        )
+
+        assert info.name == "my-skill"
+        assert info.description == "A test skill"
+        assert len(info.files) == 2
+        assert info.files[0].path == "SKILL.md"
+        assert info.files[0].hash == "abc123"
+        assert info.files[1].path == "tools/run.md"
+        assert info.files[1].hash is None

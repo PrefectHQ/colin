@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -112,6 +113,17 @@ def _wrap_provider_functions(
                     )
 
 
+def from_json(value: str) -> Any:
+    """Parse JSON string to Python object.
+
+    Usage in templates:
+        {{ resource.content | from_json }}
+        {% set data = resource.content | from_json %}
+        {{ data.field }}
+    """
+    return json.loads(value)
+
+
 def create_jinja_environment() -> Environment:
     """Create an async-enabled Jinja environment with Colin extensions.
 
@@ -130,6 +142,8 @@ def create_jinja_environment() -> Environment:
         # Don't auto-escape for markdown output
         autoescape=False,
     )
+    # Utility filters
+    env.filters["from_json"] = from_json
     return env
 
 
