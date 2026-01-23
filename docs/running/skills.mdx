@@ -252,4 +252,29 @@ command = "npx"
 args = ["@anthropic/mcp-server-notion"]
 ```
 
-Run `colin run` and the skill appears in Claude Code immediately. Set up a cron job or CI step to keep it current.
+Run `colin run` and the skill appears in Claude Code immediately.
+
+## Updating Skills
+
+The `colin skills update` command refreshes all Colin-managed skills:
+
+```bash
+colin skills update
+```
+
+Colin scans `~/.claude/skills/` (or another specified directory), finds all subdirectories with Colin manifests, and updates them in parallel. Each manifest stores its source project location, so Colin knows where to find the original templates.
+
+Specify a different skills directory:
+
+```bash
+colin skills update ~/.codex/skills/
+```
+
+Automate with cron to keep skills fresh:
+
+```bash
+# Update skills every hour
+0 * * * * colin skills update -q
+```
+
+This enables a workflow where skills are "installed" once and updated automatically as their sources change. Developers can maintain skill projects centrally while agents receive updates wherever they run.
