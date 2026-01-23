@@ -562,7 +562,7 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "cyclopts", specifier = ">=4.0.0" },
-    { name = "fastmcp", git = "https://github.com/jlowin/fastmcp?rev=main" },
+    { name = "fastmcp", specifier = "==3.0.0b1" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pathspec", specifier = ">=1.0.3" },
@@ -838,8 +838,8 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "3.0.0b2.dev20+b77484e1"
-source = { git = "https://github.com/jlowin/fastmcp?rev=main#b77484e1a7f9fe42715f5d2f36e40d26cbbf1355" }
+version = "3.0.0b1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
     { name = "cyclopts" },
@@ -860,6 +860,10 @@ dependencies = [
     { name = "uvicorn" },
     { name = "watchfiles" },
     { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b6/b4/8b44030f3697ed1d106c79eedcf640451b8060cb52cc4f079d8ad3a2ef76/fastmcp-3.0.0b1.tar.gz", hash = "sha256:adeda5562a23cde8b3607b73ebccfe27efa3c2955eb2c03b0cdd551128b7eaaf", size = 11817449, upload-time = "2026-01-20T05:00:49.872Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/23/9836025d2b8070cae295c805f51d9fd9da9228584c85290d8fef44d1cb34/fastmcp-3.0.0b1-py3-none-any.whl", hash = "sha256:e64dd54e94411ccc6ff63459eace8e55c79d15647917bc0c178414a642089750", size = 533457, upload-time = "2026-01-20T05:00:52.153Z" },
 ]
 
 [[package]]
