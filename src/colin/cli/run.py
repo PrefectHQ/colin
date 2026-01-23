@@ -1,9 +1,11 @@
 """Run, init, and clean commands."""
 
 import asyncio
+import hashlib
 import json
 import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -22,6 +24,7 @@ from rich.tree import Tree
 
 import colin
 from colin.api.compile import CompileResult, compile_project
+from colin.api.manifest import load_manifest
 from colin.api.project import (
     VarConfig,
     clean_output_directory,
@@ -1005,3 +1008,197 @@ def clean(
     console.print("[bold]Removed:[/]")
     for path in removed:
         console.print(f"  [dim]{format_path(path)}[/]")
+
+
+def _format_time_ago(dt: datetime) -> str:
+    """Format a datetime as a human-readable 'time ago' string."""
+    now = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    delta = now - dt
+    seconds = delta.total_seconds()
+
+    if seconds < 60:
+        return "just now"
+    elif seconds < 3600:
+        mins = int(seconds / 60)
+        return f"{mins}m ago"
+    elif seconds < 86400:
+        hours = int(seconds / 3600)
+        return f"{hours}h ago"
+    elif seconds < 604800:
+        days = int(seconds / 86400)
+        return f"{days}d ago"
+    else:
+        return dt.strftime("%Y-%m-%d")
+
+
+def _check_staleness(project_dir: Path, check_refs: bool = True) -> tuple[list[str], list[str]]:
+    """Check which documents are stale.
+
+    Args:
+        project_dir: Project root directory.
+        check_refs: Also check if internal ref targets changed.
+
+    Returns:
+        Tuple of (source_changed, ref_stale) lists of relative paths.
+    """
+    manifest_path = project_dir / ".colin" / "manifest.json"
+    if not manifest_path.exists():
+        return [], []
+
+    manifest = load_manifest(manifest_path)
+    models_dir = project_dir / "models"
+    source_changed: list[str] = []
+    ref_stale: list[str] = []
+
+    # Build map of uri -> current output_hash for ref checking
+    current_hashes: dict[str, str] = {}
+    for doc_uri, doc_meta in manifest.documents.items():
+        if doc_meta.output_hash:
+            current_hashes[doc_uri] = doc_meta.output_hash
+
+    for doc_uri, doc_meta in manifest.documents.items():
+        if not doc_uri.startswith("project://"):
+            continue
+
+        rel_path = doc_uri[len("project://") :]
+        source_path = models_dir / rel_path
+
+        # Check source hash
+        if not source_path.exists():
+            source_changed.append(rel_path)
+            continue
+
+        current_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()[:16]
+        if current_hash != doc_meta.source_hash:
+            source_changed.append(rel_path)
+            continue
+
+        # Check internal refs (project:// refs only)
+        if check_refs and doc_meta.ref_versions:
+            for ref in doc_meta.refs:
+                if ref.provider != "project":
+                    continue  # Skip external refs
+                ref_path = ref.args.get("path", "")
+                ref_uri = f"project://{ref_path}"
+                old_version = doc_meta.ref_versions.get(ref.key())
+                current_version = current_hashes.get(ref_uri)
+                if old_version and current_version and old_version != current_version:
+                    ref_stale.append(rel_path)
+                    break
+
+    return source_changed, ref_stale
+
+
+def status(
+    directory: Path = Path("."),
+    *,
+    skip_refs: Annotated[bool, cyclopts.Parameter(name=["--skip-refs"])] = False,
+) -> None:
+    """Show status of a project or skill.
+
+    Detects whether the directory is a Colin project or a compiled skill,
+    and shows relevant information including staleness.
+
+    Args:
+        directory: Directory to check (default: current directory).
+        skip_refs: Skip ref staleness check (faster, but may miss stale refs).
+    """
+    target_dir = directory.resolve()
+
+    # Check for project (colin.toml)
+    project_file = find_project_file(target_dir)
+
+    # Check for skill/output (.colin-manifest.json)
+    manifest_file = target_dir / ".colin-manifest.json"
+
+    if project_file:
+        # Project mode
+        config = load_project(project_file)
+        manifest_path = config.manifest_path
+
+        console.print(f"[cyan]Project:[/] {config.name}")
+        console.print(f"[dim]Config:[/]  {project_file}")
+        console.print(f"[dim]Output:[/]  {config.output_path}")
+
+        if manifest_path.exists():
+            manifest = load_manifest(manifest_path)
+            doc_count = len(manifest.documents)
+
+            # Get last compile time
+            if manifest.compiled_at:
+                compiled_ago = _format_time_ago(manifest.compiled_at)
+                console.print(f"[dim]Compiled:[/] {compiled_ago}")
+            console.print(f"[dim]Documents:[/] {doc_count}")
+
+            # Check for staleness
+            check_refs = not skip_refs
+            source_changed, ref_stale = _check_staleness(config.project_root, check_refs=check_refs)
+
+            if source_changed or ref_stale:
+                total = len(set(source_changed) | set(ref_stale))
+                console.print(f"[yellow]Status:[/] stale ({total} document(s) need recompilation)")
+                for path in source_changed[:3]:
+                    console.print(f"  [dim]{path}[/] (source changed)")
+                for path in ref_stale[:3]:
+                    if path not in source_changed:
+                        console.print(f"  [dim]{path}[/] (ref changed)")
+                shown = len(source_changed[:3]) + len(
+                    [p for p in ref_stale[:3] if p not in source_changed]
+                )
+                if total > shown:
+                    console.print(f"  [dim]...and {total - shown} more[/]")
+            else:
+                console.print("[green]Status:[/] fresh")
+        else:
+            console.print("[yellow]Status:[/] never compiled")
+
+    elif manifest_file.exists():
+        # Skill/output mode
+        manifest_data = json.loads(manifest_file.read_text())
+        project_name = manifest_data.get("project_name", target_dir.name)
+        project_config = manifest_data.get("project_config", "")
+
+        console.print(f"[cyan]Skill:[/] {project_name}")
+        console.print(f"[dim]Location:[/] {target_dir}")
+
+        if project_config:
+            project_path = Path(project_config)
+            # Abbreviate home dir
+            try:
+                source_str = f"~/{project_path.parent.relative_to(Path.home())}"
+            except ValueError:
+                source_str = str(project_path.parent)
+            console.print(f"[dim]Source:[/] {source_str}")
+
+            # Check staleness
+            if project_path.exists():
+                project_dir = project_path.parent
+                check_refs = not skip_refs
+                source_changed, ref_stale = _check_staleness(project_dir, check_refs=check_refs)
+                total = len(set(source_changed) | set(ref_stale))
+                if total > 0:
+                    console.print(
+                        f"[yellow]Status:[/] stale ({total} document(s) need recompilation)"
+                    )
+                else:
+                    console.print("[green]Status:[/] fresh")
+            else:
+                console.print("[yellow]Status:[/] stale (source not found)")
+        else:
+            console.print("[yellow]Status:[/] no source configured")
+
+        # Show last updated time from manifest file mtime
+        try:
+            mtime = datetime.fromtimestamp(manifest_file.stat().st_mtime, tz=timezone.utc)
+            console.print(f"[dim]Updated:[/] {_format_time_ago(mtime)}")
+        except OSError:
+            pass
+
+    else:
+        err_console.print(
+            f"[red]Error:[/] No colin.toml or .colin-manifest.json found in {target_dir}"
+        )
+        sys.exit(1)

@@ -19,6 +19,7 @@ app.command(run.run)
 app.command(run.update)
 app.command(run.init)
 app.command(run.clean)
+app.command(run.status)
 
 # Register subcommand groups
 app.command(mcp.app, name="mcp")
