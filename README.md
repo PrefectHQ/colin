@@ -43,7 +43,7 @@ pip install colin-context
 
 ## Documentation
 
-Full documentation at [gocolin.dev](https://gocolin.dev).
+Full documentation at [colin.prefect.io/docs](https://colin.prefect.io/docs).
 
 ## Quick Start
 
