@@ -89,12 +89,16 @@ headers = { Authorization = "Bearer ${API_TOKEN}" }
 
 ## Template Functions
 
-Each MCP server exposes two functions through its namespace:
+Each MCP server exposes these functions through its namespace:
 
 | Function | Purpose |
 | :------- | :------ |
 | `resource()` | Fetch a resource from the server |
+| `list_resources()` | List available resources |
+| `list_skills()` | Discover skills from skill servers |
 | `prompt()` | Retrieve a prompt template from the server |
+| `list_tools()` | List available tools |
+| `server_info()` | Get server metadata |
 
 ### Resource
 
@@ -161,9 +165,75 @@ name: Code Analysis
 
 The function returns an `MCPPrompt` object with similar properties to `MCPResource`. Prompt arguments are passed as keyword parameters after the prompt name.
 
+### List Resources
+
+Use `colin.mcp.<name>.list_resources()` to discover available resources from a server:
+
+```markdown
+{% set resources = colin.mcp.github.list_resources() %}
+{% for r in resources %}
+- {{ r.uri }}: {{ r.description or "No description" }}
+{% endfor %}
+```
+
+Returns a list of `MCPResourceInfo` objects with lightweight metadata (no content fetched):
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `uri` | `str` | Full MCP URI |
+| `name` | `str \| None` | Resource name |
+| `description` | `str \| None` | Optional description |
+| `mime_type` | `str \| None` | MIME type |
+
+### List Skills
+
+For MCP servers that serve skills using the `skill://` scheme (like FastMCP skill servers), use `list_skills()` to discover and download skills:
+
+```markdown
+{% for skill in colin.mcp.source.list_skills() %}
+# {{ skill.name }}
+{{ skill.description or "No description" }}
+
+Files:
+{% for file in skill.files %}
+- {{ file.path }}{% if file.hash %} ({{ file.hash[:8] }}){% endif %}
+{% endfor %}
+{% endfor %}
+```
+
+This method:
+1. Finds resources matching `skill://{name}/SKILL.md`
+2. Fetches manifests from `skill://{name}/_manifest`
+3. Returns `SkillInfo` objects with file lists
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `name` | `str` | Skill identifier |
+| `description` | `str \| None` | Skill description |
+| `files` | `list[SkillFileInfo]` | Files in the skill |
+
+Each `SkillFileInfo` has:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `path` | `str` | Relative file path |
+| `hash` | `str \| None` | Content hash for change detection |
+
+Use `list_skills()` with `resource()` to download skill content:
+
+```markdown
+{% for skill in colin.mcp.source.list_skills() %}
+{% for file in skill.files %}
+{% file skill.name ~ "/" ~ file.path %}
+{{ colin.mcp.source.resource('skill://' ~ skill.name ~ '/' ~ file.path).content }}
+{% endfile %}
+{% endfor %}
+{% endfor %}
+```
+
 ## Objects
 
-The MCP provider introduces two domain objects:
+The MCP provider introduces these domain objects:
 
 **MCPResource** - Returned by `resource()`:
 
@@ -173,19 +243,39 @@ The MCP provider introduces two domain objects:
 | `content` | `str` | Resource content |
 | `name` | `str` | Resource name |
 | `description` | `str \| None` | Optional description |
-| `updated` | `datetime \| None` | Last update time |
 
 **MCPPrompt** - Returned by `prompt()`:
 
 | Property | Type | Description |
 | :------- | :--- | :---------- |
-| `uri` | `str` | Full MCP URI |
 | `content` | `str` | Prompt content |
 | `name` | `str` | Prompt name |
+| `arguments` | `dict` | Arguments passed to the prompt |
 | `description` | `str \| None` | Optional description |
-| `updated` | `datetime \| None` | Retrieval time |
 
-Both objects support conversion to `RefResult` via the `to_ref_result()` method.
+**MCPResourceInfo** - Returned by `list_resources()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `uri` | `str` | Full MCP URI |
+| `name` | `str \| None` | Resource name |
+| `description` | `str \| None` | Optional description |
+| `mime_type` | `str \| None` | MIME type |
+
+**SkillInfo** - Returned by `list_skills()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `name` | `str` | Skill identifier |
+| `description` | `str \| None` | Skill description |
+| `files` | `list[SkillFileInfo]` | Files in the skill |
+
+**SkillFileInfo** - Files within a skill:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `path` | `str` | Relative file path |
+| `hash` | `str \| None` | Content hash |
 
 ## Dependency Tracking
 
