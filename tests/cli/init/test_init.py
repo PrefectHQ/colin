@@ -115,6 +115,9 @@ def test_init_allows_ignored_files(tmp_path: Path, monkeypatch, cli: Callable[..
     (tmp_path / ".git").mkdir()
     (tmp_path / ".venv").mkdir()
     (tmp_path / "__pycache__").mkdir()
+    (tmp_path / ".gitignore").write_text("*.pyc\n")
+    (tmp_path / ".vscode").mkdir()
+    (tmp_path / ".idea").mkdir()
 
     cli("init")
 

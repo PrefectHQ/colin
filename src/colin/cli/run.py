@@ -794,7 +794,19 @@ def init(
     # Check if directory has existing files (guard against accidental overwrites)
     if project_dir.exists():
         # Files/directories to ignore when checking if directory is empty
-        ignored = {".git", ".venv", "venv", "__pycache__", ".DS_Store", ".python-version"}
+        ignored = {
+            ".git",
+            ".gitignore",
+            ".gitattributes",
+            ".venv",
+            "venv",
+            "__pycache__",
+            ".DS_Store",
+            ".python-version",
+            ".idea",
+            ".vscode",
+            ".editorconfig",
+        }
         existing = [f.name for f in project_dir.iterdir() if f.name not in ignored]
         if existing:
             err_console.print(
