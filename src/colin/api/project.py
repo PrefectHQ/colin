@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import re
 import secrets
 import string
 from pathlib import Path
@@ -23,6 +25,47 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 VarType = Literal["string", "bool", "int", "float", "date", "timestamp"]
+
+# Pattern for ${VAR_NAME} environment variable references
+_ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
+
+
+def _expand_env_vars(value: str) -> str:
+    """Expand ${VAR_NAME} patterns in a string with environment variable values.
+
+    Args:
+        value: String potentially containing ${VAR_NAME} patterns.
+
+    Returns:
+        String with env vars expanded. Unset vars become empty string.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        var_name = match.group(1)
+        return os.environ.get(var_name, "")
+
+    return _ENV_VAR_PATTERN.sub(replace, value)
+
+
+def _expand_env_vars_recursive(data: Any) -> Any:
+    """Recursively expand environment variables in a data structure.
+
+    Processes dicts, lists, and strings. Other types pass through unchanged.
+
+    Args:
+        data: Data structure (typically from TOML parsing).
+
+    Returns:
+        Same structure with ${VAR_NAME} patterns expanded in strings.
+    """
+    if isinstance(data, dict):
+        return {k: _expand_env_vars_recursive(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_expand_env_vars_recursive(item) for item in data]
+    elif isinstance(data, str):
+        return _expand_env_vars(data)
+    else:
+        return data
 
 
 def generate_project_id(name: str) -> str:
@@ -233,7 +276,10 @@ class ProviderInstanceConfig(BaseModel):
     to ['{provider_type}.{name}'] for named instances or ['{provider_type}'] for unnamed."""
 
     config: dict[str, Any] = Field(default_factory=dict)
-    """Provider-specific configuration."""
+    """Provider-specific configuration (with env vars expanded)."""
+
+    raw_config: dict[str, Any] = Field(default_factory=dict)
+    """Original configuration before env var expansion (for serialization)."""
 
     @model_validator(mode="after")
     def _validate_names(self) -> ProviderInstanceConfig:
@@ -334,7 +380,10 @@ def find_project_file(start: Path | None = None) -> Path | None:
     return None
 
 
-def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstanceConfig]:
+def _parse_providers(
+    providers_data: dict[str, Any],
+    raw_providers_data: dict[str, Any] | None = None,
+) -> dict[str, ProviderInstanceConfig]:
     """Parse [[providers.*]] configuration into ProviderInstanceConfig instances.
 
     Each provider type uses array-of-table entries:
@@ -343,12 +392,17 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
     - [[providers.s3]] schemes = ['s3', 's3.prod'] → explicit schemes
 
     Args:
-        providers_data: Raw providers section from TOML.
+        providers_data: Providers section from TOML (with env vars expanded).
+        raw_providers_data: Original providers section before env var expansion.
+            Used for serialization to avoid leaking secrets.
 
     Returns:
         Dictionary mapping scheme to ProviderInstanceConfig.
         If multiple instances claim the same scheme, last one wins with a warning.
     """
+    if raw_providers_data is None:
+        raw_providers_data = providers_data
+
     result: dict[str, ProviderInstanceConfig] = {}
     defaults_seen: set[str] = set()
     names_seen: dict[str, set[str]] = {}
@@ -360,7 +414,9 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
                 f"([[providers.{provider_type}]])"
             )
 
-        for entry in value:
+        raw_entries = raw_providers_data.get(provider_type, [])
+
+        for idx, entry in enumerate(value):
             if not isinstance(entry, dict):
                 raise ValueError(
                     f"Provider config for {provider_type} must be a table, got {type(entry)}"
@@ -383,11 +439,18 @@ def _parse_providers(providers_data: dict[str, Any]) -> dict[str, ProviderInstan
 
             config = {key: val for key, val in entry.items() if key not in {"name", "schemes"}}
 
+            # Get raw config for serialization (preserves ${VAR} patterns)
+            raw_entry = raw_entries[idx] if idx < len(raw_entries) else entry
+            raw_config = {
+                key: val for key, val in raw_entry.items() if key not in {"name", "schemes"}
+            }
+
             instance = ProviderInstanceConfig(
                 provider_type=provider_type,
                 name=name,
                 schemes=schemes,
                 config=config,
+                raw_config=raw_config,
             )
 
             # Register all schemes for this instance
@@ -466,6 +529,12 @@ def load_project(path: Path) -> ProjectConfig:
     with open(path, "rb") as f:
         data = tomli.load(f)
 
+    # Keep raw providers data before expansion (for serialization without leaking secrets)
+    raw_providers_data = data.get("providers", {})
+
+    # Expand ${VAR_NAME} patterns with environment variable values
+    data = _expand_env_vars_recursive(data)
+
     if "mcp" in data:
         raise ValueError("MCP servers must be configured under [[providers.mcp]]")
 
@@ -515,7 +584,7 @@ def load_project(path: Path) -> ProjectConfig:
 
     # Parse provider instances
     providers_data = data.get("providers", {})
-    providers = _parse_providers(providers_data)
+    providers = _parse_providers(providers_data, raw_providers_data)
 
     # Parse project variables
     vars_data = data.get("vars", {})
@@ -676,7 +745,8 @@ def save_project(path: Path, config: ProjectConfig) -> None:
 
     providers_data: dict[str, list[dict[str, Any]]] = {}
     for instance in config.providers.values():
-        entry = dict(instance.config)
+        # Use raw_config to preserve ${VAR} patterns and avoid leaking secrets
+        entry = dict(instance.raw_config) if instance.raw_config else dict(instance.config)
         if instance.name is not None:
             entry["name"] = instance.name
         if instance.schemes is not None:

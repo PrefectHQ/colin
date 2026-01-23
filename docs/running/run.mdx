@@ -40,21 +40,22 @@ Colin's display uses icons to indicate operation status and type:
 | Icon | Meaning |
 | :--- | :------ |
 | `✓` | Compiled successfully |
-| `⚡` | Served from cache |
-| `→` | Reference or MCP fetch |
+| `»` | Served from cache |
+| `←` | Reference or MCP fetch |
+| `→` | File output written |
 | `✗` | Failed |
 
-When you see `⚡` for an LLM operation, Colin reused a cached result from a previous run. This happens when the input to the LLM call hasn't changed. The `→` icon indicates a reference was resolved, either from another document or an MCP resource.
+When you see `»` for an LLM operation, Colin reused a cached result from a previous run. This happens when the input to the LLM call hasn't changed. The `←` icon indicates a reference was resolved, either from another document or an MCP resource.
 
 A typical run where some documents were cached:
 
 ```
 ✓ context/team-health.md
-  → ref:sources/linear
-  ⚡ llm:auto:b7e4d2
-  → mcp:github
+  ← ref:sources/linear
+  » llm:auto:b7e4d2
+  ← mcp:github
 ✓ skills/status-agent.md
-  → ref:context/team-health
+  ← ref:context/team-health
   ✓ llm:auto:c8f5e3
 ```
 
@@ -137,7 +138,9 @@ cd ~/.config/claude/skills
 colin update
 ```
 
-When you compile a project, Colin stores the source project location and any `--var` overrides in the output manifest. Later, you can update those outputs without knowing where the source project lives—Colin reads the manifest and recompiles from the original source.
+Colin reads the manifest, finds the source project, and recompiles. This enables a workflow where skills live in Claude's folder but compile from a central project elsewhere on your machine.
+
+When you compile a project, Colin stores the source project location and any `--var` overrides in the output manifest. The `--update` flag uses this information to recompile from the original source.
 
 This is useful for:
 

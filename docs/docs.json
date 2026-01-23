@@ -16,7 +16,7 @@
     "light": "#00d4ff",
     "primary": "#007BFF"
   },
-  "description": "A context engine for keeping agent knowledge fresh.",
+  "description": "Keep agent skills fresh.",
   "errors": {
     "404": {
       "description": "You've wandered outside the context.",
