@@ -125,6 +125,16 @@ This provides full isolation: no reading from `.colin/`, no writing to `.colin/`
 | `--ephemeral` | ✓ | ✗ | ✓ |
 | `--no-cache --ephemeral` | ✗ | ✗ | ✓ |
 
+### No Clean
+
+By default, Colin removes stale files after compilation. The `--no-clean` flag skips this:
+
+```bash
+colin run --no-clean
+```
+
+Stale files are outputs no longer tracked by the manifest—they appear when you delete or rename model files. Auto-clean removes them without prompting. Use `--no-clean` when you want to preserve stale files temporarily or when running quick iterations where cleanup isn't needed.
+
 ## Updating Outputs
 
 The `colin update` command updates an output directory from its source project:

@@ -1,0 +1,43 @@
+{
+  "version": "1",
+  "project_name": "colin-cli",
+  "config_hash": "03118fc29fae5e65",
+  "compiled_at": "2026-01-23T00:27:13.215590Z",
+  "documents": {
+    "project://new-project.md": {
+      "uri": "project://new-project.md",
+      "source_path": null,
+      "source_hash": "6520356b50667965",
+      "output_hash": "74688a392040244a",
+      "output_path": "new-project.md",
+      "is_published": true,
+      "compiled_at": "2026-01-23T00:27:13.212007Z",
+      "refs": [],
+      "ref_versions": {},
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": [],
+      "sections": {},
+      "file_outputs": {},
+      "config_hash": "03118fc29fae5e65"
+    },
+    "project://cli-commands.md": {
+      "uri": "project://cli-commands.md",
+      "source_path": null,
+      "source_hash": "5c55de926acd1d95",
+      "output_hash": "b1aede6e5514d6ea",
+      "output_path": "cli-commands.md",
+      "is_published": true,
+      "compiled_at": "2026-01-23T00:27:13.212297Z",
+      "refs": [],
+      "ref_versions": {},
+      "llm_calls": {},
+      "total_cost_usd": 0.0,
+      "artifacts": [],
+      "sections": {},
+      "file_outputs": {},
+      "config_hash": "03118fc29fae5e65"
+    }
+  },
+  "cache": {}
+}

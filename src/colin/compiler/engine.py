@@ -1041,6 +1041,7 @@ class CompileEngine:
             manifest_path = manifest_dir / ".colin-manifest.json"
             manifest_data = {
                 "project_id": project_id,
+                "project_name": self.config.name,
                 "project_config": str(project_file),
                 "output_root": str(output_path),
                 "vars": self._variable_provider.cli_vars,

@@ -589,7 +589,9 @@ class TestLoadProject:
 [project]
 name = "test-project"
 model-path = "src/models"
-output-path = "dist"
+
+[project.output]
+path = "dist"
 """)
 
         config = load_project(config_file)
@@ -682,13 +684,15 @@ name = "minimal"
         assert config.providers == {}
 
     def test_load_project_with_absolute_output_path(self, tmp_path: Path) -> None:
-        """Load project with absolute output-path."""
+        """Load project with absolute output path."""
         absolute_output = tmp_path / "absolute_output"
         config_file = tmp_path / "colin.toml"
         config_file.write_text(f"""\
 [project]
 name = "test-project"
-output-path = "{absolute_output}"
+
+[project.output]
+path = "{absolute_output}"
 """)
 
         config = load_project(config_file)
@@ -721,7 +725,7 @@ output-path = "{absolute_output}"
         assert reloaded.output_path.is_absolute()
 
     def test_save_project_preserves_relative_output_path(self, tmp_path: Path) -> None:
-        """Saving project with relative output-path preserves it."""
+        """Saving project with relative output path preserves it."""
         config_file = tmp_path / "colin.toml"
 
         # Create config with relative output path
@@ -738,9 +742,10 @@ output-path = "{absolute_output}"
         # Reload and verify relative path is preserved
         reloaded = load_project(config_file)
         assert reloaded.output_path == tmp_path / "dist"
-        # Verify it's saved as relative in TOML
+        # Verify it's saved in [project.output]
         content = config_file.read_text()
-        assert 'output-path = "dist"' in content
+        assert "[project.output]" in content
+        assert 'path = "dist"' in content
 
 
 class TestGetStaleFiles:
@@ -795,21 +800,21 @@ class TestGetStaleFiles:
         assert len(result) == 1
         assert result[0].name == "stale.txt"
 
-    def test_does_not_clean_other_project_files(self, tmp_path: Path) -> None:
-        """Files owned by other projects are not considered stale."""
+    def test_files_in_manifest_not_stale(self, tmp_path: Path) -> None:
+        """Files listed in a manifest are not considered stale."""
         import json
 
         config_file = tmp_path / "colin.toml"
         config_file.write_text('[project]\nname = "test"\nid = "test-abc123"')
         config = load_project(config_file)
 
-        # Create output directory with files from another project
+        # Create output directory with tracked files
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        (output_dir / "other.md").write_text("other project content")
+        (output_dir / "tracked.md").write_text("tracked content")
 
-        # Create output manifest owned by a different project
-        output_manifest = {"project_id": "other-project-xyz789", "files": {"other.md": "abc123"}}
+        # Create output manifest listing the file (matching project_id)
+        output_manifest = {"project_id": "test-abc123", "files": {"tracked.md": "abc123"}}
         (output_dir / ".colin-manifest.json").write_text(json.dumps(output_manifest))
 
         # Create internal manifest
@@ -819,8 +824,50 @@ class TestGetStaleFiles:
 
         result = get_stale_files(config)
 
-        # No stale files - we don't own this directory
+        # File is tracked in manifest - not stale
         assert result == []
+
+    def test_project_scoped_stale_ignores_other_projects(self, tmp_path: Path) -> None:
+        """get_stale_files only returns stale files from this project's manifests."""
+        import json
+
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text('[project]\nname = "project-a"\nid = "project-a-123"')
+        config = load_project(config_file)
+
+        # Create shared output directory (like ~/.claude/skills/)
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Project A's subdirectory with its manifest
+        project_a_dir = output_dir / "project-a"
+        project_a_dir.mkdir()
+        (project_a_dir / "tracked.md").write_text("tracked")
+        (project_a_dir / "stale.md").write_text("stale from project a")
+        manifest_a = {"project_id": "project-a-123", "files": {"tracked.md": "abc"}}
+        (project_a_dir / ".colin-manifest.json").write_text(json.dumps(manifest_a))
+
+        # Project B's subdirectory with its own manifest
+        project_b_dir = output_dir / "project-b"
+        project_b_dir.mkdir()
+        (project_b_dir / "tracked.md").write_text("tracked")
+        (project_b_dir / "other-stale.md").write_text("stale from project b")
+        manifest_b = {"project_id": "project-b-456", "files": {"tracked.md": "def"}}
+        (project_b_dir / ".colin-manifest.json").write_text(json.dumps(manifest_b))
+
+        # Create internal manifest
+        colin_dir = tmp_path / ".colin"
+        colin_dir.mkdir()
+        (colin_dir / "manifest.json").write_text(json.dumps({"documents": {}}))
+
+        # Get stale files for project A - should only return project A's stale file
+        result = get_stale_files(config)
+
+        assert len(result) == 1
+        assert result[0].name == "stale.md"
+        assert "project-a" in str(result[0])
+        # Should NOT include project B's stale file
+        assert not any("project-b" in str(p) for p in result)
 
     def test_no_output_manifest_returns_empty(self, tmp_path: Path) -> None:
         """Without output manifest, no files are considered stale in output/."""
@@ -1062,7 +1109,9 @@ target = "claude-skill"
         config_file.write_text("""\
 [project]
 name = "test-project"
-output-path = "dist"
+
+[project.output]
+path = "dist"
 """)
 
         config = load_project(config_file)

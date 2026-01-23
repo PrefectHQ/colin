@@ -3,3 +3,6 @@
 
 [project]
 name = "dynamic-files-example"
+
+[project.output]
+path = "output"

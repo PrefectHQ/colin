@@ -40,14 +40,16 @@ The `colin.toml` file defines project settings:
 [project]
 name = "my-context"
 model-path = "models"
-output-path = "output"
+
+[project.output]
+path = "output"
 ```
 
 | Setting | Description | Default |
 | :------ | :---------- | :------ |
 | `name` | Project name for display | Directory name |
 | `model-path` | Source documents directory | `models` |
-| `output-path` | Compiled output directory | `output` |
+| `[project.output] path` | Compiled output directory | `output` |
 
 For advanced output configuration including Claude Code integration, see [Output Targets](/running/configuration#output-targets).
 

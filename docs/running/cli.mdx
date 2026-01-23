@@ -68,30 +68,97 @@ colin run --output ./out     # Override output directory
 colin run --update           # Update outputs from their source project
 colin run --var key=value    # Override a variable
 colin run --no-banner        # Hide the logo banner
+colin run --no-clean         # Skip auto-clean after compilation
+```
+
+## skills
+
+The `colin skills` command group manages installed skills.
+
+### update
+
+Update all Colin-managed skills in a skills directory:
+
+```bash
+colin skills update
+```
+
+By default, this scans `~/.claude/skills/` for subdirectories containing `.colin-manifest.json` files and updates them in parallel.
+
+Specify a different directory:
+
+```bash
+colin skills update ~/.codex/skills/
+```
+
+Colin reads each manifest's source project location, recompiles it, and writes updated outputs back to the skill directory. This keeps all your skills fresh with a single command.
+
+Combine with cron or CI to automate skill updates:
+
+```bash
+# Update skills every hour
+0 * * * * colin skills update -q
 ```
 
 ## clean
 
-The `colin clean` command removes stale files from `output/`:
+The `colin clean` command removes stale files from outputs:
 
 ```bash
 colin clean
 ```
 
-Stale files are outputs no longer tracked by the manifest—they appear when you delete or rename model files. By default, `clean` only removes stale files from `output/`, leaving your cache intact.
+Stale files are outputs no longer tracked by the manifest—they appear when you delete or rename model files.
 
-Clean prompts for confirmation before removing files:
+### From a Project
+
+When run from a project directory (with `colin.toml`), Colin finds the output location and checks for stale files:
 
 ```
-Project:    my-context
-Config:     colin.toml
-Output dir: output/
+Project: my-context
+Output:  output/
 
 Will remove stale files:
   output/old-report.md
   output/renamed-doc.md
 
 Continue? (y/N)
+```
+
+### From an Output Directory
+
+Colin can also clean output directories directly. This works with any directory containing Colin manifests:
+
+```bash
+cd ~/.claude/skills
+colin clean
+```
+
+Colin scans for `.colin-manifest.json` files and groups stale files by project:
+
+```
+Will remove stale files:
+
+[team-context]
+  team-context/old-doc.md
+
+[deployment-guide]
+  deployment-guide/deprecated.md
+
+Continue? (y/N)
+```
+
+Each manifest defines its own scope—Colin only removes files the manifest tracks. Multiple skill projects can coexist in the same directory safely.
+
+### Ignore Patterns
+
+Colin ignores common system files by default (`.DS_Store`, `Thumbs.db`, etc.). For additional patterns, create a `.colinignore` file in your output directory:
+
+```gitignore
+# .colinignore - gitignore-style patterns
+*.bak
+scratch/
+temp-*
 ```
 
 ### Include Cache
@@ -113,15 +180,14 @@ colin clean -y
 colin clean --all -y
 ```
 
-### When to Use
+### Auto-Clean
 
-Run `colin clean` after deleting or renaming model files to remove leftover outputs. Colin warns you about stale files after compilation:
+By default, `colin run` and `colin update` automatically clean stale files after compilation. Skip this with `--no-clean`:
 
+```bash
+colin run --no-clean
+colin update --no-clean
 ```
-Warning: 2 stale files in output/. Run `colin clean` to remove.
-```
-
-For recompiling without removing stale files, use `colin run --no-cache` instead.
 
 ## mcp
 

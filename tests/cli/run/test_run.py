@@ -105,10 +105,10 @@ def test_clean_does_nothing_if_no_output(tmp_path: Path, monkeypatch, cli: Calla
     cli("clean", "--yes")
 
 
-def test_run_warns_about_stale_files(
+def test_run_auto_cleans_stale_files(
     test_project: Path, mock_agent, capsys, cli: Callable[..., None]
 ):
-    """colin run warns about stale files in output/."""
+    """colin run auto-cleans stale files in output/."""
     project_output = test_project / "output"
 
     # Run to create output
@@ -117,14 +117,39 @@ def test_run_warns_about_stale_files(
     # Add a stale file
     stale_file = project_output / "stale.txt"
     stale_file.write_text("stale content")
+    assert stale_file.exists()
 
-    # Run again - should warn about stale file
+    # Run again - should auto-clean the stale file
     cli("run", "--quiet")
+
+    # Stale file should be removed
+    assert not stale_file.exists()
 
     captured = capsys.readouterr()
     output = strip_ansi(captured.err)
+    assert "cleaned" in output.lower()
     assert "stale file" in output.lower()
-    assert "colin clean" in output
+
+
+def test_run_no_clean_skips_auto_clean(
+    test_project: Path, mock_agent, capsys, cli: Callable[..., None]
+):
+    """colin run --no-clean skips auto-cleaning stale files."""
+    project_output = test_project / "output"
+
+    # Run to create output
+    cli("run", "--quiet")
+
+    # Add a stale file
+    stale_file = project_output / "stale.txt"
+    stale_file.write_text("stale content")
+    assert stale_file.exists()
+
+    # Run again with --no-clean - should NOT remove stale file
+    cli("run", "--quiet", "--no-clean")
+
+    # Stale file should still exist
+    assert stale_file.exists()
 
 
 def test_run_suggests_update_in_output_directory(

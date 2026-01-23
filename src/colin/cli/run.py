@@ -24,10 +24,13 @@ import colin
 from colin.api.compile import CompileResult, compile_project
 from colin.api.project import (
     VarConfig,
+    clean_output_directory,
     clean_project,
     find_project_file,
     generate_project_id,
     get_stale_files,
+    get_stale_files_by_project,
+    get_stale_files_from_output,
     load_project,
 )
 from colin.compiler.state import CompilationState, OperationState, Status
@@ -389,6 +392,7 @@ async def run(
     *,
     output: Annotated[Path | None, cyclopts.Parameter(name=["-o", "--output"])] = None,
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
+    no_clean: Annotated[bool, cyclopts.Parameter(name=["--no-clean"])] = False,
     ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
     no_banner: Annotated[bool, cyclopts.Parameter(name=["--no-banner"])] = False,
@@ -400,6 +404,7 @@ async def run(
         project: Project directory (default: current directory).
         output: Override output directory (default: from colin.toml).
         no_cache: Ignore cached results and recompile all documents.
+        no_clean: Skip automatic removal of stale output files.
         ephemeral: Don't write to .colin/ directory (for testing, CI, one-off runs).
         quiet: Hide progress display, show only final results.
         no_banner: Hide the Colin logo banner.
@@ -444,19 +449,16 @@ async def run(
                 vars=vars_dict,
             )
             assert isinstance(result, CompileResult)
-            # Warn about stale output files (only when using default output)
-            if output is None:
+            # Auto-clean stale output files (unless --no-clean or custom output)
+            if output is None and not no_clean:
                 stale_files = get_stale_files(config)
                 if stale_files:
-                    n = len(stale_files)
-                    try:
-                        out_display = output_dir.relative_to(Path.cwd())
-                    except ValueError:
-                        out_display = output_dir
-                    err_console.print(
-                        f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
-                        f"in {out_display}/. Run `colin clean` to remove."
-                    )
+                    removed = clean_project(config)
+                    if removed:
+                        n = len(removed)
+                        err_console.print(
+                            f"[dim]Cleaned {n} stale {_plural(n, 'file', 'files')}[/]"
+                        )
             return
 
         # Print banner (includes project info) before starting
@@ -478,28 +480,15 @@ async def run(
         )
         assert isinstance(result, CompileResult)
 
-        # Warn about stale output files (only when using default output)
-        if output is None:
+        # Auto-clean stale output files (unless --no-clean or custom output)
+        if output is None and not no_clean:
             stale_files = get_stale_files(config)
             if stale_files:
-                console.print()
-                n = len(stale_files)
-                try:
-                    out_display = output_dir.relative_to(Path.cwd())
-                except ValueError:
-                    out_display = output_dir
-                console.print(
-                    f"[yellow]Warning:[/] {n} stale {_plural(n, 'file', 'files')} "
-                    f"in {out_display}/. Run `colin clean` to remove."
-                )
-                for path in stale_files[:3]:
-                    try:
-                        rel = path.relative_to(output_dir)
-                        console.print(f"[yellow]![/] {rel}")
-                    except ValueError:
-                        console.print(f"[yellow]![/] {path}")
-                if len(stale_files) > 3:
-                    console.print(f"[dim]... and {len(stale_files) - 3} more[/]")
+                removed = clean_project(config)
+                if removed:
+                    console.print()
+                    n = len(removed)
+                    console.print(f"[dim]Cleaned {n} stale {_plural(n, 'file', 'files')}[/]")
 
     except MultipleCompilationErrors as e:
         err_console.print("\n[red bold]Compilation failed[/]\n")
@@ -552,6 +541,7 @@ async def update(
     directory: Path = Path("."),
     *,
     no_cache: Annotated[bool, cyclopts.Parameter(name=["--no-cache"])] = False,
+    no_clean: Annotated[bool, cyclopts.Parameter(name=["--no-clean"])] = False,
     ephemeral: Annotated[bool, cyclopts.Parameter(name=["--ephemeral"])] = False,
     quiet: Annotated[bool, cyclopts.Parameter(name=["-q", "--quiet"])] = False,
     no_banner: Annotated[bool, cyclopts.Parameter(name=["--no-banner"])] = False,
@@ -565,6 +555,7 @@ async def update(
     Args:
         directory: Output directory to update (default: current directory).
         no_cache: Ignore cached results and recompile all documents.
+        no_clean: Skip automatic removal of stale output files.
         ephemeral: Don't write to source project's .colin/ directory.
         quiet: Hide progress display, show only final results.
         no_banner: Hide the Colin logo banner.
@@ -632,11 +623,25 @@ async def update(
         project=project,
         output=output,
         no_cache=no_cache,
+        no_clean=True,  # We handle cleaning separately for output directories
         ephemeral=ephemeral,
         quiet=quiet,
         no_banner=no_banner,
         var=[f"{k}={v}" for k, v in vars_dict.items()] if vars_dict else [],
     )
+
+    # Auto-clean stale files from the output directory (unless --no-clean)
+    if not no_clean:
+        stale_files = get_stale_files_from_output(target_dir)
+        if stale_files:
+            removed = clean_output_directory(target_dir)
+            if removed:
+                n = len(removed)
+                if quiet:
+                    err_console.print(f"[dim]Cleaned {n} stale {_plural(n, 'file', 'files')}[/]")
+                else:
+                    console.print()
+                    console.print(f"[dim]Cleaned {n} stale {_plural(n, 'file', 'files')}[/]")
 
 
 # Default content for new projects
@@ -885,31 +890,25 @@ def init(
 
 
 def clean(
-    project: Path = Path("."),
+    directory: Path = Path("."),
     *,
     all: Annotated[bool, cyclopts.Parameter(name=["--all"])] = False,
     yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
 ) -> None:
-    """Remove build artifacts from the project.
+    """Remove stale files from a project or output directory.
 
-    By default, removes only stale files from output/ (files not tracked by
-    the manifest). Use --all to also check .colin/compiled/ for stale files.
+    Can be run from:
+    - A project directory (with colin.toml) - cleans the project's output
+    - An output directory (with .colin-manifest.json) - cleans that directory
+
+    Stale files are those not tracked by any manifest.
 
     Args:
-        project: Project directory (default: current directory).
-        all: Also remove stale files from .colin/compiled/.
+        directory: Directory to clean (default: current directory).
+        all: When in a project, also clean .colin/compiled/.
         yes: Skip confirmation prompt.
     """
-    project_file = find_project_file(project.resolve())
-
-    if not project_file:
-        err_console.print(f"[red]Error:[/] No colin.toml found in {project.resolve()}")
-        err_console.print("[dim]Run `colin init` to create a new project[/]")
-        sys.exit(1)
-
-    assert project_file is not None  # narrowing for type checker
-    config = load_project(project_file)
-    output_dir = config.output_path
+    target_dir = directory.resolve()
     cwd = Path.cwd()
 
     # Format paths relative to cwd for display
@@ -919,33 +918,94 @@ def clean(
         except ValueError:
             return str(path)
 
-    # Get stale files (include .colin/compiled/ if --all)
-    stale_files = get_stale_files(config, include_compiled=all)
+    # Determine if this is a project directory or output directory
+    project_file = find_project_file(target_dir)
 
-    if not stale_files:
-        console.print("[dim]Nothing to clean.[/]")
-        return
+    # Check for manifest at root OR in any subdirectory
+    manifest_file = target_dir / ".colin-manifest.json"
+    has_manifests = manifest_file.exists() or any(target_dir.rglob(".colin-manifest.json"))
 
-    # Show what will be removed and prompt for confirmation
-    if not yes:
-        if not sys.stdin.isatty():
-            err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
-            sys.exit(1)
+    if project_file:
+        # Project mode: use project config
+        config = load_project(project_file)
+        output_dir = config.output_path
+        stale_files = get_stale_files(config, include_compiled=all)
 
-        print_project_info(project_file, config.name, output_dir)
-        console.print("[bold]Will remove stale files:[/]")
-        for path in stale_files:
-            console.print(f"  [yellow]{format_path(path)}[/]")
-        console.print()
-        confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
-        if confirm.lower() not in ("y", "yes"):
-            console.print("[dim]Cancelled.[/]")
+        if not stale_files:
+            console.print(f"[dim]Project:[/] {config.name}")
+            console.print(f"[dim]Output:[/]  {output_dir}/")
+            console.print("[dim]Nothing to clean.[/]")
             return
 
-    if yes:
-        print_project_info(project_file, config.name, output_dir)
+        # Show what will be removed and prompt for confirmation
+        if not yes:
+            if not sys.stdin.isatty():
+                err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
+                sys.exit(1)
 
-    removed = clean_project(config, all=all)
+            print_project_info(project_file, config.name, output_dir)
+            console.print("[bold]Will remove stale files:[/]")
+            for path in stale_files:
+                console.print(f"  [yellow]{format_path(path)}[/]")
+            console.print()
+            confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
+            if confirm.lower() not in ("y", "yes"):
+                console.print("[dim]Cancelled.[/]")
+                return
+
+        if yes:
+            print_project_info(project_file, config.name, output_dir)
+
+        removed = clean_project(config, all=all)
+
+    elif has_manifests:
+        # Output directory mode: clean using manifests, grouped by project
+        stale_by_project = get_stale_files_by_project(target_dir)
+
+        if not stale_by_project:
+            console.print(f"[dim]Nothing to clean in {target_dir}/[/]")
+            return
+
+        # Flatten for total count
+        stale_files = [f for files in stale_by_project.values() for f in files]
+        project_count = len(stale_by_project)
+        file_count = len(stale_files)
+
+        # Show what will be removed and prompt for confirmation
+        if not yes:
+            if not sys.stdin.isatty():
+                err_console.print("[red]Error:[/] Confirmation required. Use -y to confirm.")
+                sys.exit(1)
+
+            console.print(f"[dim]Output directory:[/] {format_path(target_dir)}/")
+            console.print(
+                f"[dim]Found {file_count} stale {_plural(file_count, 'file', 'files')} "
+                f"in {project_count} {_plural(project_count, 'project', 'projects')}[/]"
+            )
+            console.print()
+            console.print("[bold]Will remove stale files:[/]")
+            for project_name, files in sorted(stale_by_project.items()):
+                console.print(f"  [cyan]{project_name}[/]")
+                for path in sorted(files):
+                    console.print(f"    [yellow]{format_path(path)}[/]")
+            console.print()
+            confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
+            if confirm.lower() not in ("y", "yes"):
+                console.print("[dim]Cancelled.[/]")
+                return
+
+        if yes:
+            console.print(f"[dim]Output directory:[/] {format_path(target_dir)}/")
+            console.print()
+
+        removed = clean_output_directory(target_dir)
+
+    else:
+        err_console.print(
+            f"[red]Error:[/] No colin.toml or .colin-manifest.json found in {target_dir}"
+        )
+        err_console.print("[dim]Run from a project directory or output directory[/]")
+        sys.exit(1)
 
     console.print("[bold]Removed:[/]")
     for path in removed:

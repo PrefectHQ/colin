@@ -1,7 +1,9 @@
 [project]
 name = "everything"
 model-path = "models"
-output-path = "output"
+
+[project.output]
+path = "output"
 
 [[providers.llm]]
 model = "anthropic:claude-haiku-4-5"

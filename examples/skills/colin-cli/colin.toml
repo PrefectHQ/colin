@@ -1,6 +1,6 @@
 [project]
-name = "mcp-test"
+name = "colin-cli"
 model-path = "models"
 
 [project.output]
-path = "output"
+target = "claude-skill"
