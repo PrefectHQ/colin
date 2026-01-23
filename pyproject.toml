@@ -1,9 +1,23 @@
 [project]
-name = "colin"
+name = "colin-py"
 dynamic = ["version"]
 description = "A context engine for the AI era"
+authors = [{ name = "Prefect Technologies, Inc." }]
+license = "Apache-2.0"
 readme = "README.md"
 requires-python = ">=3.10"
+keywords = ["context", "lineage", "ai", "agent", "llm", "mcp", "skills"]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
 dependencies = [
     "jinja2>=3.1.0",
     "pydantic>=2.0.0",
@@ -19,6 +33,11 @@ dependencies = [
     "pathspec>=1.0.3",
     "cryptography>=46.0.3",
 ]
+
+[project.urls]
+Homepage = "https://colin.prefect.io"
+Repository = "https://github.com/PrefectHQ/colin"
+Documentation = "https://colin.prefect.io/docs"
 
 [project.scripts]
 colin = "colin.cli:main"
@@ -66,6 +85,12 @@ allow-direct-references = true
 
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/colin"]

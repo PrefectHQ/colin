@@ -526,7 +526,7 @@ wheels = [
 ]
 
 [[package]]
-name = "colin"
+name = "colin-py"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
