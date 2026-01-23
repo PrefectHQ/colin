@@ -113,9 +113,16 @@ def _check_skill_staleness(manifest_data: dict, project_config_path: Path) -> st
     if not project_config_path.exists():
         return "source not found"
 
-    # Load the project's internal manifest to compare hashes
-    project_dir = project_config_path.parent
-    internal_manifest_path = project_dir / ".colin" / "manifest.json"
+    # Load project config to get correct paths
+    from colin.api.project import load_project
+
+    try:
+        config = load_project(project_config_path)
+    except Exception:
+        return "config unreadable"
+
+    # Use config's manifest path (respects project.manifest-path setting)
+    internal_manifest_path = config.manifest_path
 
     if not internal_manifest_path.exists():
         return "never compiled"
@@ -127,6 +134,9 @@ def _check_skill_staleness(manifest_data: dict, project_config_path: Path) -> st
 
     # Compare source hashes from internal manifest to current source files
     internal_docs = internal_manifest.get("documents", {})
+
+    # Use config's model path (respects project.model-path setting)
+    models_dir = config.model_path
 
     # Check if any source file has changed
     for doc_uri, doc_meta in internal_docs.items():
@@ -141,7 +151,7 @@ def _check_skill_staleness(manifest_data: dict, project_config_path: Path) -> st
         # URI format: project://path/to/doc.md
         if doc_uri.startswith("project://"):
             rel_path = doc_uri[len("project://") :]
-            source_path = project_dir / "models" / rel_path
+            source_path = models_dir / rel_path
 
             if source_path.exists():
                 import hashlib
