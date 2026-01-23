@@ -1,0 +1,6 @@
+[project]
+name = "mcp-skills"
+
+[project.output]
+target = "claude-skill"
+scope = "user"
