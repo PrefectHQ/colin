@@ -1,8 +1,9 @@
 [project]
 name = "notion_skills"
 model-path = "models"
-output-path = "output"
-id = "notion_skills-1l3mb8"
+
+[project.output]
+path = "output"
 
 [providers]
 notion = [
