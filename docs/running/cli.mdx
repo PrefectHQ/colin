@@ -269,6 +269,19 @@ Resources (3):
 
 Use this to discover what resources a server provides before referencing them in your documents.
 
+### auth
+
+Manage OAuth authentication for MCP providers like Linear and Notion.
+
+```bash
+colin mcp auth clear      # Clear all OAuth tokens
+colin mcp auth clear -f   # Skip confirmation
+```
+
+This removes cached OAuth tokens, requiring re-authentication on next use. Useful when experiencing authentication errors (401s, 500s) or when you need to switch accounts.
+
+Tokens are stored at `~/.colin/mcp-oauth/`. Clearing tokens affects all providers that use OAuth.
+
 ## Project Resolution
 
 Colin finds your project by searching for `colin.toml` starting from the current directory and walking up parent directories. This lets you run commands from any subdirectory:

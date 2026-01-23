@@ -1,0 +1,11 @@
+[project]
+name = "linear_skills"
+model-path = "models"
+
+[project.output]
+path = "output"
+
+[providers]
+linear = [
+    {},
+]
