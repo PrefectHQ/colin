@@ -14,11 +14,78 @@ from rich.console import Console
 from rich.table import Table
 
 from colin.api import mcp
+from colin.providers.oauth_store import OAUTH_STORAGE_DIR
 
 console = Console()
 err_console = Console(stderr=True)
 
 app = cyclopts.App(name="mcp", help="Manage MCP servers.")
+
+# Auth subcommand group
+auth_app = cyclopts.App(name="auth", help="Manage OAuth authentication for MCP providers.")
+app.command(auth_app)
+
+
+@auth_app.command
+def clear(
+    *,
+    force: Annotated[
+        bool,
+        Parameter(name=["-f", "--force"]),
+    ] = False,
+) -> None:
+    """Clear stored OAuth tokens.
+
+    This removes cached authentication tokens for all MCP providers (Linear,
+    Notion, etc.), requiring re-authentication on next use.
+
+    Useful when experiencing authentication errors (e.g., 500s).
+
+    Examples:
+      colin mcp auth clear
+      colin mcp auth clear -f  # skip confirmation
+
+    Args:
+        force: Skip confirmation prompt.
+    """
+    if not OAUTH_STORAGE_DIR.exists():
+        console.print("[dim]No OAuth tokens stored.[/]")
+        return
+
+    files = list(OAUTH_STORAGE_DIR.iterdir())
+    if not files:
+        console.print("[dim]No OAuth tokens stored.[/]")
+        return
+
+    # Confirm unless --force
+    if not force:
+        if not sys.stdin.isatty():
+            err_console.print("[red]Error:[/] Confirmation required. Use -f to confirm.")
+            sys.exit(1)
+
+        console.print("[bold]Clear all MCP OAuth tokens?[/]")
+        console.print("[dim]This will require re-authentication for Linear, Notion, etc.[/]")
+        console.print()
+        confirm = console.input("[bold]Continue?[/] [dim](y/N)[/] ")
+        if confirm.lower() not in ("y", "yes"):
+            console.print("[dim]Cancelled.[/]")
+            return
+
+    # Delete all files in the directory
+    deleted = 0
+    for f in files:
+        try:
+            if f.is_file():
+                f.unlink()
+                deleted += 1
+        except OSError as e:
+            err_console.print(f"[red]Error:[/] {e}")
+
+    if deleted > 0:
+        console.print("[green]Cleared OAuth tokens.[/]")
+        console.print("[dim]Re-authentication will be required on next use.[/]")
+    else:
+        console.print("[dim]No tokens deleted.[/]")
 
 
 @app.command

@@ -16,6 +16,12 @@ Add Linear to your project configuration:
 
 On first use, Colin opens a browser for Linear OAuth authorization. Tokens are stored persistently at `~/.colin/mcp-oauth/`.
 
+If you encounter authentication errors, clear your OAuth tokens and re-authenticate:
+
+```bash
+colin mcp auth clear
+```
+
 ## Functions
 
 ### `issue(id)`

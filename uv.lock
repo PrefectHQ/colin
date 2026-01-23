@@ -529,6 +529,7 @@ wheels = [
 name = "colin"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "cyclopts" },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -559,6 +560,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=46.0.3" },
     { name = "cyclopts", specifier = ">=4.0.0" },
     { name = "fastmcp", git = "https://github.com/jlowin/fastmcp?rev=main" },
     { name = "httpx", specifier = ">=0.27.0" },
