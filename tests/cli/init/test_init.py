@@ -109,6 +109,17 @@ def test_init_fails_in_non_empty_directory(tmp_path: Path, monkeypatch, cli: Cal
     assert not (tmp_path / "colin.toml").exists()
 
 
+def test_init_fails_if_target_is_file(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
+    """colin init fails gracefully if target path is an existing file."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "my-project").write_text("I'm a file, not a directory")
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli("init", "my-project")
+
+    assert exc_info.value.code == 1
+
+
 def test_init_allows_ignored_files(tmp_path: Path, monkeypatch, cli: Callable[..., None]):
     """colin init succeeds in directory with only ignored files like .git."""
     monkeypatch.chdir(tmp_path)

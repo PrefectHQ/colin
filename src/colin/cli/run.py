@@ -791,8 +791,13 @@ def init(
         err_console.print(f"[red]Error:[/] Project already exists: {project_dir / 'colin.toml'}")
         sys.exit(1)
 
+    # Check if target is a file (not a directory)
+    if project_dir.is_file():
+        err_console.print(f"[red]Error:[/] Path exists as a file: {project_dir}")
+        sys.exit(1)
+
     # Check if directory has existing files (guard against accidental overwrites)
-    if project_dir.exists():
+    if project_dir.is_dir():
         # Files/directories to ignore when checking if directory is empty
         ignored = {
             ".git",
