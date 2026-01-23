@@ -4,7 +4,7 @@ sidebarTitle: GitHub
 icon: github
 ---
 
-The GitHub provider fetches files and directory listings from GitHub repositories. It uses the GitHub API for ref resolution and raw.githubusercontent.com for fast content delivery.
+The GitHub provider fetches files, directory listings, issues, and pull requests from GitHub repositories. It uses the GitHub API for all operations and supports automatic staleness detection.
 
 ## Quick Start
 
@@ -12,13 +12,15 @@ The GitHub provider works without configuration. Pass the repository as the firs
 
 ```jinja
 {{ colin.github.file("PrefectHQ/prefect", "README.md").content }}
-{{ colin.github.file("owner/repo", "src/main.py", ref="v1.0").content }}
+{{ colin.github.issue("PrefectHQ/prefect", 123).title }}
+{{ colin.github.pr("https://github.com/PrefectHQ/prefect/pull/456").state }}
 ```
 
 For frequently accessed repositories, configure named instances to avoid repeating the repo:
 
 ```jinja
 {{ colin.github.prefect.file("README.md").content }}
+{{ colin.github.prefect.issue(123).title }}
 ```
 
 ## Configuration
@@ -74,6 +76,10 @@ For private repositories, a token with appropriate permissions is required.
 | :------- | :------ |
 | `file()` | Fetch a file's content |
 | `ls()` | List directory contents |
+| `issue()` | Fetch a single issue |
+| `pr()` | Fetch a single pull request |
+| `issues()` | List issues with filters |
+| `prs()` | List pull requests with filters |
 
 ### file()
 
@@ -143,6 +149,114 @@ List directory contents. Without configuration, pass the repo as the first argum
 
 Returns a `GitHubListingResource` that can be iterated to get entries.
 
+### issue()
+
+Fetch a single issue by number or URL:
+
+```jinja
+{# By number with repo #}
+{{ colin.github.issue("owner/repo", 123).title }}
+
+{# By number with configured repo #}
+{{ colin.github.prefect.issue(123).content }}
+
+{# By full URL #}
+{{ colin.github.issue("https://github.com/owner/repo/issues/123").state }}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `number_or_url` | Yes | — | Issue number or full GitHub URL |
+| `repo` | No | — | Repository in `owner/repo` format (required if using number without configured repo) |
+| `watch` | No | `True` | Track for staleness detection |
+
+Returns a `GitHubIssueResource` with the issue content and metadata.
+
+### pr()
+
+Fetch a single pull request by number or URL:
+
+```jinja
+{# By number with repo #}
+{{ colin.github.pr("owner/repo", 456).title }}
+
+{# By number with configured repo #}
+{{ colin.github.prefect.pr(456).head_ref }}
+
+{# By full URL #}
+{{ colin.github.pr("https://github.com/owner/repo/pull/456").state }}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `number_or_url` | Yes | — | PR number or full GitHub URL |
+| `repo` | No | — | Repository in `owner/repo` format (required if using number without configured repo) |
+| `watch` | No | `True` | Track for staleness detection |
+
+Returns a `GitHubPRResource` with the PR content and metadata.
+
+### issues()
+
+List issues with optional filters:
+
+```jinja
+{# Open issues in configured repo #}
+{% for issue in colin.github.prefect.issues() %}
+- #{{ issue.number }}: {{ issue.title }}
+{% endfor %}
+
+{# Filtered issues #}
+{% for issue in colin.github.issues("owner/repo", state="open", labels=["bug"]) %}
+{{ issue.title }} ({{ issue.assignees | join(", ") or "unassigned" }})
+{% endfor %}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `repo` | No | — | Repository in `owner/repo` format (uses configured repo if None) |
+| `state` | No | `"open"` | Filter by state: `"open"`, `"closed"`, or `"all"` |
+| `labels` | No | `None` | Filter by label names |
+| `assignee` | No | `None` | Filter by assignee username |
+| `limit` | No | `30` | Maximum number of issues |
+| `watch` | No | `True` | Track for staleness detection |
+
+Returns a `GitHubIssuesResource` that can be iterated.
+
+### prs()
+
+List pull requests with optional filters:
+
+```jinja
+{# Open PRs in configured repo #}
+{% for pr in colin.github.prefect.prs() %}
+- #{{ pr.number }}: {{ pr.title }} ({{ pr.head_ref }} -> {{ pr.base_ref }})
+{% endfor %}
+
+{# PRs targeting main #}
+{% for pr in colin.github.prs("owner/repo", state="open", base="main") %}
+{{ pr.title }} - {{ pr.state }}
+{% endfor %}
+```
+
+**Arguments:**
+
+| Argument | Required | Default | Description |
+| :------- | :------- | :------ | :---------- |
+| `repo` | No | — | Repository in `owner/repo` format (uses configured repo if None) |
+| `state` | No | `"open"` | Filter by state: `"open"`, `"closed"`, or `"all"` |
+| `base` | No | `None` | Filter by base branch |
+| `head` | No | `None` | Filter by head branch |
+| `limit` | No | `30` | Maximum number of PRs |
+| `watch` | No | `True` | Track for staleness detection |
+
+Returns a `GitHubPRsResource` that can be iterated.
+
 ## Objects
 
 ### GitHubFileResource
@@ -188,44 +302,120 @@ Each entry in a directory listing:
 | `sha` | `str` | Blob or tree SHA |
 | `size` | `int \| None` | File size in bytes (None for directories) |
 
+### GitHubIssueResource
+
+Returned by `issue()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | Issue title and body as markdown |
+| `repo` | `str` | Repository in `owner/repo` format |
+| `number` | `int` | Issue number |
+| `title` | `str` | Issue title |
+| `body` | `str \| None` | Issue body (markdown) |
+| `state` | `str` | `"open"` or `"closed"` |
+| `labels` | `list[str]` | Label names |
+| `assignees` | `list[str]` | Assignee usernames |
+| `author` | `str \| None` | Username of creator |
+| `url` | `str` | HTML URL to issue |
+| `updated_at` | `datetime` | Last update time |
+| `created_at` | `datetime` | Creation time |
+| `closed_at` | `datetime \| None` | When closed (None if open) |
+| `comments_count` | `int` | Number of comments |
+
+### GitHubPRResource
+
+Returned by `pr()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | PR title and body as markdown |
+| `repo` | `str` | Repository in `owner/repo` format |
+| `number` | `int` | PR number |
+| `title` | `str` | PR title |
+| `body` | `str \| None` | PR body (markdown) |
+| `state` | `str` | `"open"`, `"closed"`, or `"merged"` |
+| `labels` | `list[str]` | Label names |
+| `assignees` | `list[str]` | Assignee usernames |
+| `author` | `str \| None` | Username of creator |
+| `url` | `str` | HTML URL to PR |
+| `head_ref` | `str` | Source branch name |
+| `base_ref` | `str` | Target branch name |
+| `head_sha` | `str` | Current head commit SHA |
+| `is_draft` | `bool` | Whether PR is a draft |
+| `updated_at` | `datetime` | Last update time |
+| `created_at` | `datetime` | Creation time |
+| `closed_at` | `datetime \| None` | When closed |
+| `merged_at` | `datetime \| None` | When merged |
+| `additions` | `int` | Lines added |
+| `deletions` | `int` | Lines deleted |
+| `changed_files` | `int` | Files changed |
+
+### GitHubIssuesResource
+
+Returned by `issues()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | Newline-separated issue summaries |
+| `issues` | `list[GitHubIssueResource]` | List of issue resources |
+
+Supports iteration and `len()`:
+
+```jinja
+{% for issue in colin.github.prefect.issues(labels=["bug"]) %}
+#{{ issue.number }}: {{ issue.title }}
+{% endfor %}
+```
+
+### GitHubPRsResource
+
+Returned by `prs()`:
+
+| Property | Type | Description |
+| :------- | :--- | :---------- |
+| `content` | `str` | Newline-separated PR summaries |
+| `prs` | `list[GitHubPRResource]` | List of PR resources |
+
+Supports iteration and `len()`:
+
+```jinja
+{% for pr in colin.github.prefect.prs(state="open") %}
+#{{ pr.number }}: {{ pr.title }}
+{% endfor %}
+```
+
 ## Dependency Tracking
 
-By default, `file()` and `ls()` automatically track dependencies (`watch=True`). Documents recompile when tracked resources change:
+By default, all methods automatically track dependencies (`watch=True`). Documents recompile when tracked resources change:
 
 ```jinja
 {# Automatically tracked — recompiles when file changes #}
 {{ colin.github.prefect.file("README.md").content }}
 
-{# Explicit ref() is equivalent but unnecessary #}
-{{ ref(colin.github.prefect.file("README.md")).content }}
+{# Automatically tracked — recompiles when issue is updated #}
+{{ colin.github.prefect.issue(123).title }}
 
 {# Opt out of tracking with watch=False #}
-{{ colin.github.prefect.file("README.md", watch=False).content }}
+{{ colin.github.prefect.issue(123, watch=False).title }}
 ```
 
-Directory listings are also tracked by default:
+Issues and PRs are tracked by their `updated_at` timestamp. Any edit to the issue (title, body, labels, comments, etc.) triggers recompilation.
+
+Collections like `issues()` and `prs()` track all items collectively:
 
 ```jinja
-{# Recompiles when files are added or removed #}
-{% for entry in colin.github.prefect.ls("examples/") %}
-- {{ entry.name }}
-{% endfor %}
-```
-
-When iterating over a listing, each `file()` call creates its own tracked dependency:
-
-```jinja
-{% for entry in colin.github.prefect.ls("examples/") %}
-{% if entry.type == "file" %}
-{# Each file tracked independently #}
-{{ colin.github.prefect.file(entry.path).content }}
-{% endif %}
+{# Recompiles when any issue in the list is updated #}
+{% for issue in colin.github.prefect.issues(labels=["bug"]) %}
+- #{{ issue.number }}: {{ issue.title }}
 {% endfor %}
 ```
 
 ## Staleness Detection
 
-The GitHub provider resolves git refs (branches, tags) to commit SHAs for versioning:
+The GitHub provider uses different versioning strategies for different resource types:
+
+**Files and directories** resolve git refs to commit SHAs:
 
 | Ref Type | Behavior |
 | :------- | :------- |
@@ -233,7 +423,9 @@ The GitHub provider resolves git refs (branches, tags) to commit SHAs for versio
 | Tag (`v1.0`) | Resolves to tagged commit SHA; stable unless tag is moved |
 | SHA (`abc123`) | Immutable; never triggers recompilation |
 
-When checking staleness, Colin re-resolves the ref. If the resolved SHA differs from the cached version, the document is marked stale.
+**Issues and PRs** use their `updated_at` timestamp. Any modification (edits, comments, label changes, state changes) triggers recompilation.
+
+**Collections** (`issues()`, `prs()`) compute a hash of all item numbers and their update times. Changes to any item in the list, or items entering/leaving the list, trigger recompilation.
 
 ## Error Handling
 
@@ -310,4 +502,65 @@ name: External Reference
 # License from another repo
 
 {{ colin.github.file("anthropics/claude-code", "LICENSE").content }}
+```
+
+### Track an Issue
+
+Create a document that updates when an issue changes:
+
+```jinja models/tracked-issue.md
+---
+name: Feature Request Status
+---
+
+{% set issue = colin.github.prefect.issue(123) %}
+# {{ issue.title }}
+
+**Status:** {{ issue.state }}
+**Labels:** {{ issue.labels | join(", ") or "none" }}
+**Assignees:** {{ issue.assignees | join(", ") or "unassigned" }}
+
+{{ issue.body }}
+```
+
+### Bug Dashboard
+
+Generate a dashboard of open bugs:
+
+```jinja models/bug-dashboard.md
+---
+name: Bug Dashboard
+---
+
+# Open Bugs
+
+{% for issue in colin.github.prefect.issues(labels=["bug"], state="open") %}
+## #{{ issue.number }}: {{ issue.title }}
+
+- **Author:** {{ issue.author }}
+- **Created:** {{ issue.created_at.strftime("%Y-%m-%d") }}
+- **Comments:** {{ issue.comments_count }}
+
+{{ issue.body[:200] }}{% if issue.body and issue.body|length > 200 %}...{% endif %}
+
+{% endfor %}
+```
+
+### PR Status Report
+
+Track open PRs and their review status:
+
+```jinja models/pr-status.md
+---
+name: Open PRs
+---
+
+# Pull Requests
+
+{% for pr in colin.github.prefect.prs(state="open", base="main") %}
+- **#{{ pr.number }}**: {{ pr.title }}
+  - Branch: `{{ pr.head_ref }}` -> `{{ pr.base_ref }}`
+  - Changes: +{{ pr.additions }}/-{{ pr.deletions }} in {{ pr.changed_files }} files
+  {% if pr.is_draft %}(Draft){% endif %}
+{% endfor %}
 ```
