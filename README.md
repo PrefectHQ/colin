@@ -16,26 +16,27 @@ Colin is a context engine. Write templates that reference live sources—GitHub,
 
 ```markdown
 ---
-name: project-overview
-description: Current state of the project
+name: team-status
+description: Current state of platform team work
+colin:
+  cache:
+    expires: 1d
 ---
 
-# Project Overview
+# Team Status
 
-{{ colin.github.file('PrefectHQ/prefect', 'README.md').content | llm_extract('what is this project and what are its key features') }}
+## In Progress
 
-## Contributing
-
-{{ colin.github.file('PrefectHQ/prefect', 'CONTRIBUTING.md').content }}
-
-## Recent Activity
-
-{% for issue in colin.github.issues('PrefectHQ/prefect', state='open', limit=5) %}
-- [#{{ issue.number }}]({{ issue.url }}): {{ issue.title }}
+{% for issue in colin.linear.issues(team='Platform', state='In Progress') %}
+- {{ issue.identifier }}: {{ issue.title }} ({{ issue.assignee }})
 {% endfor %}
+
+## Summary
+
+{{ ref('team/weekly-notes.md').content | llm_extract('key blockers and priorities') }}
 ```
 
-Run `colin run`. Colin fetches the README and contributing guide from GitHub, lists recent issues, and writes the compiled skill. Run it again tomorrow—if nothing changed upstream, nothing rebuilds. If the README was updated, Colin detects the new commit and recompiles.
+Run `colin run`. Colin fetches the Linear issues, resolves the reference to your weekly notes, extracts blockers via LLM, and writes the compiled skill. Run it again tomorrow—if nothing changed upstream, nothing rebuilds. The `expires: 1d` ensures time-sensitive content stays fresh.
 
 ## Install
 
@@ -45,22 +46,19 @@ pip install colin-py
 
 ## Documentation
 
-Full documentation at [colin.prefect.io/docs](https://colin.prefect.io/docs).
+Full documentation at [colin.prefect.io](https://colin.prefect.io).
 
 ## Quick Start
 
-```bash
-colin init my-skill
-cd my-skill
-```
-
-Edit `models/hello.md` or create new documents in `models/`. Each document can reference others with `ref()` and pull from external sources.
+The fastest way to get started is with the quickstart blueprint, which builds a skill from Colin's own documentation:
 
 ```bash
+colin init using-colin -b quickstart
+cd using-colin
 colin run
 ```
 
-Colin compiles your documents to `output/`. Update a source file and run again—only affected documents recompile.
+The compiled skill contains the Colin quickstart—pulled live from GitHub. When we update the docs, your agent's knowledge updates too.
 
 ## Output to Claude Code
 
@@ -69,7 +67,6 @@ Configure Colin to write directly to Claude Code's skills folder:
 ```toml
 [project.output]
 target = "claude-skill"
-scope = "user"
 ```
 
 Skills appear in `~/.claude/skills/` and become available immediately.
