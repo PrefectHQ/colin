@@ -15,6 +15,7 @@ import tomli_w
 from rich.align import Align
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.spinner import Spinner
@@ -702,8 +703,20 @@ def _resolve_blueprint(name_or_path: str) -> Path:
     err_console.print(f"[red]Error:[/] Blueprint not found: {name_or_path}")
     if builtins:
         console.print("[dim]Available blueprints:[/]")
-        for bp_name in sorted(builtins):
-            console.print(f"  - {bp_name}")
+        for bp_name, bp_path in sorted(builtins.items()):
+            # Try to read description from blueprint.toml
+            bp_toml = bp_path / "blueprint.toml"
+            description = ""
+            if bp_toml.exists():
+                data = tomli.loads(bp_toml.read_text())
+                description = data.get("blueprint", {}).get("description", "")
+            if description:
+                # Truncate long descriptions
+                if len(description) > 60:
+                    description = description[:57] + "..."
+                console.print(f"  - [cyan]{bp_name}[/] - {description}")
+            else:
+                console.print(f"  - [cyan]{bp_name}[/]")
     sys.exit(1)
 
 
@@ -743,6 +756,7 @@ def init(
     output: str = "output",
     blueprint: Annotated[str | None, cyclopts.Parameter(name=["-b", "--blueprint"])] = None,
     list_blueprints: Annotated[bool, cyclopts.Parameter(name=["--list"])] = False,
+    yes: Annotated[bool, cyclopts.Parameter(name=["-y", "--yes"])] = False,
 ) -> None:
     """Initialize a new Colin project.
 
@@ -755,6 +769,7 @@ def init(
         output: Compiled output directory (default: output).
         blueprint: Initialize from a blueprint (name or path).
         list_blueprints: List available blueprints and exit.
+        yes: Skip confirmation prompt for blueprints.
     """
     # Handle --list
     if list_blueprints:
@@ -824,12 +839,49 @@ def init(
             sys.exit(1)
 
     try:
-        # Create project directory
-        project_dir.mkdir(parents=True, exist_ok=True)
-
         if blueprint:
             # Initialize from blueprint
             blueprint_path = _resolve_blueprint(blueprint)
+
+            # Show blueprint info and confirm
+            bp_toml = blueprint_path / "blueprint.toml"
+            bp_data = {}
+            if bp_toml.exists():
+                bp_data = tomli.loads(bp_toml.read_text())
+
+            bp_info = bp_data.get("blueprint", {})
+            description = bp_info.get("description", "")
+            about = bp_info.get("about", "")
+            instructions = bp_info.get("instructions", "")
+
+            # Show description and ask for confirmation
+            if not yes:
+                console.print(f"\n[bold]Blueprint:[/] [cyan]{blueprint}[/]")
+                if description:
+                    console.print(f"[dim]{description}[/]")
+                if about:
+                    console.print()
+                    console.print(
+                        Padding(
+                            Panel(
+                                Markdown(about.strip()),
+                                title="About",
+                                title_align="left",
+                                border_style="dim",
+                                padding=(1, 2),
+                                width=min(100, console.width - 4),
+                            ),
+                            (0, 2),  # margin: top/bottom=0, left/right=2
+                        )
+                    )
+                console.print()
+                confirm = console.input("[bold]Initialize project?[/] [dim](Y/n)[/] ")
+                if confirm.lower() in ("n", "no"):
+                    console.print("[dim]Cancelled.[/]")
+                    return
+
+            # Create project directory after confirmation
+            project_dir.mkdir(parents=True, exist_ok=True)
             created_files = _copy_blueprint(blueprint_path, project_dir)
 
             # Update colin.toml with generated project ID
@@ -857,20 +909,30 @@ def init(
             if len(created_files) > 10:
                 console.print(f"[dim]  ... and {len(created_files) - 10} more files[/]")
 
-            # Show blueprint instructions if present
-            bp_toml = blueprint_path / "blueprint.toml"
-            if bp_toml.exists():
-                bp_data = tomli.loads(bp_toml.read_text())
-                instructions = bp_data.get("blueprint", {}).get("instructions", "")
-                if instructions:
-                    console.print()
-                    console.print("[cyan bold]Instructions:[/]")
-                    if project_dir != cwd:
-                        console.print(f"  cd {project_display}")
-                        console.print()
-                    for line in instructions.strip().splitlines():
-                        console.print(f"  {line}")
-                    return  # Skip generic message
+            # Show instructions after creation
+            if instructions:
+                # Prepend cd command if in subdirectory
+                if project_dir != cwd:
+                    cd_block = f"Navigate to your project:\n\n```bash\ncd {project_display}\n```"
+                    instructions = f"{cd_block}\n\n{instructions}"
+                console.print()
+                console.print(
+                    Padding(
+                        Panel(
+                            Markdown(instructions.strip()),
+                            title="Next steps",
+                            title_align="left",
+                            border_style="dim",
+                            padding=(1, 2),
+                            width=min(100, console.width - 4),
+                        ),
+                        (0, 2),  # margin: top/bottom=0, left/right=2
+                    )
+                )
+            elif project_dir != cwd:
+                console.print()
+                console.print(f"[dim]Run:[/] cd {project_display}")
+            return  # Skip generic message
 
         else:
             # Default initialization

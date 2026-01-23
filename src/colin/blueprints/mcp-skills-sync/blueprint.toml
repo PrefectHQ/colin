@@ -1,0 +1,38 @@
+[blueprint]
+name = "mcp-skills-sync"
+description = "Download skills from a FastMCP skill server"
+about = """
+Downloads skills from a FastMCP skill server and installs them locally. Skills
+are tracked for changes, so running `colin run` again will only update files
+that have changed on the server.
+
+After initialization, you'll configure your FastMCP skills server and run
+`colin run` to download the skills.
+"""
+instructions = """
+## Configure your skills server
+
+The server must serve skills using FastMCP's `skill://` resource scheme.
+See: https://gofastmcp.com/servers/providers/skills
+
+Add an MCP server named `source` (the template references `colin.mcp.source`):
+
+```bash
+colin mcp add source "uvx my-skills-server"
+```
+
+Or for a remote HTTP server:
+
+```bash
+colin mcp add source "https://skills.example.com/mcp" -t http
+```
+
+## Download the skills
+
+```bash
+colin run
+```
+
+Skills are installed to `~/.claude/skills/` by default. To install to the
+current project instead, set `scope = "project"` in `colin.toml`.
+"""

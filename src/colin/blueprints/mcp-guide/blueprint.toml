@@ -1,0 +1,33 @@
+[blueprint]
+name = "mcp-guide"
+description = "Generate a skill that documents how to use an MCP server"
+about = """
+Generates a skill that teaches AI agents how to use an MCP server. Connects to
+the server, discovers its tools, and creates documentation for each one.
+
+After initialization, you'll configure your MCP server and run `colin run` to
+generate the skill documentation.
+"""
+instructions = """
+## Configure your MCP server
+
+Add an MCP server named `source` (the template references `colin.mcp.source`):
+
+```bash
+colin mcp add source "npx -y @modelcontextprotocol/server-filesystem /path"
+```
+
+Or for a Python-based server:
+
+```bash
+colin mcp add source "uvx mcp-server-git"
+```
+
+## Generate the skill
+
+```bash
+colin run
+```
+
+The skill will be written to the output directory configured in `colin.toml`.
+"""
