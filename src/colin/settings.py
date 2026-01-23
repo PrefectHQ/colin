@@ -27,6 +27,11 @@ class ColinSettings(BaseSettings):
         description="Name of the manifest file",
     )
 
+    fernet_key: str | None = Field(
+        default=None,
+        description="Fernet encryption key for OAuth token storage.",
+    )
+
 
 # Global settings instance
 settings = ColinSettings()

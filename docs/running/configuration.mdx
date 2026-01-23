@@ -246,8 +246,25 @@ Colin supports environment variables for global settings:
 | Environment Variable | Description | Default |
 | :------------------- | :---------- | :------ |
 | `COLIN_DEFAULT_LLM_MODEL` | Fallback LLM model when not configured in project | `anthropic:claude-sonnet-4-5` |
+| `COLIN_FERNET_KEY` | Encryption key for OAuth token storage | None (unencrypted) |
 
-The precedence order is: `[[providers.llm]]` model → `COLIN_DEFAULT_LLM_MODEL` → built-in default.
+The precedence order for LLM models is: `[[providers.llm]]` model → `COLIN_DEFAULT_LLM_MODEL` → built-in default.
+
+### OAuth Token Encryption
+
+OAuth tokens for providers like Linear and Notion are stored at `~/.colin/mcp-oauth/`. By default, tokens are stored unencrypted.
+
+To encrypt stored tokens, set `COLIN_FERNET_KEY` to a Fernet encryption key:
+
+```bash
+# Generate a key
+python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+
+# Set it in your environment
+export COLIN_FERNET_KEY="your-generated-key-here"
+```
+
+When set, Colin encrypts tokens before writing and decrypts when reading. If you change or remove the key, existing tokens become unreadable and you'll need to re-authenticate.
 
 ## Environment Variable Substitution
 

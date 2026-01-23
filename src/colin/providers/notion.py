@@ -8,25 +8,21 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, ClassVar
 
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
-from key_value.aio.stores.disk import DiskStore
 from pydantic import validate_call
 from typing_extensions import Self
 
 from colin.compiler.cache import get_compile_context
 from colin.models import Ref
 from colin.providers.base import Provider
+from colin.providers.oauth_store import get_oauth_store
 from colin.resources import Resource
 
 # Notion's hosted MCP server URL
 NOTION_MCP_URL = "https://mcp.notion.com/mcp"
-
-# OAuth token storage directory
-OAUTH_STORAGE_DIR = Path.home() / ".colin" / "mcp-oauth"
 
 
 class NotionPageResource(Resource):
@@ -150,12 +146,9 @@ class NotionProvider(Provider):
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         """Manage MCP client lifecycle."""
-        # Ensure storage directory exists
-        OAUTH_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-
-        # Create persistent token storage
-        token_storage = DiskStore(directory=str(OAUTH_STORAGE_DIR))
-        oauth = OAuth(mcp_url=NOTION_MCP_URL, token_storage=token_storage)
+        # Create persistent token storage (with optional encryption)
+        token_storage = get_oauth_store()
+        oauth = OAuth(mcp_url=NOTION_MCP_URL, token_storage=token_storage)  # type: ignore[arg-type]
 
         try:
             async with Client(NOTION_MCP_URL, auth=oauth) as client:
@@ -163,7 +156,11 @@ class NotionProvider(Provider):
                 yield
         except Exception as e:
             raise RuntimeError(
-                f"Failed to connect to Notion MCP server\n  URL: {NOTION_MCP_URL}\n  Error: {e}"
+                f"Failed to connect to Notion MCP server\n"
+                f"  URL: {NOTION_MCP_URL}\n"
+                f"  Error: {e}\n\n"
+                f"If this is an authentication error, try clearing your OAuth tokens:\n"
+                f"  colin mcp auth clear"
             ) from None
         finally:
             self._client = None

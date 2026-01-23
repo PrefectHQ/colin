@@ -67,6 +67,7 @@
               "providers/project",
               "providers/github",
               "providers/http",
+              "providers/linear",
               "providers/mcp",
               "providers/notion",
               "providers/llm",

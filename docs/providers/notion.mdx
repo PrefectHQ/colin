@@ -35,7 +35,13 @@ The Notion provider requires no configuration. Add it to your project to enable 
 # OAuth flow triggered automatically on first use
 ```
 
-On first use, Colin opens a browser window for Notion OAuth authentication. After authorization, credentials are cached for future use.
+On first use, Colin opens a browser window for Notion OAuth authentication. After authorization, credentials are cached at `~/.colin/mcp-oauth/`.
+
+If you encounter authentication errors, clear your OAuth tokens and re-authenticate:
+
+```bash
+colin mcp auth clear
+```
 
 ## Template Functions
 
