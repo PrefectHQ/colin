@@ -220,14 +220,14 @@ class NotionProvider(Provider):
 
     @validate_call
     async def search(
-        self, query: str, *, limit: int = 20, watch: bool = False
+        self, query: str, *, limit: int = 20, watch: bool = True
     ) -> NotionSearchResource:
         """Search Notion workspace for pages matching a query.
 
         Args:
             query: Search query string.
             limit: Maximum number of results to return (default 20).
-            watch: Whether to track this ref for staleness (default False).
+            watch: Whether to track this ref for staleness (default True).
 
         Returns:
             NotionSearchResource with matching pages.

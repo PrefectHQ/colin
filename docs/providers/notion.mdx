@@ -91,11 +91,9 @@ Search your Notion workspace for pages matching a query:
 | :------- | :------- | :------ | :---------- |
 | `query` | Yes | — | Search query string |
 | `limit` | No | `20` | Maximum number of results to return |
-| `watch` | No | `False` | Track for staleness detection |
+| `watch` | No | `True` | Track for staleness detection |
 
 Returns a `NotionSearchResource` containing matching pages (up to limit).
-
-**Note:** Search results are not tracked for staleness by default. To track individual pages, use `page()` on each result you want to monitor. If you need fresh search results on every build, set `colin.cache: never` in your document frontmatter.
 
 ## Objects
 
@@ -144,47 +142,28 @@ Note: Search results contain highlights, not full page content. Use `page()` to 
 
 ## Dependency Tracking
 
-By default, `page()` tracks dependencies. Documents recompile when tracked pages change:
+Both `page()` and `search()` track dependencies by default. Documents recompile when tracked content changes:
 
 ```jinja
-{# Recompiles when the page is edited in Notion #}
+{# Recompiles when the page is edited #}
 {{ colin.notion.page("abc123").content }}
+
+{# Recompiles when any search result changes #}
+{% for page in colin.notion.search("api docs") %}
+{{ page.content }}
+{% endfor %}
 ```
 
 Opt out of tracking with `watch=False`:
 
 ```jinja
 {{ colin.notion.page("abc123", watch=False).content }}
-```
-
-**Searches are not tracked by default** because checking staleness would require re-running the search on every build. Instead, track individual pages from search results:
-
-```jinja
-{# Search is not tracked, but each page() call is #}
-{% for result in colin.notion.search("api docs") %}
-{{ colin.notion.page(result.page_id).content }}
-{% endfor %}
-```
-
-If you need fresh search results on every build, set the document to volatile:
-
-```yaml
----
-colin:
-  cache: never
----
+{{ colin.notion.search("docs", watch=False) }}
 ```
 
 ## Staleness Detection
 
-The Notion provider uses `last_edited_time` for efficient staleness detection:
-
-| Resource | Version Strategy |
-| :------- | :--------------- |
-| `page()` | `last_edited_time` of the page |
-| `search()` | Hash of all result page IDs and their edit times |
-
-When checking staleness, Colin fetches page metadata without retrieving full content. If the edit time has changed, the document is marked stale and recompiled.
+The Notion provider uses `last_edited_time` for staleness detection. When a tracked page is edited in Notion, the document is marked stale and recompiled on the next build.
 
 ## Examples
 
