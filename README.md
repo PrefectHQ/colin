@@ -12,28 +12,30 @@
 
 ---
 
-Colin is a context engine. Write templates that reference live sources like GitHub files, MCP servers, and other documents. Colin compiles them, tracks dependencies, and rebuilds only what's stale.
+Colin is a context engine. Write templates that reference live sources—GitHub, Linear, Notion, HTTP endpoints—and other documents. Colin compiles them, tracks dependencies, and rebuilds only what's stale.
 
 ```markdown
 ---
-name: deployment-process
-description: How to deploy code to staging and production
+name: project-overview
+description: Current state of the project
 ---
 
-# Deployment
+# Project Overview
 
-{{ colin.github.file('acme/platform', 'docs/DEPLOY.md').content }}
+{{ colin.github.file('PrefectHQ/prefect', 'README.md').content | llm_extract('what is this project and what are its key features') }}
 
-## Environments
+## Contributing
 
-{{ ref('infrastructure/environments').content }}
+{{ colin.github.file('PrefectHQ/prefect', 'CONTRIBUTING.md').content }}
 
-## Recent Incidents
+## Recent Activity
 
-{{ colin.mcp.pagerduty.resource('incidents?team=platform&days=30') | llm_extract('deployment-related issues and how they were resolved') }}
+{% for issue in colin.github.issues('PrefectHQ/prefect', state='open', limit=5) %}
+- [#{{ issue.number }}]({{ issue.url }}): {{ issue.title }}
+{% endfor %}
 ```
 
-Run `colin run`. Colin fetches the deployment guide from GitHub, resolves the reference to your environments doc, extracts incident summaries through an LLM, and writes the compiled skill. Run it again tomorrow—if nothing changed upstream, nothing rebuilds. If the deployment guide in GitHub was updated, Colin detects the new commit and recompiles.
+Run `colin run`. Colin fetches the README and contributing guide from GitHub, lists recent issues, and writes the compiled skill. Run it again tomorrow—if nothing changed upstream, nothing rebuilds. If the README was updated, Colin detects the new commit and recompiles.
 
 ## Install
 

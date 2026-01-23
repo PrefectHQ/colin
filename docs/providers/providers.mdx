@@ -6,12 +6,14 @@ icon: puzzle-piece
 
 Providers connect Colin to data sources. Each provider handles a specific type of integration—referencing other project documents, fetching resources from MCP servers, calling language models, reading from HTTP endpoints, or accessing S3 storage. Providers expose functions you call directly in templates and handle URI schemes for the `ref()` system.
 
-Colin includes six built-in providers:
+Colin includes eight built-in providers:
 
 | Provider | Purpose | URI Schemes |
 | :------- | :------ | :---------- |
 | [Project](/providers/project) | Reference other project documents | `project://` |
-| [GitHub](/providers/github) | Access GitHub repositories | `github://` |
+| [GitHub](/providers/github) | Access GitHub repositories, issues, and PRs | `github://` |
+| [Linear](/providers/linear) | Fetch issues from Linear | (functions only) |
+| [Notion](/providers/notion) | Access Notion pages | (functions only) |
 | [HTTP](/providers/http) | Fetch web content | `http://`, `https://` |
 | [MCP](/providers/mcp) | Connect to MCP servers | `mcp.<name>://` |
 | [LLM](/providers/llm) | Invoke language models | (functions only) |

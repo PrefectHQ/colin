@@ -3,160 +3,167 @@ title: Quickstart
 icon: rocket-launch
 ---
 
-This guide walks through creating a Colin project that compiles a skill from live sources.
+Colin compiles agent skills from live sources. In this quickstart, you'll build a skill **from this quickstart itself**. When we update these docs, your agent's knowledge of Colin updates too.
 
-If you haven't already installed Colin, follow the [installation instructions](/getting-started/installation).
+## Projects and Blueprints
 
-## Initialize a Project
+Colin organizes work into **projects**. A project is a folder with a `colin.toml` configuration file and a `models/` directory containing your source templates. When you run Colin, it reads templates from `models/`, resolves their dependencies, and writes compiled output.
 
-Create a new directory and initialize a Colin project:
+**Blueprints** are starter templates for projects. Instead of creating files manually, you can initialize a project from a blueprint that already has everything configured. We've prepared a `quickstart` blueprint so you can follow along without needing your editor open.
 
-```bash
-mkdir my-skill && cd my-skill
-colin init
-```
-
-This creates:
-- `colin.toml` - Project configuration
-- `models/` - Directory for your source documents
-
-## Create a Source Document
-
-Start with a simple document that will be referenced by the skill:
-
-```markdown models/environments.md
----
-name: Environment Configuration
----
-
-## Staging
-- URL: staging.acme.com
-- Auto-deploys on merge to main
-
-## Production
-- URL: acme.com
-- Manual promotion via `/deploy prod` in Slack
-```
-
-## Create a Skill
-
-Now create a skill that references the environments document:
-
-```markdown models/deploy/SKILL.md
----
-name: deployment-process
-description: How to deploy code to staging and production
----
-
-# Deployment
-
-{{ ref('environments').content }}
-
-## Steps
-
-1. Create a PR against main
-2. Wait for CI to pass
-3. Get approval from a code owner
-4. Merge to main
-```
-
-The `ref('environments')` call does two things:
-1. Registers that `SKILL.md` depends on `environments.md`
-2. Returns the compiled content
-
-## Compile
-
-Run the compiler:
+Create the project:
 
 ```bash
-colin run
+colin init using-colin -b quickstart
 ```
 
-Colin displays progress:
+This creates a `using-colin/` folder with everything you need. Move into it:
 
-```
-Config:  colin.toml
-Project: my-skill
-Output:  output/
-
-✓ environments.md
-✓ deploy/SKILL.md
-  ← ref:environments
+```bash
+cd using-colin
 ```
 
-Colin detected the dependency and compiled `environments.md` first.
+## What's Inside
 
-## Add LLM Processing
+The blueprint created this structure:
 
-The `| llm_extract()` filter pulls specific information using an LLM:
+```
+using-colin/
+├── colin.toml
+└── models/
+    ├── SKILL.md
+    └── tips.md
+```
 
-```markdown models/deploy/SKILL.md
+The `colin.toml` file is minimal—just the project name. The interesting parts are in `models/`.
+
+### The Skill
+
+Here's `models/SKILL.md`, the main skill file:
+
+```markdown
 ---
-name: deployment-process
-description: How to deploy code to staging and production
+name: using-colin
+description: How to use Colin to compile agent skills from live sources.
+             Use when working with Colin projects, templates, compilation,
+             or skill management.
 ---
 
-# Deployment
+# Using Colin
 
-{{ ref('environments').content }}
+Compiled from live documentation.
 
-## Steps
+{{ colin.github.file('PrefectHQ/colin', 'docs/getting-started/quickstart.mdx').content }}
 
-1. Create a PR against main
-2. Wait for CI to pass
-3. Get approval from a code owner
-4. Merge to main
+---
+
+{{ ref('tips.md').content }}
+```
+
+The top section is **frontmatter**—YAML metadata that tells agents when to use this skill. The `name` and `description` are what Claude Code sees when deciding which skills apply to your request.
+
+Below that is the template body. Two things are happening here:
+
+1. `colin.github.file(...)` fetches *this very quickstart* from GitHub and inserts its content
+2. `ref('tips.md').content` pulls in content from the `tips.md` file in your project
+
+When Colin compiles this, it replaces those template expressions with actual content.
+
+### The Supporting Document
+
+Here's `models/tips.md`, a reference document that gets pulled into the main skill:
+
+```markdown
+---
+colin:
+  output:
+    publish: false
+---
 
 ## Quick Reference
 
-{{ ref('environments') | llm_extract('a one-line summary of each environment') }}
+**Providers** fetch from external sources:
+- `colin.github.file(repo, path)` - GitHub files
+- `colin.linear.issues(team=...)` - Linear issues
+- `colin.notion.page(url)` - Notion pages
+
+**References** connect documents:
+- `ref('doc.md').content` - include another document's content
+
+**LLM processing** transforms content:
+- `ref('doc.md').content | llm_extract('prompt')` - extract specific information
 ```
 
-Compile again:
+Notice the `publish: false` in the frontmatter. This tells Colin to compile the document but not include it in the output. The tips content gets composed into `SKILL.md` via `ref()`, so there's no need for a separate output file.
+
+## Compile the Project
+
+Now run Colin:
 
 ```bash
 colin run
 ```
 
-```
-Config:  colin.toml
-Project: my-skill
-Output:  output/
+Colin reads your templates from `models/`, fetches the quickstart from GitHub, resolves the reference to `tips.md`, and writes the compiled output. By default, output goes to an `output/` folder in your project.
 
-✓ environments.md
-✓ deploy/SKILL.md
-  ← ref:environments
-  ✓ llm:auto:a1b2c3
+Take a look at `output/SKILL.md`:
+
+```bash
+cat output/SKILL.md
 ```
 
-The `✓ llm:` entry shows an LLM call completed. On subsequent runs with the same input, you'll see `»` indicating the result was served from cache.
-
-## Output to Claude Code
-
-Configure Colin to write directly to Claude Code's skills folder:
-
-```toml colin.toml
-[project]
-name = "my-skill"
-
-[project.output]
-target = "claude-skill"
-scope = "user"
-```
-
-Run `colin run` again. The skill now appears in `~/.claude/skills/` and is available in all Claude Code sessions.
+You'll see the compiled skill with all the template expressions replaced by actual content—including the quickstart you're reading right now.
 
 ## Incremental Builds
 
-Edit `environments.md` and run `colin run` again. Colin detects the change and recompiles `SKILL.md` because it depends on `environments.md`. Documents that haven't changed skip compilation.
+Here's where Colin gets interesting. Make a change to `models/tips.md`—add a line about the HTTP provider.
 
-## What's Next?
+If you'd rather not open an editor, here's a shortcut:
 
-You've learned the basics:
-- Initialize a project with `colin init`
-- Create documents with frontmatter
-- Reference other documents with `ref()`
-- Transform content with `| llm_extract()`
-- Output skills to Claude Code
+```bash
+echo '- `colin.http.get(url)` - HTTP endpoints' >> models/tips.md
+```
 
-Next: [Agent Skills](/running/skills) covers skills in depth, including MCP integration and multi-file skills.
+Now run Colin again:
+
+```bash
+colin run
+```
+
+Colin recompiles `SKILL.md` because it depends on `tips.md`, which changed. But notice: it didn't re-fetch from GitHub. The GitHub content hasn't changed since last time, so Colin used its cached version.
+
+This is the core value proposition. Colin tracks what sources went into each document and their versions. When you run again, it only refetches what's actually changed. Your skills stay fresh without redundant work.
+
+## Output to Claude Code
+
+So far, Colin has been writing to `output/` in your project. To make this an actual skill that Claude Code can use, you need to configure an **output target**.
+
+Add the output configuration to `colin.toml`:
+
+```bash
+cat >> colin.toml << 'EOF'
+
+[project.output]
+target = "claude-skill"
+EOF
+```
+
+Run `colin run` again.
+
+Now instead of writing to `output/`, Colin writes directly to `~/.claude/skills/using-colin/`. The skill is immediately available in Claude Code. Your agent now knows how to use Colin—and that knowledge will stay current every time you run `colin run`.
+
+## What You Built
+
+You now have an agent skill that:
+
+- Contains the Colin quickstart, pulled live from GitHub
+- Includes your own reference notes composed via `ref()`
+- Rebuilds incrementally when sources change
+- Lives in Claude Code, ready to help
+
+## Next Steps
+
+- **[Providers](/providers/providers)**: Connect to GitHub, Linear, Notion, HTTP, and more
+- **[LLM Processing](/providers/llm)**: Transform content with `| llm_extract()` and `{% llm %}` blocks
+- **[References](/projects/references)**: Advanced dependency patterns
+- **[Configuration](/running/configuration)**: All project settings

@@ -1,0 +1,12 @@
+[blueprint]
+name = "quickstart"
+description = "A skill that pulls Colin's quickstart docs from GitHub"
+about = """
+Creates a skill that fetches Colin's quickstart documentation from GitHub and
+stays current automatically. This is the example from the Colin quickstart guide.
+"""
+instructions = """
+Continue following the quickstart guide:
+
+https://colin.prefect.io/docs/getting-started/quickstart#what's-inside
+"""
