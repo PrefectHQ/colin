@@ -121,3 +121,81 @@ def test_skills_update_reports_failures(
     assert "working-skill" in captured.out
     assert "broken-skill" in captured.out
     assert "1" in captured.out and "failed" in captured.out
+
+
+def test_skills_list_no_skills(tmp_path: Path, cli: Callable[..., None], capsys):
+    """colin skills list reports no skills when directory is empty."""
+    cli("skills", "list", str(tmp_path))
+
+    captured = capsys.readouterr()
+    assert "No Colin skills found" in captured.out
+
+
+def test_skills_list_shows_skills(
+    test_project: Path, mock_agent, cli: Callable[..., None], tmp_path: Path, capsys
+):
+    """colin skills list shows installed skills with status."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    # Create a skill
+    skill_output = skills_dir / "my-skill"
+    cli("run", "--quiet", "--output", str(skill_output))
+
+    # List skills
+    cli("skills", "list", str(skills_dir))
+
+    captured = capsys.readouterr()
+    assert "refs-test" in captured.out  # Project name from fixture
+    assert "fresh" in captured.out
+
+
+def test_skills_list_detects_stale_skills(
+    test_project: Path, mock_agent, cli: Callable[..., None], tmp_path: Path, capsys
+):
+    """colin skills list detects when sources have changed."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    # Create a skill
+    skill_output = skills_dir / "my-skill"
+    cli("run", "--quiet", "--output", str(skill_output))
+
+    # Modify a source file
+    (test_project / "models" / "greeting.md").write_text("# Changed content")
+
+    # List skills - should show stale
+    cli("skills", "list", str(skills_dir))
+
+    captured = capsys.readouterr()
+    assert "stale" in captured.out
+    assert "sources changed" in captured.out
+
+
+def test_skills_list_handles_missing_source(
+    test_project: Path, mock_agent, cli: Callable[..., None], tmp_path: Path, capsys
+):
+    """colin skills list handles skills with missing source projects."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    # Create a skill with a nonexistent source
+    skill_dir = skills_dir / "orphan-skill"
+    skill_dir.mkdir()
+    (skill_dir / ".colin-manifest.json").write_text(
+        json.dumps(
+            {
+                "project_name": "orphan",
+                "project_config": "/nonexistent/colin.toml",
+                "files": {},
+            }
+        )
+    )
+
+    # List skills
+    cli("skills", "list", str(skills_dir))
+
+    captured = capsys.readouterr()
+    assert "orphan" in captured.out
+    assert "stale" in captured.out
+    assert "source not found" in captured.out

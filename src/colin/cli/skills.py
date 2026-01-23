@@ -1,11 +1,14 @@
 """Skills management commands."""
 
 import asyncio
+import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import cyclopts
 from rich.console import Console
+from rich.table import Table
 
 from colin.cli.run import update as run_update
 
@@ -100,3 +103,176 @@ async def update(
         sys.exit(1)
     else:
         console.print(f"[green]{succeeded}[/] skill(s) updated")
+
+
+def _check_skill_staleness(manifest_data: dict, project_config_path: Path) -> str | None:
+    """Check if a skill is stale by comparing source hashes.
+
+    Returns:
+        None if fresh, or a string describing why it's stale.
+    """
+    if not project_config_path.exists():
+        return "source not found"
+
+    # Load the project's internal manifest to compare hashes
+    project_dir = project_config_path.parent
+    internal_manifest_path = project_dir / ".colin" / "manifest.json"
+
+    if not internal_manifest_path.exists():
+        return "never compiled"
+
+    try:
+        internal_manifest = json.loads(internal_manifest_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return "manifest unreadable"
+
+    # Compare source hashes from internal manifest to current source files
+    internal_docs = internal_manifest.get("documents", {})
+
+    # Check if any source file has changed
+    for doc_uri, doc_meta in internal_docs.items():
+        if not isinstance(doc_meta, dict):
+            continue
+
+        stored_hash = doc_meta.get("source_hash")
+        if not stored_hash:
+            continue
+
+        # Reconstruct source path from URI
+        # URI format: project://path/to/doc.md
+        if doc_uri.startswith("project://"):
+            rel_path = doc_uri[len("project://") :]
+            source_path = project_dir / "models" / rel_path
+
+            if source_path.exists():
+                import hashlib
+
+                current_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()[:16]
+                if current_hash != stored_hash:
+                    return "sources changed"
+
+    return None
+
+
+def _format_time_ago(dt: datetime) -> str:
+    """Format a datetime as a human-readable 'time ago' string."""
+    now = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    delta = now - dt
+    seconds = delta.total_seconds()
+
+    if seconds < 60:
+        return "just now"
+    elif seconds < 3600:
+        mins = int(seconds / 60)
+        return f"{mins}m ago"
+    elif seconds < 86400:
+        hours = int(seconds / 3600)
+        return f"{hours}h ago"
+    elif seconds < 604800:
+        days = int(seconds / 86400)
+        return f"{days}d ago"
+    else:
+        return dt.strftime("%Y-%m-%d")
+
+
+@app.command(name="list")
+def list_skills(
+    directory: Path | None = None,
+) -> None:
+    """List all Colin skills and their status.
+
+    Shows installed skills, their source projects, and whether they're stale.
+
+    Args:
+        directory: Skills directory (default: ~/.claude/skills).
+    """
+    skills_dir = directory or _default_skills_dir()
+
+    if not skills_dir.exists():
+        err_console.print(f"[red]Error:[/] Skills directory not found: {skills_dir}")
+        sys.exit(1)
+
+    if not skills_dir.is_dir():
+        err_console.print(f"[red]Error:[/] Not a directory: {skills_dir}")
+        sys.exit(1)
+
+    # Find all manifests - both at root level and in subdirectories
+    skills: list[tuple[str, dict, Path]] = []
+
+    # Check root-level manifest (skill outputs to subdirs but manifest at root)
+    root_manifest = skills_dir / ".colin-manifest.json"
+    if root_manifest.exists():
+        try:
+            manifest_data = json.loads(root_manifest.read_text())
+            name = manifest_data.get("project_name", "unknown")
+            skills.append((name, manifest_data, root_manifest))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Check subdirectories for their own manifests
+    for item in skills_dir.iterdir():
+        if item.is_dir():
+            manifest_path = item / ".colin-manifest.json"
+            if manifest_path.exists():
+                try:
+                    manifest_data = json.loads(manifest_path.read_text())
+                    name = manifest_data.get("project_name", item.name)
+                    skills.append((name, manifest_data, manifest_path))
+                except (json.JSONDecodeError, OSError):
+                    skills.append((item.name, {}, manifest_path))
+
+    if not skills:
+        console.print(f"[dim]No Colin skills found in {skills_dir}[/]")
+        return
+
+    # Sort by name
+    skills.sort(key=lambda x: x[0])
+
+    # Build table
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("Skill", style="cyan")
+    table.add_column("Status")
+    table.add_column("Updated", style="dim")
+    table.add_column("Source", style="dim")
+
+    for name, manifest_data, manifest_path in skills:
+        # Get project info
+        project_config = manifest_data.get("project_config", "")
+        project_path = Path(project_config) if project_config else None
+
+        # Check staleness
+        if project_path:
+            stale_reason = _check_skill_staleness(manifest_data, project_path)
+        else:
+            stale_reason = "no source"
+
+        if stale_reason:
+            status = f"[yellow]stale[/] ({stale_reason})"
+        else:
+            status = "[green]fresh[/]"
+
+        # Get last updated time from manifest file
+        try:
+            mtime = datetime.fromtimestamp(manifest_path.stat().st_mtime, tz=timezone.utc)
+            updated = _format_time_ago(mtime)
+        except OSError:
+            updated = "unknown"
+
+        # Format source path (abbreviate home dir)
+        if project_path:
+            try:
+                source_str = str(project_path.parent.relative_to(Path.home()))
+                source_str = f"~/{source_str}"
+            except ValueError:
+                source_str = str(project_path.parent)
+        else:
+            source_str = "-"
+
+        table.add_row(name, status, updated, source_str)
+
+    console.print(f"[dim]{skills_dir}/[/]")
+    console.print()
+    console.print(table)
