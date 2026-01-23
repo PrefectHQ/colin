@@ -8,7 +8,6 @@ from pathlib import Path
 
 import cyclopts
 from rich.console import Console
-from rich.table import Table
 
 from colin.cli.run import update as run_update
 
@@ -231,14 +230,9 @@ def list_skills(
     # Sort by name
     skills.sort(key=lambda x: x[0])
 
-    # Build table
-    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
-    table.add_column("Skill", style="cyan")
-    table.add_column("Status")
-    table.add_column("Updated", style="dim")
-    table.add_column("Source", style="dim")
-
     for name, manifest_data, manifest_path in skills:
+        # Get skill location (where the manifest lives)
+        skill_location = manifest_path.parent
         # Get project info
         project_config = manifest_data.get("project_config", "")
         project_path = Path(project_config) if project_config else None
@@ -261,6 +255,13 @@ def list_skills(
         except OSError:
             updated = "unknown"
 
+        # Format location (abbreviate home dir)
+        try:
+            location_str = str(skill_location.relative_to(Path.home()))
+            location_str = f"~/{location_str}"
+        except ValueError:
+            location_str = str(skill_location)
+
         # Format source path (abbreviate home dir)
         if project_path:
             try:
@@ -271,8 +272,9 @@ def list_skills(
         else:
             source_str = "-"
 
-        table.add_row(name, status, updated, source_str)
-
-    console.print(f"[dim]{skills_dir}/[/]")
-    console.print()
-    console.print(table)
+        # Print skill entry
+        console.print(f"[cyan]{name}[/]")
+        console.print(f"  [dim]Status:[/]   {status} ({updated})")
+        console.print(f"  [dim]Location:[/] {location_str}")
+        console.print(f"  [dim]Source:[/]   {source_str}")
+        console.print()

@@ -1,6 +1,7 @@
 [project]
 name = "colin-cli"
 model-path = "models"
+id = "colin-cli-vkw4jr"
 
 [project.output]
-target = "claude-skill"
+path = "/Users/jlowin/.claude/skills/colin-cli"
