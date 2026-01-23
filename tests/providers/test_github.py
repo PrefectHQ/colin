@@ -1124,6 +1124,37 @@ class TestGitHubProviderIssue:
         with pytest.raises(FileNotFoundError, match="Issue not found"):
             await provider.issue(999)
 
+    async def test_issue_with_repo_first(self) -> None:
+        """issue() accepts repo as first arg and number as second."""
+        provider = GitHubProvider()  # No configured repo
+        provider._sha_cache = {}
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "number": 123,
+            "title": "Test",
+            "body": None,
+            "state": "open",
+            "labels": [],
+            "assignees": [],
+            "user": {"login": "author"},
+            "html_url": "https://github.com/other/repo/issues/123",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "created_at": "2024-01-01T00:00:00Z",
+            "closed_at": None,
+            "comments": 0,
+        }
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        provider._client = mock_client
+
+        result = await provider.issue("other/repo", 123)
+
+        assert result.repo == "other/repo"
+        assert result.number == 123
+
 
 class TestGitHubProviderPR:
     """Tests for GitHubProvider.pr()."""

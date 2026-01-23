@@ -500,13 +500,18 @@ class GitHubProvider(Provider):
         return repo, number, url_type
 
     def _resolve_repo_and_number(
-        self, number_or_url: str | int, repo: str | None
+        self, number_or_url: str | int, repo: str | int | None
     ) -> tuple[str, int]:
         """Resolve repo and number from arguments.
 
+        Supports multiple call patterns:
+        - issue(123) - number only, uses configured repo
+        - issue("owner/repo", 123) - repo first, then number
+        - issue("https://...") - full URL
+
         Args:
-            number_or_url: Issue/PR number, or full GitHub URL.
-            repo: Repository in "owner/repo" format (optional if URL or configured).
+            number_or_url: Issue/PR number, repo string, or full GitHub URL.
+            repo: Number when first arg is repo, or repo string, or None.
 
         Returns:
             Tuple of (repo, number).
@@ -518,6 +523,16 @@ class GitHubProvider(Provider):
         if isinstance(number_or_url, str) and number_or_url.startswith("http"):
             parsed_repo, number, _ = self._parse_issue_or_pr_url(number_or_url)
             return parsed_repo, number
+
+        # If repo is an int, first arg is the repo string
+        if isinstance(repo, int):
+            return str(number_or_url), repo
+
+        # If first arg looks like a repo (contains /), swap the arguments
+        if isinstance(number_or_url, str) and "/" in number_or_url and repo is None:
+            raise ValueError(
+                f"Issue/PR number required. Use github.issue('{number_or_url}', NUMBER)."
+            )
 
         # Convert to int
         number = int(number_or_url)
@@ -856,7 +871,7 @@ class GitHubProvider(Provider):
     async def issue(
         self,
         number_or_url: str | int,
-        repo: str | None = None,
+        repo: str | int | None = None,
         *,
         watch: bool = True,
     ) -> GitHubIssueResource:
@@ -888,7 +903,7 @@ class GitHubProvider(Provider):
             provider=self.namespace,
             connection=self._connection,
             method="issue",
-            args={"repo": resolved_repo, "number": number},
+            args={"number_or_url": number, "repo": resolved_repo},
         )
 
         resource = GitHubIssueResource(
@@ -922,7 +937,7 @@ class GitHubProvider(Provider):
     async def pr(
         self,
         number_or_url: str | int,
-        repo: str | None = None,
+        repo: str | int | None = None,
         *,
         watch: bool = True,
     ) -> GitHubPRResource:
@@ -959,7 +974,7 @@ class GitHubProvider(Provider):
             provider=self.namespace,
             connection=self._connection,
             method="pr",
-            args={"repo": resolved_repo, "number": number},
+            args={"number_or_url": number, "repo": resolved_repo},
         )
 
         resource = GitHubPRResource(
@@ -1051,7 +1066,7 @@ class GitHubProvider(Provider):
                 provider=self.namespace,
                 connection=self._connection,
                 method="issue",
-                args={"repo": resolved_repo, "number": data["number"]},
+                args={"number_or_url": data["number"], "repo": resolved_repo},
             )
 
             issue_resources.append(
@@ -1168,7 +1183,7 @@ class GitHubProvider(Provider):
                 provider=self.namespace,
                 connection=self._connection,
                 method="pr",
-                args={"repo": resolved_repo, "number": data["number"]},
+                args={"number_or_url": data["number"], "repo": resolved_repo},
             )
 
             pr_resources.append(
