@@ -544,6 +544,40 @@ token = "${GITHUB_TOKEN}"
         provider_config = config.providers["github.myrepo"]
         assert provider_config.config["token"] == "ghp_secret123"
 
+    def test_save_project_preserves_env_var_patterns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """save_project writes ${VAR} patterns, not expanded values."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret123")
+
+        config_file = tmp_path / "colin.toml"
+        config_file.write_text("""\
+[project]
+name = "test-project"
+
+[[providers.github]]
+name = "myrepo"
+repo = "owner/repo"
+token = "${GITHUB_TOKEN}"
+""")
+
+        config = load_project(config_file)
+
+        # Verify expanded value is available at runtime
+        provider_config = config.providers["github.myrepo"]
+        assert provider_config.config["token"] == "ghp_secret123"
+
+        # Verify raw config preserves the pattern
+        assert provider_config.raw_config["token"] == "${GITHUB_TOKEN}"
+
+        # Save the project back
+        save_project(config_file, config)
+
+        # Re-read the file and verify the pattern was preserved
+        content = config_file.read_text()
+        assert "${GITHUB_TOKEN}" in content
+        assert "ghp_secret123" not in content
+
 
 class TestLoadProject:
     """Tests for load_project function."""
