@@ -16,6 +16,7 @@ app = cyclopts.App(
 
 # Register subcommands
 app.command(run.run)
+app.command(run.update)
 app.command(run.init)
 app.command(run.clean)
 
