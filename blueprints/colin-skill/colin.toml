@@ -1,0 +1,9 @@
+# Colin Skill Blueprint
+# Teaches Claude Code how to use Colin
+
+[project]
+name = "colin-skill"
+
+[project.output]
+target = "claude-skill"
+scope = "user"

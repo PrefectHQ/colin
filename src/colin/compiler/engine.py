@@ -662,6 +662,29 @@ class CompileEngine:
         Returns:
             The compiled document.
         """
+        # Check if template processing is disabled
+        if not doc.frontmatter.colin.template:
+            # Skip Jinja entirely - just use content as-is
+            output_config = doc.frontmatter.colin.output
+            renderer = get_renderer(output_config.format)
+            render_result = renderer.render(doc.template_content, doc.uri, output_config)
+            output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
+
+            return CompiledDocument(
+                uri=doc.uri,
+                frontmatter=doc.frontmatter,
+                output=render_result.content,
+                output_path=render_result.filename,
+                source_hash=doc.source_hash,
+                output_hash=output_hash,
+                file_outputs={},
+                file_output_meta={},
+                sections={},
+                llm_calls={},
+                refs=[],
+                total_cost_usd=0.0,
+            )
+
         # Create Jinja environment with extensions
         env = create_jinja_environment()
 

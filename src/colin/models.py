@@ -214,6 +214,14 @@ class CacheEntry(BaseModel):
 class ColinConfig(BaseModel):
     """Colin-specific configuration from the colin: block in frontmatter."""
 
+    template: bool = True
+    """Whether to process this file as a Jinja template.
+
+    Set to false to skip template rendering entirely. The file content
+    (minus frontmatter) passes through unchanged. Useful for documentation
+    files that contain Jinja syntax as examples.
+    """
+
     output: OutputConfig = Field(default_factory=OutputConfig)
     """Output configuration (format, path, publish)."""
 
