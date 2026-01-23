@@ -25,7 +25,6 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-      id-token: write
 
     steps:
       - name: Checkout repository
@@ -50,15 +49,13 @@ jobs:
 
           TRIAGE PROCESS:
 
-          1. Get available labels:
-             Run: `gh label list`
-
-          2. Retrieve issue/PR details using GitHub tools:
+          1. Retrieve issue/PR details using GitHub tools:
              - mcp__github__get_issue: Get the issue/PR details
              - mcp__github__get_issue_comments: Read any discussion
+             - mcp__github__get_pull_request_files: Get changed files for PRs
              - If the issue/PR mentions other issues (e.g., "fixes #123", "related to #456"), use mcp__github__get_issue to read those linked issues for additional context
 
-          3. Analyze and apply labels based on these guidelines:
+          2. Analyze and apply labels based on these guidelines:
 
           CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive):
           - bug: Reports of broken functionality OR PRs that fix bugs
@@ -98,11 +95,14 @@ jobs:
           - dependencies: Only for dependabot PRs
           - ignore in release notes: Meta/workflow changes only
 
-          4. Apply selected labels:
+          3. Apply selected labels:
              Use mcp__github__update_issue to apply your selected labels
              DO NOT post any comments
           PROMPT_END
           EOF
+
+      - name: Clean up stale Claude locks
+        run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
 
       - name: Run Claude for Issue Triage
         uses: anthropics/claude-code-action@v1
@@ -112,5 +112,8 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_non_write_users: "*"
           claude_args: |
-            --model claude-sonnet-4-5
-            --allowedTools "Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files"
+            --allowedTools mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
+          settings: |
+            {
+              "model": "claude-sonnet-4-5-20250929"
+            }
