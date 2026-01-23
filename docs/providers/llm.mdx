@@ -14,14 +14,14 @@ Configure a default model in `colin.toml`:
 
 ```toml colin.toml
 [[providers.llm]]
-model = "anthropic:claude-sonnet-4-20250514"
+model = "anthropic:claude-sonnet-4-5"
 ```
 
 Model identifiers follow the `provider:model-name` format. Supported providers include `anthropic` and `openai`.
 
 | Field | Description | Default |
 | :---- | :---------- | :------ |
-| `model` | Model identifier (e.g., `anthropic:claude-sonnet-4-20250514`) | From settings |
+| `model` | Model identifier (e.g., `anthropic:claude-sonnet-4-5`) | From settings |
 | `instructions` | System prompt for all LLM calls from this provider | None |
 | `instructions_ref` | Path to a document whose compiled content becomes the system prompt | None |
 
@@ -32,17 +32,17 @@ Beyond the default provider, you can configure named LLM instances for different
 ```toml colin.toml
 # Default LLM - used by llm.extract(), llm.classify(), {% llm %}, etc.
 [[providers.llm]]
-model = "anthropic:claude-sonnet-4-20250514"
+model = "anthropic:claude-sonnet-4-5"
 
 # Fast model for simple extractions
 [[providers.llm]]
 name = "fast"
-model = "anthropic:claude-haiku-3"
+model = "anthropic:claude-haiku-4-5"
 
 # Capable model for complex reasoning
 [[providers.llm]]
 name = "capable"
-model = "anthropic:claude-opus-4"
+model = "anthropic:claude-opus-4-5"
 ```
 
 The default provider's functions are available on `colin.llm`:
@@ -71,7 +71,7 @@ Instructions act as system prompts, shaping how the LLM responds across all call
 
 ```toml colin.toml
 [[providers.llm]]
-model = "anthropic:claude-sonnet-4-20250514"
+model = "anthropic:claude-sonnet-4-5"
 instructions = "You are a technical writer. Be concise and precise."
 ```
 
@@ -79,7 +79,7 @@ For longer instructions, reference a compiled document:
 
 ```toml colin.toml
 [[providers.llm]]
-model = "anthropic:claude-sonnet-4-20250514"
+model = "anthropic:claude-sonnet-4-5"
 instructions_ref = "prompts/analyst.md"
 ```
 
@@ -110,7 +110,7 @@ The LLM provider exposes three functions accessible through the `colin.llm` name
 Individual function calls can override the model:
 
 ```markdown
-{{ colin.llm.extract(content, 'summary', model='anthropic:claude-haiku-3') }}
+{{ colin.llm.extract(content, 'summary', model='anthropic:claude-haiku-4-5') }}
 ```
 
 ### Extract
@@ -207,7 +207,7 @@ Focus on practical implications for developers.
 Override the model for specific completions:
 
 ```markdown
-{% llm model="anthropic:claude-haiku-3" %}
+{% llm model="anthropic:claude-haiku-4-5" %}
 Quick summary: {{ ref('data').content }}
 {% endllm %}
 ```
@@ -242,7 +242,7 @@ colin run context/analysis.md --no-cache
 LLM calls have associated costs. Colin's caching minimizes redundant calls, but you can further optimize by using cheaper models for simple tasks:
 
 ```markdown
-{{ ref('data') | llm_extract('word count', model='anthropic:claude-haiku-3') }}
+{{ ref('data') | llm_extract('word count', model='anthropic:claude-haiku-4-5') }}
 ```
 
 Structure documents to avoid redundant extraction. Extract once into an intermediate document:

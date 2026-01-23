@@ -6,7 +6,57 @@ icon: wand-magic-sparkles
 
 Agent skills are an open standard for giving AI agents domain-specific expertise. Tools like Claude Code, Cursor, Codex, and Gemini CLI can discover and load skills dynamically to perform better at specific tasks.
 
-Colin compiles skills from live sources. Instead of static markdown files that go stale, you write templates that pull from your actual infrastructure—GitHub repos, incident history, internal APIs. When those sources change, Colin recompiles. Your skills stay fresh automatically.
+Colin compiles skills from live sources. Instead of static markdown files that go stale, write templates that pull from your actual infrastructure—GitHub repos, incident history, internal APIs. When those sources change, Colin recompiles. Skills stay fresh automatically.
+
+## Why Colin?
+
+Skills drift from reality. The deployment process changes, environments get renamed, approval flows update. The skill becomes wrong. Agents give bad advice.
+
+Colin keeps skills fresh by compiling them from live sources:
+
+```markdown
+---
+name: deployment-process
+description: How to deploy to staging and production
+---
+
+# Deployment
+
+{{ ref('infrastructure/environments').content }}
+
+## Steps
+
+{{ colin.github.file('acme/platform', 'docs/DEPLOY.md').content }}
+
+## Recent Issues
+
+{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | llm_extract('what went wrong and how it was fixed') }}
+```
+
+Run `colin run`. The skill compiles from your infrastructure doc, the latest deployment guide from GitHub, and recent incidents from PagerDuty. When the deployment guide changes, Colin detects it and recompiles.
+
+## Migrating Existing Skills
+
+Static skills can become Colin templates incrementally. Keep existing content, wrap dynamic parts in refs:
+
+```markdown
+# Deployment
+
+## Environments
+
+{{ colin.github.file('acme/infra', 'docs/ENVIRONMENTS.md').content }}
+
+## Manual Steps
+
+1. Create a PR against main
+2. Wait for CI to pass
+3. Get approval from a code owner
+4. Merge to main
+
+[Your existing static content stays here unchanged]
+```
+
+The static parts pass through unchanged. The dynamic parts recompile when sources change. Start with one dynamic section and expand from there.
 
 ## The Standard
 
@@ -30,33 +80,6 @@ description: How to deploy code to staging and production
 
 At startup, agents pre-load skill names and descriptions. This metadata is enough to know when each skill applies. The body loads only when the skill is invoked.
 
-## Why Colin?
-
-Skills have the same problem as any documentation: they drift from reality. Someone writes a deployment skill, then six months later CI changed, environments got renamed, the approval flow is different. The skill is wrong. The agent gives bad advice.
-
-Colin keeps skills fresh by compiling them from live sources:
-
-```markdown
----
-name: deployment-process
-description: How to deploy to staging and production
----
-
-# Deployment
-
-{{ ref('infrastructure/environments').content }}
-
-## Steps
-
-{{ colin.mcp.github.resource('repo://acme/platform/docs/DEPLOY.md').content }}
-
-## Recent Issues
-
-{{ colin.mcp.pagerduty.resource('incidents/deploy-related/last-30d') | llm_extract('what went wrong and how it was fixed') }}
-```
-
-Run `colin run`. The skill compiles from your infrastructure doc, the latest deployment guide from GitHub, and recent incidents from PagerDuty. Tomorrow, when the deployment guide changes, Colin knows—and recompiles.
-
 ## Output to Skills Directories
 
 Configure Colin to write directly to your agent's skills folder:
@@ -69,7 +92,7 @@ scope = "user"
 
 With `scope = "user"`, skills write to `~/.claude/skills/` and become available in all Claude Code sessions. With `scope = "project"`, they write to `.claude/skills/` relative to your project.
 
-Other agents use different locations. You can target any path:
+Other agents use different locations. Target any path:
 
 ```toml colin.toml
 [project.output]
@@ -130,7 +153,7 @@ description: Guidelines for reviewing pull requests
 
 ## Style Guide
 
-{{ colin.mcp.github.resource('repo://acme/platform/STYLE.md').content }}
+{{ colin.github.file('acme/platform', 'STYLE.md').content }}
 ```
 
 For skills with multiple files, use `{% file %}` blocks:
@@ -162,7 +185,7 @@ description: New engineer onboarding checklist
 
 ## Keeping Skills Fresh
 
-Colin tracks dependencies automatically. When you use `ref()` or fetch from MCP servers, Colin records the version. On the next run, it checks if versions changed and recompiles affected skills.
+Colin tracks dependencies automatically. When `ref()` or MCP fetches execute, Colin records the version. On the next run, it checks if versions changed and recompiles affected skills.
 
 For time-sensitive content, set expiration:
 

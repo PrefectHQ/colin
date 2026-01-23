@@ -249,6 +249,25 @@ Colin supports environment variables for global settings:
 
 The precedence order is: `[[providers.llm]]` model → `COLIN_DEFAULT_LLM_MODEL` → built-in default.
 
+## Environment Variable Substitution
+
+Colin substitutes `${VAR}` patterns anywhere in `colin.toml`:
+
+```toml colin.toml
+[[providers.llm]]
+model = "${LLM_MODEL:-anthropic:claude-haiku-4-5}"
+
+[[providers.mcp]]
+name = "github"
+command = "uvx"
+args = ["mcp-server-github"]
+env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
+```
+
+Default values use shell syntax: `${VAR:-default}`. If `LLM_MODEL` is unset, Colin uses `anthropic:claude-haiku-4-5`.
+
+Unset variables without defaults become empty strings. This is useful for optional configuration but can cause errors if required values are missing—Colin won't warn about unset variables at parse time.
+
 ## Complete Example
 
 A full configuration demonstrating all options:

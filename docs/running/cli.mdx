@@ -60,11 +60,14 @@ See [Running the Compiler](/running/run) for detailed documentation on compilati
 ### Quick Reference
 
 ```bash
-colin run              # Compile changed documents
-colin run --no-cache   # Recompile everything
-colin run --ephemeral  # Don't write to .colin/ (for testing, CI)
-colin run -q           # Suppress progress output
-colin run --output ./out  # Override output directory
+colin run                    # Compile changed documents
+colin run --no-cache         # Recompile everything
+colin run --ephemeral        # Don't write to .colin/ (for testing, CI)
+colin run -q                 # Suppress progress output
+colin run --output ./out     # Override output directory
+colin run --update           # Update outputs from their source project
+colin run --var key=value    # Override a variable
+colin run --no-banner        # Hide the logo banner
 ```
 
 ## clean

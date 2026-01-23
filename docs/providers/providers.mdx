@@ -6,11 +6,12 @@ icon: puzzle-piece
 
 Providers connect Colin to data sources. Each provider handles a specific type of integration—referencing other project documents, fetching resources from MCP servers, calling language models, reading from HTTP endpoints, or accessing S3 storage. Providers expose functions you call directly in templates and handle URI schemes for the `ref()` system.
 
-Colin includes five built-in providers:
+Colin includes six built-in providers:
 
 | Provider | Purpose | URI Schemes |
 | :------- | :------ | :---------- |
 | [Project](/providers/project) | Reference other project documents | `project://` |
+| [GitHub](/providers/github) | Access GitHub repositories | `github://` |
 | [HTTP](/providers/http) | Fetch web content | `http://`, `https://` |
 | [MCP](/providers/mcp) | Connect to MCP servers | `mcp.<name>://` |
 | [LLM](/providers/llm) | Invoke language models | (functions only) |
@@ -18,11 +19,11 @@ Colin includes five built-in providers:
 
 ## Configuration
 
-Providers are configured in `colin.toml` under `[[providers.<type>]]` sections. The double brackets indicate a TOML array—you can define multiple instances of the same provider type.
+Providers are configured in `colin.toml` under `[[providers.<type>]]` sections. The double brackets indicate a TOML array—you can define multiple instances of the same provider type as long as they have unique names.
 
 ```toml colin.toml
 [[providers.llm]]
-model = "anthropic:claude-sonnet-4-20250514"
+model = "anthropic:claude-sonnet-4-5"
 
 [[providers.mcp]]
 name = "github"
@@ -41,7 +42,7 @@ A provider **without** a `name` becomes the default for that type. Its functions
 
 ```toml colin.toml
 [[providers.llm]]
-model = "anthropic:claude-sonnet-4-20250514"
+model = "anthropic:claude-sonnet-4-5"
 ```
 
 ```markdown
@@ -54,7 +55,7 @@ A provider **with** a `name` becomes a named instance accessible under that name
 ```toml colin.toml
 [[providers.llm]]
 name = "fast"
-model = "anthropic:claude-haiku-3"
+model = "anthropic:claude-haiku-4-5"
 ```
 
 ```markdown
@@ -66,17 +67,17 @@ You can configure both—a default and one or more named instances:
 ```toml colin.toml
 # Default LLM (no name)
 [[providers.llm]]
-model = "anthropic:claude-sonnet-4-20250514"
+model = "anthropic:claude-sonnet-4-5"
 
 # Fast model for simple tasks
 [[providers.llm]]
 name = "fast"
-model = "anthropic:claude-haiku-3"
+model = "anthropic:claude-haiku-4-5"
 
 # Capable model for complex reasoning
 [[providers.llm]]
 name = "capable"
-model = "anthropic:claude-opus-4"
+model = "anthropic:claude-opus-4-5"
 ```
 
 ```markdown

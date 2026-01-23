@@ -1,69 +1,102 @@
 ---
 title: Welcome to Colin!
 sidebarTitle: Welcome!
+description: Colin is a context engine that keeps agent skills fresh.
 icon: hand-wave
 ---
 
-Colin is a **context engine** for building context pipelines—extract from sources, transform with LLMs, load to outputs. Write templates that reference other documents, pull from GitHub, Linear, Slack, databases via MCP. When sources change, Colin recompiles. Your context and skills stay fresh automatically.
+**Colin keeps agent skills fresh.** Write templates that reference live sources—GitHub files, APIs, other documents. Colin compiles them, tracks dependencies, and rebuilds only what's stale.
 
 <CodeGroup>
 
 ```markdown Template
 ---
-name: Product Brief
-colin:
-  cache: auto
+name: deployment-process
+description: How to deploy code to staging and production
 ---
 
-# About Us
+# Deployment
 
-{{ ref('company').content }}
+{{ colin.github.file('acme/platform', 'docs/DEPLOY.md').content }}
 
-# What Customers Are Saying
+## Environments
 
-{{ colin.mcp.intercom.resource('feedback/recent').content | llm_extract('top 3 themes') }}
+{{ ref('infrastructure/environments').content }}
+
+## Recent Incidents
+
+{{ colin.mcp.pagerduty.resource('incidents?team=platform&days=30') | llm_extract('deployment-related issues and how they were resolved') }}
 ```
 
 ```markdown Output
 ---
-name: Product Brief
+name: deployment-process
+description: How to deploy code to staging and production
 ---
 
-# About Us
+# Deployment
 
-Acme Corp builds developer tools that streamline CI/CD
-pipelines. Founded in 2020, we serve over 500 enterprise
-customers including Fortune 100 companies.
+All changes ship through CI. Push to main, wait for checks, then promote:
 
-# What Customers Are Saying
+1. Open a PR against `main`
+2. CI runs tests, linting, and builds a preview
+3. Get approval from a code owner
+4. Merge—this deploys to staging automatically
+5. After verification, run `workflow_dispatch` on the deploy action to promote to production
 
-1. **Speed**: Customers consistently praise deployment times
-2. **Reliability**: Zero-downtime deployments mentioned frequently
-3. **Support**: Fast response times noted in multiple conversations
+## Environments
+
+| Environment | URL | Deployment |
+|------------|-----|------------|
+| Staging | staging.acme.dev | Auto on merge to main |
+| Production | acme.com | Manual promotion |
+
+## Recent Incidents
+
+- **2025-01-15**: Database migration failed during deploy. Root cause: migration script assumed empty table. Fixed by adding existence check.
+- **2025-01-08**: Staging deploy stuck in pending. Root cause: GitHub Actions runner quota. Fixed by switching to larger runner pool.
 ```
 
 </CodeGroup>
 
-The `ref()` function fetches content from another document and registers a dependency—so Colin recompiles this document when `company` changes. The `| llm_extract()` filter passes content through an LLM with your prompt. MCP resources pull live data from external systems.
+Run `colin run`. Colin fetches the deployment guide from GitHub, resolves the reference to your environments doc, extracts incident summaries through an LLM, and writes the compiled skill. Run it again tomorrow—if nothing changed upstream, nothing rebuilds. If the deployment guide in GitHub was updated, Colin detects the new commit and recompiles.
 
-## Why Colin?
+## Context as Code
 
-Context goes stale. Someone writes a skill describing your deployment process. A month later, CI changed, environments got renamed, the approval flow is different. The skill is wrong. The agent is wrong. Nobody noticed.
+When Colin compiles a document, it records what sources were used and their versions—commit SHAs for GitHub files, timestamps for HTTP resources, version identifiers for MCP resources. This information is stored in a manifest alongside the compiled output.
 
-Colin solves this:
+On subsequent runs, Colin checks the manifest against current source versions. Documents whose sources haven't changed skip compilation entirely. When a source does change, Colin recompiles the affected document and any documents that depend on it.
 
-**Live sources**: Templates reference data from MCP servers, other documents, and APIs. When sources change, dependents recompile.
+LLM calls are cached separately by input hash. If a document recompiles but the input to an LLM block is unchanged, the cached LLM response is reused.
 
-**Dependency tracking**: `ref()` builds a graph. Colin compiles in topological order and knows exactly what depends on what.
+## How It Works
 
-**LLM synthesis**: Extract specific information, summarize across sources, synthesize with `{% llm %}` blocks. All cached by input hash.
+**References**: `ref('other-doc')` fetches content from another document and registers a dependency. When `other-doc` changes, documents that reference it recompile. See [References](/projects/references).
 
-**Full lineage**: The manifest tracks every compilation—what sources, what LLM calls, what outputs. Trace any context back to its origins.
+**Providers**: Built-in providers connect to external sources: [GitHub](/providers/github) repositories, [HTTP](/providers/http) endpoints, [S3](/providers/s3) buckets, and [MCP servers](/providers/mcp). Each provider tracks source versions for staleness detection.
+
+**LLM Processing**: The `| llm_extract()` filter and `{% llm %}` blocks send content to language models. See [LLM Provider](/providers/llm) for the full API.
+
+**Manifests**: The manifest records what was compiled, from what sources, at what versions. This powers incremental builds and enables `colin run --update` from any location.
+
+## Beyond Skills
+
+Colin is a general-purpose context engine. Skills are the most common output because they're how agents like Claude Code, Codex, and Cursor consume context autonomously—but Colin compiles any document that needs to stay current.
+
+Change the output target to write directly to Claude Code's skills folder:
+
+```toml colin.toml
+[project.output]
+target = "claude-skill"
+scope = "user"
+```
+
+Or set `target = "local"` and `path = "dist/"` to write to a directory. The compilation model is the same regardless of where the output goes. See [Configuration](/running/configuration) for all output options.
 
 ## About the Name
 
-Colin stands for **Co**ntext **Lin**eage. It's also a nod to the [Hitchhiker's Guide to the Galaxy](https://en.wikipedia.org/wiki/Colin_(The_Hitchhiker%27s_Guide_to_the_Galaxy))—a helpful robot that, despite being "a genuine people personality," really just wanted to make itself useful.
+Colin stands for **Co**ntext **Lin**eage. It's also a nod to [Colin the robot](https://hitchhikers.fandom.com/wiki/Colin) from the Hitchhiker's Guide to the Galaxy—a security robot who feels genuinely delighted whenever he's being helpful.
 
 ## Get Started
 
-Ready to compile your first context? [Install](/getting-started/installation) Colin, then dive into the [Quickstart](/getting-started/quickstart) for a hands-on introduction.
+[Install Colin](/getting-started/installation), then work through the [Quickstart](/getting-started/quickstart) to compile your first skill.

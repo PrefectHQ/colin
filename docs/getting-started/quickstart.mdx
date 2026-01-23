@@ -3,7 +3,7 @@ title: Quickstart
 icon: rocket-launch
 ---
 
-This guide will help you create your first Colin project, write interconnected documents, and compile them.
+This guide walks through creating a Colin project that compiles a skill from live sources.
 
 If you haven't already installed Colin, follow the [installation instructions](/getting-started/installation).
 
@@ -12,7 +12,7 @@ If you haven't already installed Colin, follow the [installation instructions](/
 Create a new directory and initialize a Colin project:
 
 ```bash
-mkdir my-context && cd my-context
+mkdir my-skill && cd my-skill
 colin init
 ```
 
@@ -20,40 +20,51 @@ This creates:
 - `colin.toml` - Project configuration
 - `models/` - Directory for your source documents
 
-## Create Your First Document
+## Create a Source Document
 
-Documents in Colin are Markdown files with optional Jinja templating. Create a simple source document:
+Start with a simple document that will be referenced by the skill:
 
-```markdown models/company.md
+```markdown models/environments.md
 ---
-name: Company Overview
+name: Environment Configuration
 ---
 
-Acme Corp builds developer tools that streamline CI/CD pipelines.
-Founded in 2020, we serve over 500 enterprise customers including
-Fortune 100 companies. Our platform reduces deployment time by 80%
-through intelligent caching and parallel execution.
+## Staging
+- URL: staging.acme.com
+- Auto-deploys on merge to main
+
+## Production
+- URL: acme.com
+- Manual promotion via `/deploy prod` in Slack
 ```
 
-## Reference Other Documents
+## Create a Skill
 
-Now create a document that references the company overview using `ref()`:
+Now create a skill that references the environments document:
 
-```markdown models/about.md
+```markdown models/deploy/SKILL.md
 ---
-name: About Page
+name: deployment-process
+description: How to deploy code to staging and production
 ---
 
-# About Us
+# Deployment
 
-{{ ref('company').content }}
+{{ ref('environments').content }}
+
+## Steps
+
+1. Create a PR against main
+2. Wait for CI to pass
+3. Get approval from a code owner
+4. Merge to main
 ```
 
-The `ref('company')` call does two things:
-1. Registers that `about.md` depends on `company.md`
-2. Returns a `RefResult` object with the compiled content
+The `ref('environments')` call does two things:
+1. Registers that `SKILL.md` depends on `environments.md`
+2. Returns the compiled content
 
-## Compile Your Project
+## Compile
 
 Run the compiler:
 
@@ -61,35 +72,44 @@ Run the compiler:
 colin run
 ```
 
-You'll see output showing the compilation progress:
+Colin displays progress:
 
 ```
 Config:  colin.toml
-Project: my-context
+Project: my-skill
 Output:  output/
 
-✓ company.md
-✓ about.md
+✓ environments.md
+✓ deploy/SKILL.md
+  ← ref:environments
 ```
 
-Colin detected the dependency and compiled `company.md` first, then `about.md`.
+Colin detected the dependency and compiled `environments.md` first.
 
-## Transform Content with Extract
+## Add LLM Processing
 
-The `| llm_extract()` filter uses an LLM to pull specific information from a document:
+The `| llm_extract()` filter pulls specific information using an LLM:
 
-```markdown models/pitch.md
+```markdown models/deploy/SKILL.md
 ---
-name: Sales Pitch
+name: deployment-process
+description: How to deploy code to staging and production
 ---
 
-# Why Acme?
+# Deployment
 
-{{ ref('company') | llm_extract('the single most compelling benefit for enterprise buyers') }}
+{{ ref('environments').content }}
 
-# Key Stats
+## Steps
 
-{{ ref('company') | llm_extract('quantitative metrics as bullet points') }}
+1. Create a PR against main
+2. Wait for CI to pass
+3. Get approval from a code owner
+4. Merge to main
+
+## Quick Reference
+
+{{ ref('environments') | llm_extract('a one-line summary of each environment') }}
 ```
 
 Compile again:
@@ -100,47 +120,35 @@ colin run
 
 ```
 Config:  colin.toml
-Project: my-context
+Project: my-skill
 Output:  output/
 
-✓ company.md
-✓ about.md
-✓ pitch.md
-  → llm:a1b2c3
-  → llm:d4e5f6
+✓ environments.md
+✓ deploy/SKILL.md
+  ← ref:environments
+  ✓ llm:auto:a1b2c3
 ```
 
-The `→ llm:` entries show LLM calls that were made. On subsequent runs with the same inputs, you'll see `⚡` indicating cached results.
+The `✓ llm:` entry shows an LLM call completed. On subsequent runs with the same input, you'll see `»` indicating the result was served from cache.
 
-## LLM Blocks for Full Control
+## Output to Claude Code
 
-For more complex transformations involving multiple sources, use `{% llm %}` blocks:
+Configure Colin to write directly to Claude Code's skills folder:
 
-```markdown models/executive-summary.md
----
-name: Executive Summary
----
+```toml colin.toml
+[project]
+name = "my-skill"
 
-# Executive Summary
-
-{% llm %}
-Synthesize the following into a 3-paragraph executive summary:
-
-Company background:
-{{ ref('company').content }}
-
-Sales positioning:
-{{ ref('pitch').content }}
-
-Write for a board audience. Be concise.
-{% endllm %}
+[project.output]
+target = "claude-skill"
+scope = "user"
 ```
 
-LLM blocks give you full control over the prompt, letting you combine multiple refs and provide specific instructions.
+Run `colin run` again. The skill now appears in `~/.claude/skills/` and is available in all Claude Code sessions.
 
 ## Incremental Builds
 
-Edit `company.md` and run `colin run` again. Colin detects that `company.md` changed and recompiles all documents that depend on it—but only those documents.
+Edit `environments.md` and run `colin run` again. Colin detects the change and recompiles `SKILL.md` because it depends on `environments.md`. Documents that haven't changed skip compilation.
 
 ## What's Next?
 
@@ -149,5 +157,6 @@ You've learned the basics:
 - Create documents with frontmatter
 - Reference other documents with `ref()`
 - Transform content with `| llm_extract()`
-- Use `{% llm %}` blocks for multi-source synthesis
-- Compile with `colin run`
+- Output skills to Claude Code
+
+Next: [Agent Skills](/running/skills) covers skills in depth, including MCP integration and multi-file skills.
