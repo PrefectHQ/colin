@@ -5,6 +5,16 @@ on:
     types: [opened]
   pull_request_target:
     types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue or PR number to triage"
+        required: true
+        type: string
+
+concurrency:
+  group: triage-${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+  cancel-in-progress: false
 
 jobs:
   triage:
@@ -15,93 +25,95 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-      id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.repository.default_branch }}
 
-      - name: Setup GitHub MCP Server
+      - name: Set triage prompt
+        id: triage-prompt
         run: |
-          mkdir -p /tmp/mcp-config
-          cat > /tmp/mcp-config/mcp-servers.json << 'EOF'
-          {
-            "mcpServers": {
-              "github": {
-                "command": "docker",
-                "args": [
-                  "run",
-                  "-i",
-                  "--rm",
-                  "-e",
-                  "GITHUB_PERSONAL_ACCESS_TOKEN",
-                  "ghcr.io/github/github-mcp-server:sha-7aced2b"
-                ],
-                "env": {
-                  "GITHUB_PERSONAL_ACCESS_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
-                }
-              }
-            }
-          }
+          cat >> $GITHUB_OUTPUT << 'EOF'
+          PROMPT<<PROMPT_END
+          You're an issue triage assistant for Colin, a context compiler for AI agents. Your task is to analyze issues/PRs and apply appropriate labels.
+
+          IMPORTANT: Your ONLY action should be to apply labels using mcp__github__update_issue. DO NOT post any comments.
+
+          Issue/PR Information:
+          - REPO: ${{ github.repository }}
+          - NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}
+          - TYPE: ${{ github.event.issue && 'issue' || (github.event.pull_request && 'pull_request') || 'unknown' }}
+
+          TRIAGE PROCESS:
+
+          1. Retrieve issue/PR details using GitHub tools:
+             - mcp__github__get_issue: Get the issue/PR details
+             - mcp__github__get_issue_comments: Read any discussion
+             - mcp__github__get_pull_request_files: Get changed files for PRs
+             - If the issue/PR mentions other issues (e.g., "fixes #123", "related to #456"), use mcp__github__get_issue to read those linked issues for additional context
+
+          2. Analyze and apply labels based on these guidelines:
+
+          CORE CATEGORIES (apply EXACTLY ONE - these are mutually exclusive):
+          - bug: Reports of broken functionality OR PRs that fix bugs
+          - enhancement: Improvements to existing features, internal tooling, workflow improvements, minor new capabilities
+          - feature: Major new functionality (new providers, new commands, significant new capabilities)
+          - documentation: Primary change is to user-facing docs
+          - idea: Feature request or brainstorm needing design discussion
+
+          FEATURE vs ENHANCEMENT guidance:
+          - feature: New providers, new CLI commands, major template features, significant new capabilities
+          - enhancement: Improvements to existing features, refactoring, utilities, CI improvements
+          - If unsure between feature/enhancement, choose enhancement
+
+          Note: If a PR fixes a bug, label it "bug" not "enhancement"
+
+          SPECIAL CATEGORY (can be combined with above):
+          - breaking change: Changes that break backward compatibility
+
+          STATUS (apply if applicable):
+          - good first issue: ONLY if it's clearly scoped, has obvious solution, and touches limited files
+          - invalid: Spam, completely off-topic, or nonsensical
+
+          AREA LABELS (apply ONLY when thematically central to the issue):
+          - cli: Issues primarily about CLI commands
+          - compiler: Issues primarily about the compilation pipeline
+          - provider: Issues primarily about provider implementations
+          - tests: Issues primarily about testing infrastructure
+
+          IMPORTANT LABELING RULES:
+          - Be selective - only apply labels that are clearly relevant
+          - Don't apply area labels just because a file in that area is mentioned
+          - The issue must be PRIMARILY about that area to get the label
+          - When in doubt, don't apply the label
+          - Apply 1-3 labels total typically (category + maybe 1 area)
+
+          META LABELS (rarely needed):
+          - dependencies: Only for dependabot PRs
+          - ignore in release notes: Meta/workflow changes only
+
+          3. Apply selected labels:
+             Use mcp__github__update_issue to apply your selected labels
+             DO NOT post any comments
+          PROMPT_END
           EOF
 
-      - name: Run Claude for Triage
-        timeout-minutes: 5
+      - name: Clean up stale Claude locks
+        run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
+
+      - name: Run Claude for Issue Triage
         uses: anthropics/claude-code-action@v1
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ steps.triage-prompt.outputs.PROMPT }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_non_write_users: "*"
-          prompt: |
-            You're triaging issues and PRs for Colin, a context compiler for AI agents.
-
-            IMPORTANT: Your ONLY action should be to apply labels. DO NOT post comments.
-
-            - REPO: ${{ github.repository }}
-            - NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-            - TYPE: ${{ github.event.issue && 'issue' || 'pull_request' }}
-
-            PROCESS:
-
-            1. Get available labels: `gh label list`
-
-            2. Get issue/PR details using GitHub MCP tools:
-               - mcp__github__get_issue: Get issue/PR details
-               - mcp__github__get_issue_comments: Read discussion
-               - mcp__github__search_issues: Find similar/duplicate issues
-
-            3. Analyze and select labels:
-
-            CATEGORY (apply exactly one):
-            - bug: Broken functionality or PRs fixing bugs
-            - enhancement: Improvements, minor new capabilities
-            - feature: Major new functionality (rare - headline features only)
-            - documentation: Primary change is to user-facing docs
-            - idea: Feature request needing design discussion
-
-            AREA (apply if central to the issue):
-            - compiler: Core compilation pipeline, resolution, transforms
-            - cli: CLI commands or command-line interface
-            - provider: Provider implementations or protocols
-            - tests: Test additions or infrastructure
-
-            STATUS (apply if applicable):
-            - good first issue: Clearly scoped, obvious solution
-            - duplicate: Already exists (only if duplicate of OPEN issue)
-            - invalid: Spam or off-topic
-            - ignore in release notes: Meta/workflow changes only
-
-            RULES:
-            - Apply 1-3 labels (category + maybe 1 area)
-            - Be selective - only labels that clearly fit
-            - When in doubt, skip the area label
-            - DO NOT post comments
-
-            4. Apply labels using mcp__github__update_issue
-
           claude_args: |
-            --model claude-sonnet-4-5
-            --mcp-config /tmp/mcp-config/mcp-servers.json
-            --allowedTools "Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__search_issues,mcp__github__get_pull_request_files"
+            --allowedTools mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__get_pull_request_files
+          settings: |
+            {
+              "model": "claude-sonnet-4-5-20250929"
+            }
