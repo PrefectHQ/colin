@@ -16,6 +16,7 @@ dependencies = [
     "fastmcp @ git+https://github.com/jlowin/fastmcp@main",
     "pydantic-ai>=1.39.0",
     "httpx>=0.27.0",
+    "pathspec>=1.0.3",
 ]
 
 [project.scripts]

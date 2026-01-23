@@ -18,6 +18,8 @@ from colin.api.manifest import load_manifest
 from colin.settings import settings
 
 if TYPE_CHECKING:
+    import pathspec
+
     from colin.output.base import Target
 
 logger = logging.getLogger(__name__)
@@ -108,14 +110,14 @@ def create_output_target(
 class ProjectOutputConfig(BaseModel):
     """Configuration for project output destination.
 
-    Supports target-based output with kwargs:
+    Supports target-based output:
         [project.output]
         target = "claude-skill"
         scope = "user"
 
     Or simple path-based output (uses LocalTarget):
-        [project]
-        output-path = "output/"
+        [project.output]
+        path = "output"
     """
 
     target: str | None = None
@@ -151,18 +153,13 @@ name = "{name}"
 # Source directory containing model files (default: "models")
 # model-path = "models"
 
-# Output directory for published files (default: "output")
-# output-path = "output"
+[project.output]
+# Output path (default: "output")
+path = "output"
 
-# [project.output]
-# Output target - controls where files are written
-# Built-in targets:
-#   "local" (default) - writes to output-path
-#   "skill" - writes skills with per-skill manifests
-#   "claude-skill" - writes to ~/.claude/skills/ (user) or .claude/skills/ (project)
-#
-# target = "claude-skill"
-# scope = "user"  # or "project"
+# Or use a target for specialized output:
+# target = "claude-skill"  # writes to ~/.claude/skills/
+# scope = "user"           # or "project" for .claude/skills/
 
 # [vars]
 # Project variables accessible via {{{{ colin.var.name }}}}
@@ -473,19 +470,13 @@ def load_project(path: Path) -> ProjectConfig:
     # Resolve paths relative to project root (or use absolute if specified)
     project_root = path.parent.resolve()
     model_path_rel = project.get("model-path", "models")
-    output_path_rel = project.get("output-path", "output")
     manifest_path_rel = project.get("manifest-path")
 
-    # Handle absolute paths
+    # Handle absolute paths for model-path
     if Path(model_path_rel).is_absolute():
         model_path = Path(model_path_rel).resolve()
     else:
         model_path = (project_root / model_path_rel).resolve()
-
-    if Path(output_path_rel).is_absolute():
-        output_path = Path(output_path_rel).resolve()
-    else:
-        output_path = (project_root / output_path_rel).resolve()
 
     # Manifest path: explicit config or default to .colin/manifest.json
     if manifest_path_rel:
@@ -521,26 +512,26 @@ def load_project(path: Path) -> ProjectConfig:
     vars_data = data.get("vars", {})
     vars_config = _parse_vars(vars_data)
 
-    # Parse output configuration
+    # Parse output configuration from [project.output]
     output_data = project.get("output", {})
     output_config = ProjectOutputConfig.model_validate(output_data)
 
-    # Resolve output path from target configuration
-    # Priority: [project.output].path > [project.output].target defaults > output-path
-    if output_config.target or output_config.path or output_config.scope:
-        # Build target kwargs from config
-        target_kwargs: dict[str, Any] = {}
-        if output_config.path:
-            target_kwargs["path"] = output_config.path
-        if output_config.scope:
-            target_kwargs["scope"] = output_config.scope
-        # Include any extra kwargs from config
-        if output_config.model_extra:
-            for key, value in output_config.model_extra.items():
-                target_kwargs[key] = value
+    # Build target kwargs from config
+    target_kwargs: dict[str, Any] = {}
+    # Default to path = "output" if no target or path specified
+    if output_config.path:
+        target_kwargs["path"] = output_config.path
+    elif not output_config.target:
+        target_kwargs["path"] = "output"  # Default output path
+    if output_config.scope:
+        target_kwargs["scope"] = output_config.scope
+    # Include any extra kwargs from config
+    if output_config.model_extra:
+        for key, value in output_config.model_extra.items():
+            target_kwargs[key] = value
 
-        target = create_output_target(output_config.target, **target_kwargs)
-        output_path = target.resolve_path(project_root)
+    target = create_output_target(output_config.target, **target_kwargs)
+    output_path = target.resolve_path(project_root)
 
     # Get project name and ID
     project_name = project.get("name", "colin-project")
@@ -647,29 +638,31 @@ def save_project(path: Path, config: ProjectConfig) -> None:
         # Absolute path outside project root - keep as absolute
         model_path_rel = str(config.model_path)
 
-    try:
-        output_path_rel = config.output_path.relative_to(config.project_root)
-    except ValueError:
-        # Absolute path outside project root - keep as absolute
-        output_path_rel = str(config.output_path)
-
     project_data: dict[str, Any] = {
         "name": config.name,
         "model-path": str(model_path_rel),
-        "output-path": str(output_path_rel),
     }
 
     # Add project ID if set
     if config.id:
         project_data["id"] = config.id
 
-    # Add output config if target is set
+    # Add output config
+    output_data: dict[str, Any] = {}
     if config.output.target:
-        output_data: dict[str, Any] = {"target": config.output.target}
-        if config.output.path:
-            output_data["path"] = config.output.path
-        if config.output.scope:
-            output_data["scope"] = config.output.scope
+        output_data["target"] = config.output.target
+    if config.output.path:
+        output_data["path"] = config.output.path
+    elif not config.output.target:
+        # No target specified, save the resolved path
+        try:
+            output_path_rel = config.output_path.relative_to(config.project_root)
+            output_data["path"] = str(output_path_rel)
+        except ValueError:
+            output_data["path"] = str(config.output_path)
+    if config.output.scope:
+        output_data["scope"] = config.output.scope
+    if output_data:
         project_data["output"] = output_data
 
     data: dict[str, Any] = {"project": project_data}
@@ -805,10 +798,8 @@ def get_stale_files(
 ) -> list[Path]:
     """Find stale files in output/ (and optionally .colin/compiled/).
 
-    For output/, uses .colin-manifest.json files for ownership tracking:
-    - Scans for manifest files in the output directory
-    - Only considers files in directories owned by this project (matching project_id)
-    - Files not in the manifest's file list are stale
+    For output/, uses .colin-manifest.json files to track what files belong.
+    Each manifest defines its scope - files not in any manifest are stale.
 
     For .colin/compiled/, uses the internal manifest.json.
 
@@ -827,7 +818,7 @@ def get_stale_files(
 
     # Check output/ for stale files using output manifests
     if output_dir.exists():
-        stale.extend(_get_stale_from_output_manifests(output_dir, config.id))
+        stale.extend(_get_stale_from_output_manifests(output_dir))
 
     # Optionally check .colin/compiled/ for stale files (uses internal manifest)
     if include_compiled and compiled_dir.exists():
@@ -851,15 +842,76 @@ def get_stale_files(
     return sorted(stale)
 
 
-def _get_stale_from_output_manifests(output_dir: Path, project_id: str | None) -> list[Path]:
+# Files to never consider stale (system files, editor files, etc.)
+DEFAULT_IGNORED_FILES = {
+    ".DS_Store",
+    ".gitignore",
+    ".gitkeep",
+    ".colinignore",
+    "Thumbs.db",
+    "desktop.ini",
+}
+
+
+def _load_colinignore(directory: Path) -> pathspec.PathSpec | None:
+    """Load .colinignore file from directory if it exists.
+
+    Args:
+        directory: Directory to check for .colinignore.
+
+    Returns:
+        PathSpec object for matching, or None if no .colinignore exists.
+    """
+    import pathspec
+
+    ignore_file = directory / ".colinignore"
+    if not ignore_file.exists():
+        return None
+
+    try:
+        patterns = ignore_file.read_text().splitlines()
+        return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+    except OSError:
+        return None
+
+
+def _is_ignored_file(path: Path, scope_dir: Path | None = None) -> bool:
+    """Check if a file should be ignored for stale detection.
+
+    Args:
+        path: File path to check.
+        scope_dir: Directory containing the manifest (for .colinignore lookup).
+
+    Returns:
+        True if file should be ignored.
+    """
+    # Always ignore system files
+    if path.name in DEFAULT_IGNORED_FILES:
+        return True
+
+    # Check .colinignore if scope_dir provided
+    if scope_dir is not None:
+        ignore_spec = _load_colinignore(scope_dir)
+        if ignore_spec is not None:
+            try:
+                rel_path = path.relative_to(scope_dir)
+                if ignore_spec.match_file(str(rel_path)):
+                    return True
+            except ValueError:
+                pass  # Path not relative to scope_dir
+
+    return False
+
+
+def _get_stale_from_output_manifests(output_dir: Path) -> list[Path]:
     """Find stale files in output directory using output manifests.
 
-    Scans for .colin-manifest.json files, checking only directories owned
-    by this project (matching project_id).
+    Scans for .colin-manifest.json files. Each manifest defines what files
+    belong in its directory scope. Subdirectories are only considered stale
+    if they are tracked by the manifest (have files listed).
 
     Args:
         output_dir: Output directory to scan.
-        project_id: This project's ID for ownership checking.
 
     Returns:
         List of stale file paths.
@@ -872,31 +924,103 @@ def _get_stale_from_output_manifests(output_dir: Path, project_id: str | None) -
         if manifest_data is None:
             continue
 
-        # Check ownership - only clean directories we own
-        manifest_project_id = manifest_data.get("project_id")
-        if project_id and manifest_project_id != project_id:
-            continue
-
-        # This directory is owned by us - check for stale files
+        # This manifest owns its directory - check for stale files
         scope_dir = manifest_path.parent
         manifest_files = set(manifest_data.get("files", {}).keys())
 
         for path in scope_dir.iterdir():
             if path.is_file() and path.name != ".colin-manifest.json":
-                if path.name not in manifest_files:
+                if not _is_ignored_file(path, scope_dir) and path.name not in manifest_files:
                     stale.append(path)
             elif path.is_dir():
-                # Recursively check subdirectories (but not ones with their own manifests)
+                # Skip subdirs with their own manifests entirely
                 subdir_manifest = path / ".colin-manifest.json"
-                if not subdir_manifest.exists():
-                    # No manifest in subdir - check all files against our manifest
+                if subdir_manifest.exists():
+                    continue  # Has its own manifest, will be handled separately
+
+                # Only recurse into subdirs that we own (have files listed in manifest)
+                subdir_name = path.name
+                has_tracked_files = any(f.startswith(f"{subdir_name}/") for f in manifest_files)
+                if has_tracked_files:
+                    # We own this subdir - check for stale files
                     for subpath in path.rglob("*"):
-                        if subpath.is_file():
+                        if subpath.is_file() and not _is_ignored_file(subpath, scope_dir):
                             rel_path = str(subpath.relative_to(scope_dir))
                             if rel_path not in manifest_files:
                                 stale.append(subpath)
 
     return stale
+
+
+def get_stale_files_by_project(output_dir: Path) -> dict[str, list[Path]]:
+    """Find stale files in output directory, grouped by project name.
+
+    Scans for .colin-manifest.json files and returns stale files organized
+    by the project name from each manifest. Each manifest only controls its
+    immediate directory - subdirectories with their own manifests are separate.
+
+    Args:
+        output_dir: Output directory to scan.
+
+    Returns:
+        Dict mapping project name to list of stale file paths.
+    """
+    if not output_dir.exists():
+        return {}
+
+    result: dict[str, list[Path]] = {}
+
+    for manifest_path in output_dir.rglob(".colin-manifest.json"):
+        manifest_data = _load_output_manifest(manifest_path)
+        if manifest_data is None:
+            continue
+
+        # Get project name from manifest (fall back to directory name)
+        project_name = manifest_data.get("project_name")
+        if not project_name:
+            # Try to get from project_config path
+            project_config = manifest_data.get("project_config")
+            if project_config:
+                project_name = Path(project_config).parent.name
+            else:
+                project_name = manifest_path.parent.name
+
+        scope_dir = manifest_path.parent
+        manifest_files = set(manifest_data.get("files", {}).keys())
+        stale: list[Path] = []
+
+        # Only check files directly in this manifest's directory
+        # Subdirectories are only checked if they don't have their own manifest
+        # AND are listed in this manifest's files (i.e., we created them)
+        for path in scope_dir.iterdir():
+            if path.is_file() and path.name != ".colin-manifest.json":
+                if not _is_ignored_file(path, scope_dir) and path.name not in manifest_files:
+                    stale.append(path)
+            elif path.is_dir():
+                # Only recurse into subdirs that we own (have files listed in manifest)
+                # Skip subdirs with their own manifests entirely
+                subdir_manifest = path / ".colin-manifest.json"
+                if subdir_manifest.exists():
+                    continue  # Has its own manifest, will be handled separately
+
+                # Check if any files in this subdir are tracked by our manifest
+                subdir_name = path.name
+                has_tracked_files = any(f.startswith(f"{subdir_name}/") for f in manifest_files)
+                if has_tracked_files:
+                    # We own this subdir - check for stale files
+                    for subpath in path.rglob("*"):
+                        if subpath.is_file() and not _is_ignored_file(subpath, scope_dir):
+                            rel_path = str(subpath.relative_to(scope_dir))
+                            if rel_path not in manifest_files:
+                                stale.append(subpath)
+
+        if stale:
+            if project_name in result:
+                result[project_name].extend(stale)
+            else:
+                result[project_name] = stale
+
+    return result
 
 
 def clean_project(config: ProjectConfig, all: bool = False) -> list[Path]:
@@ -924,11 +1048,55 @@ def clean_project(config: ProjectConfig, all: bool = False) -> list[Path]:
     # Clean up empty directories and stale manifests
     if config.output_path.exists():
         _remove_empty_dirs(config.output_path)
-        _cleanup_empty_manifests(config.output_path, config.id)
+        _cleanup_empty_manifests(config.output_path)
     if all:
         compiled_dir = config.build_path / "compiled"
         if compiled_dir.exists():
             _remove_empty_dirs(compiled_dir)
+
+    return sorted(removed)
+
+
+def get_stale_files_from_output(output_dir: Path) -> list[Path]:
+    """Find stale files in an output directory using its manifests.
+
+    Works standalone without needing a project config. Each manifest
+    defines what files belong in its directory scope.
+
+    Args:
+        output_dir: Output directory to scan for stale files.
+
+    Returns:
+        List of absolute paths to stale files, sorted alphabetically.
+    """
+    if not output_dir.exists():
+        return []
+    return sorted(_get_stale_from_output_manifests(output_dir))
+
+
+def clean_output_directory(output_dir: Path) -> list[Path]:
+    """Remove stale files from an output directory.
+
+    Works standalone without needing a project config. Uses manifests
+    in the directory to determine what files belong.
+
+    Args:
+        output_dir: Output directory to clean.
+
+    Returns:
+        List of paths that were removed.
+    """
+    stale_files = get_stale_files_from_output(output_dir)
+    removed: list[Path] = []
+
+    for path in stale_files:
+        path.unlink()
+        removed.append(path)
+
+    # Clean up empty directories and empty manifests
+    if output_dir.exists():
+        _remove_empty_dirs(output_dir)
+        _cleanup_empty_manifests(output_dir)
 
     return sorted(removed)
 
@@ -940,23 +1108,17 @@ def _remove_empty_dirs(directory: Path) -> None:
             path.rmdir()
 
 
-def _cleanup_empty_manifests(output_dir: Path, project_id: str | None) -> None:
+def _cleanup_empty_manifests(output_dir: Path) -> None:
     """Remove manifests for directories that are now empty (except manifest).
 
     Also removes the directory if only the manifest remains.
 
     Args:
         output_dir: Output directory to scan.
-        project_id: This project's ID for ownership checking.
     """
     for manifest_path in sorted(output_dir.rglob(".colin-manifest.json"), reverse=True):
-        # Check ownership
         manifest_data = _load_output_manifest(manifest_path)
         if manifest_data is None:
-            continue
-
-        manifest_project_id = manifest_data.get("project_id")
-        if project_id and manifest_project_id != project_id:
             continue
 
         # Check if directory is empty except for manifest

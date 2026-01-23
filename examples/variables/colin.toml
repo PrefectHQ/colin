@@ -1,6 +1,9 @@
 [project]
 name = "variables-example"
 
+[project.output]
+path = "output"
+
 [vars.env]
 type = "string"
 default = "dev"

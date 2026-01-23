@@ -1,7 +1,12 @@
 [project]
 name = "hello_world"
 model-path = "models"
-output-path = "output"
+id = "hello_world-sw2023"
 
-[[providers.llm]]
-model = "anthropic:claude-haiku-4-5"
+[project.output]
+path = "output"
+
+[providers]
+llm = [
+    { model = "anthropic:claude-haiku-4-5" },
+]

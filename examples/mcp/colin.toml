@@ -1,7 +1,9 @@
 [project]
 name = "mcp"
 model-path = "models"
-output-path = "output"
+
+[project.output]
+path = "output"
 
 [[providers.mcp]]
 name = "demo"

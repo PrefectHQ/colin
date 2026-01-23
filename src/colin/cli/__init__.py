@@ -3,7 +3,7 @@
 import cyclopts
 from rich.console import Console
 
-from colin.cli import mcp, run
+from colin.cli import mcp, run, skills
 
 console = Console()
 err_console = Console(stderr=True)
@@ -20,8 +20,9 @@ app.command(run.update)
 app.command(run.init)
 app.command(run.clean)
 
-# Register mcp subcommand group
+# Register subcommand groups
 app.command(mcp.app, name="mcp")
+app.command(skills.app, name="skills")
 
 
 def main() -> None:
