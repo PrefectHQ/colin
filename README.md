@@ -38,7 +38,7 @@ Run `colin run`. Colin fetches the deployment guide from GitHub, resolves the re
 ## Install
 
 ```bash
-pip install colin-context
+pip install colin-py
 ```
 
 ## Documentation
