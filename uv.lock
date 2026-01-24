@@ -562,7 +562,7 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "cyclopts", specifier = ">=4.0.0" },
-    { name = "fastmcp", specifier = "==3.0.0b1" },
+    { name = "fastmcp", specifier = ">=3.0.0b1,<3.0.0b2" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pathspec", specifier = ">=1.0.3" },
