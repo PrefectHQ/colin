@@ -99,4 +99,4 @@ packages = ["src/colin"]
 "src" = ""
 
 [tool.hatch.build]
-include = ["src/colin/**/*.py", "src/colin/**/*.md"]
+include = ["src/colin/**/*.py", "src/colin/**/*.md", "src/colin/blueprints/**/*"]
