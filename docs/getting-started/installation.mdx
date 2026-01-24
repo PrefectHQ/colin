@@ -10,20 +10,24 @@ We recommend using [uv](https://docs.astral.sh/uv/getting-started/installation/)
 If you plan to use Colin in your project, add it as a dependency:
 
 ```bash
-uv add colin-py
+uv add colin-py --prerelease=allow
 ```
 
 Alternatively, install directly with `pip` or `uv pip`:
 
 <CodeGroup>
 ```bash uv
-uv pip install colin-py
+uv pip install colin-py --prerelease=allow
 ```
 
 ```bash pip
 pip install colin-py
 ```
 </CodeGroup>
+
+<Note>
+Colin currently depends on a pre-release version of FastMCP. When using `uv pip`, you must include the `--prerelease=allow` flag. This requirement will be removed once FastMCP releases a stable version.
+</Note>
 
 ### Verify Installation
 
