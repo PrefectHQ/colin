@@ -5,7 +5,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 
 from colin.api.project import ProjectConfig
-from colin.compiler.cache import hash_args, set_compile_context
+from colin.compiler.cache import _serialize_value, hash_args, set_compile_context
 from colin.compiler.context import CompileContext
 from colin.models import DocumentMeta, LLMCall, Manifest
 from colin.providers.llm import LLMProvider
@@ -636,7 +636,6 @@ class TestPreviousOutput:
         provider = LLMProvider(model=FunctionModel(capture_prompt))
 
         # Manifest with previous successful extract call
-        from colin.compiler.cache import _serialize_value
 
         old_content = "Old content that was extracted from"
         prompt = "key points"
@@ -704,8 +703,6 @@ class TestPreviousOutput:
 
         provider = LLMProvider(model=FunctionModel(return_use_existing))
 
-        from colin.compiler.cache import _serialize_value
-
         old_content = "Old content"
         prompt = "summarize"
         serialized = _serialize_value(old_content)
@@ -768,8 +765,6 @@ class TestPreviousOutput:
             return ModelResponse(parts=[TextPart(content="  UseExisting  \n")])
 
         provider = LLMProvider(model=FunctionModel(return_use_existing_padded))
-
-        from colin.compiler.cache import _serialize_value
 
         old_content = "Old content"
         prompt = "summarize"
@@ -940,8 +935,6 @@ class TestPreviousOutput:
 
         provider = LLMProvider(model=FunctionModel(return_use_existing))
 
-        from colin.compiler.cache import _serialize_value
-
         old_content = "Old content"
         prompt = "summarize"
         serialized = _serialize_value(old_content)
@@ -1012,7 +1005,6 @@ class TestPreviousOutput:
         provider = LLMProvider(model=FunctionModel(capture_prompt))
 
         # Manifest with previous successful classify call
-        from colin.compiler.cache import _serialize_value
 
         old_content = "Old content"
         labels = ["positive", "negative"]

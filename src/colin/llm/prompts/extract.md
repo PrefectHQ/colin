@@ -6,7 +6,7 @@ You are extracting specific information from content.
 ## Task
 Extract: {{ prompt }}
 
-{% if previous_output %}
+{% if previous_output is not none %}
 ## Previous Output
 The following was extracted previously. If the content hasn't changed meaningfully, you may respond with UseExisting to maintain stability.
 
@@ -14,7 +14,7 @@ The following was extracted previously. If the content hasn't changed meaningful
 {% endif %}
 
 ## Response
-{% if previous_output %}
+{% if previous_output is not none %}
 Provide the extracted information. If previous output is still valid, respond with UseExisting instead.
 {% else %}
 Provide the extracted information.

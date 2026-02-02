@@ -16,7 +16,7 @@ Classify the content into one or more of the labels above. Return a list of appl
 Classify the content into exactly one of the labels above.
 {% endif %}
 
-{% if previous_output %}
+{% if previous_output is not none %}
 ## Previous Output
 The following classification was made previously. If the content hasn't changed meaningfully, you may respond with UseExisting to maintain stability.
 

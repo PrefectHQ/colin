@@ -1,6 +1,6 @@
 {{ body }}
 
-{% if previous_output %}
+{% if previous_output is not none %}
 ## Previous Output (for reference)
 {{ previous_output }}
 
