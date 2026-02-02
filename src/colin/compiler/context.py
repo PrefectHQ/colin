@@ -5,21 +5,31 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import Coroutine
-from typing import TYPE_CHECKING, Any, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast, overload, runtime_checkable
 
+from colin.compiler.rendered import RenderedOutput
 from colin.compiler.state import OperationState, Status
 from colin.exceptions import RefNotCompiledError
-from colin.models import CompiledDocument, LLMCall, Ref
+from colin.models import CompiledDocument, LLMCall, Manifest, Ref
+from colin.providers.project import ProjectProvider, ProjectResource
 from colin.resources import Resource
 
 if TYPE_CHECKING:
     from colin.api.project import ProjectConfig
     from colin.compiler.extensions.file_block import FileOutput
-    from colin.compiler.rendered import RenderedOutput
-    from colin.models import Manifest
-    from colin.providers.project import ProjectProvider, ProjectResource
 
 T = TypeVar("T", bound=Resource)
+
+
+@runtime_checkable
+class RefResolver(Protocol):
+    """Protocol for custom ref resolution.
+
+    Enables consumers to inject their own resolution logic for string refs
+    (e.g., resolving from a graph database instead of compiled project files).
+    """
+
+    async def __call__(self, path: str, *, allow_stale: bool = False) -> Resource | None: ...
 
 
 class CompileContext:
@@ -30,32 +40,39 @@ class CompileContext:
 
     def __init__(
         self,
-        manifest: Manifest,
-        document_uri: str,
-        project_provider: ProjectProvider,
-        config: ProjectConfig,
+        manifest: Manifest | None = None,
+        document_uri: str = "",
+        project_provider: ProjectProvider | None = None,
+        config: ProjectConfig | None = None,
         output_format: str = "markdown",
         compiled_outputs: dict[str, CompiledDocument] | None = None,
         doc_state: OperationState | None = None,
+        ref_resolver: RefResolver | None = None,
     ) -> None:
         """Initialize the compile context.
 
         Args:
-            manifest: The manifest for caching and metadata.
+            manifest: The manifest for caching and metadata. Defaults to empty Manifest.
             document_uri: URI of the document being compiled.
             project_provider: Provider for reading compiled outputs (refs).
+                Required for project-based compilation; not needed if ref_resolver is set.
             config: Project configuration for path resolution.
+                Required for output() to work; not needed for basic rendering.
             output_format: Output format for this document (e.g., "markdown", "json").
             compiled_outputs: Already-compiled documents from current run.
             doc_state: Optional state for progress tracking.
+            ref_resolver: Custom resolver for string refs. When set, string refs
+                are delegated to this resolver instead of using compiled_outputs
+                and project_provider.
         """
-        self.manifest = manifest
+        self.manifest = manifest if manifest is not None else Manifest()
         self.document_uri = document_uri
         self.project_provider = project_provider
         self.config = config
         self.output_format = output_format
         self.compiled_outputs = compiled_outputs or {}
         self.doc_state = doc_state
+        self.ref_resolver = ref_resolver
 
         # Tracking during render
         self.refs: list[Ref] = []
@@ -107,9 +124,6 @@ class CompileContext:
         Raises:
             RefNotCompiledError: If the target hasn't been compiled and allow_stale=False.
         """
-        # Import here to avoid circular imports
-        from colin.providers.project import ProjectResource
-
         # Handle coroutines from provider calls (e.g., ref(s3.get("...")))
         if asyncio.iscoroutine(target):
             target = await target
@@ -121,6 +135,25 @@ class CompileContext:
 
         # String path → exact output filename (no normalization)
         path = target
+
+        # If ref_resolver is set, delegate all string ref resolution to it
+        if self.ref_resolver is not None:
+            resolved = await self.ref_resolver(path, allow_stale=allow_stale)
+            if resolved is not None:
+                is_first = self.track(resolved.ref(), resolved.version)
+                if is_first and self.doc_state is not None:
+                    op = self.doc_state.child("ref", detail=path)
+                    op.status = Status.DONE
+                return cast(T, resolved)
+            if not allow_stale:
+                raise RefNotCompiledError(path)
+            return None
+
+        # Project-style string refs require a project_provider for path resolution
+        if self.project_provider is None:
+            if not allow_stale:
+                raise RefNotCompiledError(path)
+            return None
 
         # Check in-memory compiled outputs first (keyed by output_path)
         compiled = self.compiled_outputs.get(path)
@@ -203,9 +236,12 @@ class CompileContext:
             raise RefNotCompiledError(path)
 
         # allow_stale=True: try to read stale data from storage
+        assert self.project_provider is not None  # guarded above
+        project_provider = self.project_provider
+
         async def fetch_stale_from_provider() -> ProjectResource | None:
             try:
-                result = await self.project_provider.get(path)
+                result = await project_provider.get(path)
                 return result
             except FileNotFoundError:
                 # Document has never been compiled
@@ -308,7 +344,9 @@ class CompileContext:
         Returns:
             RenderedOutput with .content and .sections, or None if not found.
         """
-        from colin.compiler.rendered import RenderedOutput
+        # output() requires config for path resolution
+        if self.config is None:
+            return None
 
         doc_meta = self.manifest.get_document(self.document_uri)
         if doc_meta is None or doc_meta.output_path is None:
