@@ -14,4 +14,8 @@ The following was extracted previously. If the content hasn't changed meaningful
 {% endif %}
 
 ## Response
-Provide the extracted information. If previous output exists and is still valid, respond with UseExisting instead.
+{% if previous_output %}
+Provide the extracted information. If previous output is still valid, respond with UseExisting instead.
+{% else %}
+Provide the extracted information.
+{% endif %}

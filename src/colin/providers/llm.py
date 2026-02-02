@@ -184,6 +184,11 @@ class LLMProvider(Provider):
                 result = await agent.run(full_prompt)
                 output_text = str(result.output)
 
+                # Handle UseExisting signal: LLM returned the literal string
+                # "UseExisting" to indicate previous output is still valid
+                if output_text.strip() == "UseExisting" and previous_output is not None:
+                    output_text = previous_output
+
                 # Record LLM call for tracking (only on actual execution, not cache hit)
                 if compile_ctx:
                     compile_ctx.add_llm_call(
@@ -423,6 +428,11 @@ class LLMProvider(Provider):
                 )
                 result = await agent.run(full_prompt)
                 output_text = str(result.output)
+
+                # Handle UseExisting signal: LLM returned the literal string
+                # "UseExisting" to indicate previous output is still valid
+                if output_text.strip() == "UseExisting" and previous_output is not None:
+                    output_text = previous_output
 
                 # Record LLM call for tracking (only on actual execution, not cache hit)
                 if compile_ctx:
