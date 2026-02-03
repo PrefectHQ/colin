@@ -40,11 +40,18 @@ Providers can implement efficient staleness checks. S3Provider uses HEAD request
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                        Compile Engine                         │
+│                     CompileEngine (orchestration)              │
 │  - Discovery + frontmatter                                    │
-│  - Dependency graph                                           │
-│  - Jinja environment + LLM blocks                             │
-│  - Manifest update (refs, LLM calls)                          │
+│  - Dependency graph + topological ordering                    │
+│  - Staleness checking + manifest persistence                  │
+│  - Output writing + publishing                                │
+│                              │                                │
+│                              ▼                                │
+│                  TemplateRenderer (rendering)                  │
+│  - Jinja environment + extensions (llm, file, section, defer) │
+│  - Provider namespace (colin.*)                               │
+│  - Ref tracking + RefResolver protocol                        │
+│  - Two-pass rendering (first pass + defer blocks)             │
 └──────────────────────────────────────────────────────────────┘
           │                      │                    │
           ▼                      ▼                    ▼
@@ -55,6 +62,8 @@ Providers can implement efficient staleness checks. S3Provider uses HEAD request
 │ - custom schemes   │  │                   │  │ - llm_calls      │
 └────────────────────┘  └───────────────────┘  └──────────────────┘
 ```
+
+`TemplateRenderer` is usable independently of `CompileEngine`. External systems with different materialization strategies (e.g., Colin-KG) can render templates with the full Colin extension system by constructing a `TemplateRenderer` with a `ProviderManager`. A `RefResolver` protocol allows injecting custom ref resolution logic. See [ADR 023](ADRs/023-template-renderer-extraction.md).
 
 ## Package Structure
 
@@ -229,6 +238,8 @@ See `docs/decisions/` for detailed ADRs:
 - **018-storage-architecture**: Two-layer storage, private files, cache vs published
 - **020-strict-compilation-model**: Static ordering with depends_on hints, allow_stale escape hatch
 - **021-output-config**: Output configuration (format, path, publish)
+- **022-output-function**: Self-referencing via output() for human-in-the-loop workflows
+- **023-template-renderer-extraction**: Standalone rendering decoupled from orchestration
 
 ## Frontmatter Structure
 

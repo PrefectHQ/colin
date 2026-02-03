@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING, Any, cast
 import frontmatter as fm_parser
 from jinja2 import TemplateSyntaxError, nodes
 
-from colin.compiler.cache import set_compile_context, set_used_cache_keys
-from colin.compiler.context import CompileContext
+from colin.compiler.cache import set_used_cache_keys
 from colin.compiler.graph import DependencyGraph
-from colin.compiler.jinja_env import bind_context_to_environment, create_jinja_environment
+from colin.compiler.jinja_env import create_jinja_environment
+from colin.compiler.renderer import TemplateRenderer
 from colin.compiler.state import CompilationState, OperationState
 from colin.exceptions import MultipleCompilationErrors
 from colin.models import (
@@ -685,89 +685,31 @@ class CompileEngine:
                 total_cost_usd=0.0,
             )
 
-        # Create Jinja environment with extensions
-        env = create_jinja_environment()
-
-        # Create compile context
-        context = CompileContext(
-            manifest=self.manifest,
+        # Render template via TemplateRenderer
+        template_renderer = TemplateRenderer(provider_manager)
+        render_result = await template_renderer.render(
+            doc.template_content,
             document_uri=doc.uri,
+            output_format=doc.frontmatter.colin.output.format,
+            manifest=self.manifest,
+            compiled_outputs=compiled_outputs,
             project_provider=self._project_provider,
             config=self.config,
-            output_format=doc.frontmatter.colin.output.format,
-            compiled_outputs=compiled_outputs,
             doc_state=doc_state,
         )
 
-        # Bind context to environment
-        bind_context_to_environment(
-            env,
-            context,
-            provider_manager=provider_manager,
-        )
+        # Apply format renderer (JSON, YAML, or markdown passthrough)
+        output_config = doc.frontmatter.colin.output
+        format_renderer = get_renderer(output_config.format)
+        format_result = format_renderer.render(render_result.content, doc.uri, output_config)
 
-        # Compile template with compile context set for caching
-        template = env.from_string(doc.template_content)
+        # Hash the FINAL format-rendered content
+        output_hash = hashlib.sha256(format_result.content.encode()).hexdigest()[:16]
 
-        set_compile_context(context)
-        try:
-            # FIRST PASS: Render template (defer blocks emit markers)
-            context.defer_blocks = {}  # Initialize defer block storage
-            raw_output = await template.render_async()
-
-            # Extract sections from first pass
-            from colin.compiler.section_parser import (
-                parse_sections,
-                remove_section_and_defer_markers,
-            )
-
-            first_pass_sections = parse_sections(raw_output)
-            context.sections = first_pass_sections
-
-            # TWO-PASS RENDERING: If defer blocks exist, do second pass
-            if context.defer_blocks:
-                # Create RenderedOutput for current render (first pass)
-                from colin.compiler.rendered import RenderedOutput
-
-                rendered = RenderedOutput(
-                    content=raw_output,
-                    sections=first_pass_sections,
-                    output_format=doc.frontmatter.colin.output.format,
-                )
-
-                # SECOND PASS: Render defer blocks with rendered context
-                # Note: Use output(cached=True) in templates to access previous output
-                defer_outputs = {}
-                for defer_id, caller in context.defer_blocks.items():
-                    defer_content = await caller(rendered)
-                    defer_outputs[defer_id] = defer_content
-
-                # Merge defer block outputs into first pass output
-                final_output = self._merge_defer_blocks(raw_output, defer_outputs)
-
-                # Re-extract sections (defer blocks might have added sections)
-                context.sections = parse_sections(final_output)
-            else:
-                final_output = raw_output
-
-            # Remove section and defer markers, but keep item markers for the renderer
-            # The markdown parser needs item markers to detect {% item %} arrays
-            clean_output = remove_section_and_defer_markers(final_output)
-
-            # Apply format renderer (JSON, YAML, or markdown passthrough)
-            output_config = doc.frontmatter.colin.output
-            renderer = get_renderer(output_config.format)
-            render_result = renderer.render(clean_output, doc.uri, output_config)
-        finally:
-            set_compile_context(None)
-
-        # Hash the FINAL rendered content
-        output_hash = hashlib.sha256(render_result.content.encode()).hexdigest()[:16]
-
-        # Convert file outputs from context to compiled document format
+        # Convert file outputs from render result to compiled document format
         file_outputs: dict[str, str] = {}
         file_output_meta: dict[str, FileOutputMeta] = {}
-        for path, file_output in context.file_outputs.items():
+        for path, file_output in render_result.file_outputs.items():
             file_outputs[path] = file_output.content
             file_output_meta[path] = FileOutputMeta(
                 publish=file_output.publish,
@@ -779,15 +721,15 @@ class CompileEngine:
         return CompiledDocument(
             uri=doc.uri,
             frontmatter=doc.frontmatter,
-            output=render_result.content,
-            output_path=render_result.filename,
+            output=format_result.content,
+            output_path=format_result.filename,
             source_hash=doc.source_hash,
             output_hash=output_hash,
-            refs=context.refs,
-            ref_versions=context.ref_versions,
-            llm_calls=context.llm_calls,
-            total_cost_usd=context.total_cost,
-            sections=context.sections,
+            refs=render_result.refs,
+            ref_versions=render_result.ref_versions,
+            llm_calls=render_result.llm_calls,
+            total_cost_usd=render_result.total_cost_usd,
+            sections=render_result.sections,
             file_outputs=file_outputs,
             file_output_meta=file_output_meta,
         )
@@ -862,29 +804,6 @@ class CompileEngine:
             # Always write file outputs (they're dynamic, can't easily content-address)
             if not file_artifact_path.exists() or file_artifact_path.read_text() != content:
                 await self.artifact_storage.write(path, content)
-
-    def _merge_defer_blocks(self, output: str, defer_outputs: dict[str, str]) -> str:
-        """Replace defer markers with rendered defer block content.
-
-        Args:
-            output: First pass output with defer markers.
-            defer_outputs: Map of defer_id to rendered defer content.
-
-        Returns:
-            Output with defer markers replaced by rendered content.
-        """
-        from colin.compiler.extensions.defer_block import (
-            DEFER_END_MARKER,
-            DEFER_START_MARKER,
-        )
-
-        result = output
-        for defer_id, defer_content in defer_outputs.items():
-            marker_start = DEFER_START_MARKER.format(id=defer_id)
-            marker_end = DEFER_END_MARKER.format(id=defer_id)
-            pattern = f"{marker_start}{marker_end}"
-            result = result.replace(pattern, defer_content)
-        return result
 
     def _update_manifest(self, doc: CompiledDocument, *, publish: bool) -> None:
         """Update manifest with compilation result.
