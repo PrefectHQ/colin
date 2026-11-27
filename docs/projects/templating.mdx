@@ -60,8 +60,8 @@ Filters transform values using the pipe syntax. Apply them after any expression:
 name: Summary
 ---
 
-{{ ref('report').content | upper }}
-{{ ref('data').content | length }} characters
+{{ ref('report.md').content | upper }}
+{{ ref('data.md').content | length }} characters
 ```
 
 Colin extends standard Jinja filters with LLM-powered transformations like `extract()` for intelligent content processing. See the [LLM Provider](/providers/llm) documentation for details.
@@ -354,8 +354,8 @@ name: Competitive Analysis
 {% llm %}
 Compare these two products and identify key differentiators:
 
-Product A: {{ ref('product-a').content }}
-Product B: {{ ref('product-b').content }}
+Product A: {{ ref('product-a.md').content }}
+Product B: {{ ref('product-b.md').content }}
 
 Focus on pricing, features, and target market.
 {% endllm %}

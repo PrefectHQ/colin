@@ -71,7 +71,7 @@ title: My Report
 
 # Summary
 
-{{ ref('data').content | llm_extract('key findings') }}
+{{ ref('data.md').content | llm_extract('key findings') }}
 ```
 
 ## Choosing a Renderer

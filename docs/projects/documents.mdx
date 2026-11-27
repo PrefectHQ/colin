@@ -201,19 +201,21 @@ When a document recompiles, all documents that reference it also recompile to pi
 
 ## Document URIs
 
-Every document has a URI derived from its path relative to `models/`, without the `.md` extension:
+For the default Markdown output, reference a document by its path relative to `models/`, including the `.md` extension:
 
 | File | URI |
 | :--- | :-- |
-| `models/company.md` | `company` |
-| `models/products/main.md` | `products/main` |
-| `models/team/engineering/overview.md` | `team/engineering/overview` |
+| `models/company.md` | `company.md` |
+| `models/products/main.md` | `products/main.md` |
+| `models/team/engineering/overview.md` | `team/engineering/overview.md` |
 
-Reference documents using their URI with `ref()`:
+For other output formats or a custom output path, use the compiled output's filename, such as `ref('config.json')`.
+
+Reference Markdown documents with `ref()`:
 
 ```markdown
-{{ ref('company').content }}
-{{ ref('products/main').content }}
+{{ ref('company.md').content }}
+{{ ref('products/main.md').content }}
 ```
 
 Colin validates that referenced documents exist at compile time. See [References](/projects/references) for details on the `ref()` function and dependency tracking.

@@ -28,7 +28,7 @@ description: How to deploy code to staging and production
 
 ## Environments
 
-{{ ref('infrastructure/environments').content }}
+{{ ref('infrastructure/environments.md').content }}
 
 ## Recent Incidents
 
@@ -78,7 +78,7 @@ LLM calls are cached separately by input hash. If a document recompiles but the 
 
 ## How It Works
 
-**References**: `ref('other-doc')` fetches content from another document and registers a dependency. When `other-doc` changes, documents that reference it recompile. See [References](/projects/references).
+**References**: `ref('other-doc.md')` fetches content from another document and registers a dependency. When `other-doc` changes, documents that reference it recompile. See [References](/projects/references).
 
 **Providers**: Built-in providers connect to external sources: [GitHub](/providers/github) repositories and issues, [Linear](/providers/linear) issues, [Notion](/providers/notion) pages, [HTTP](/providers/http) endpoints, [S3](/providers/s3) buckets, and [MCP servers](/providers/mcp). Each provider tracks source versions for staleness detection.
 

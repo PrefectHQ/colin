@@ -19,11 +19,11 @@ name: Product Brief
 
 # About Us
 
-{{ ref('company').content }}
+{{ ref('company.md').content }}
 
 # Our Products
 
-{{ ref('products/main').content }}
+{{ ref('products/main.md').content }}
 ```
 
 When this document compiles, Colin ensures `company` and `products/main` compile first. The `.content` property contains each document's full compiled output.
@@ -51,7 +51,7 @@ name: Document Index
 
 # Available Documents
 
-{% for doc_uri in ['company', 'products/main', 'team/overview'] %}
+{% for doc_uri in ['company.md', 'products/main.md', 'team/overview.md'] %}
 {% set doc = ref(doc_uri) %}
 ## {{ doc.name }}
 
@@ -62,18 +62,18 @@ name: Document Index
 
 ## String Conversion
 
-When you use a `RefResult` directly in a string context (like `{{ ref('doc') }}`), it returns a placeholder rather than the full content. This prevents accidentally dumping large documents:
+When you use a `RefResult` directly in a string context (like `{{ ref('doc.md') }}`), it returns a placeholder rather than the full content. This prevents accidentally dumping large documents:
 
 ```markdown
-{{ ref('company') }}
+{{ ref('company.md') }}
 ```
 
-Outputs: `Ref('company')`
+Outputs: `Ref('project://company.md')`
 
 Always use `.content` to get the actual content:
 
 ```markdown
-{{ ref('company').content }}
+{{ ref('company.md').content }}
 ```
 
 ## Dependency Registration
@@ -107,23 +107,23 @@ name: Executive Summary
 
 # Key Points
 
-{{ ref('full-report') | llm_extract('the 3 most important findings') }}
+{{ ref('full-report.md') | llm_extract('the 3 most important findings') }}
 ```
 
-The `extract()` filter passes the `RefResult` through an LLM with your prompt. Since `RefResult` knows its content, the filter can access what it needs.
+The `llm_extract()` filter passes the `RefResult` through an LLM with your prompt. Since `RefResult` knows its content, the filter can access what it needs.
 
 Other useful patterns:
 
 ```markdown
 {# Extract specific information #}
-{{ ref('customer-calls') | llm_extract('top customer complaints') }}
+{{ ref('customer-calls.md') | llm_extract('top customer complaints') }}
 
 {# Chain multiple refs in an LLM block #}
 {% llm %}
 Compare these two analyses:
 
-Analysis A: {{ ref('q1-report').content }}
-Analysis B: {{ ref('q2-report').content }}
+Analysis A: {{ ref('q1-report.md').content }}
+Analysis B: {{ ref('q2-report.md').content }}
 
 Identify trends and changes.
 {% endllm %}
@@ -131,20 +131,22 @@ Identify trends and changes.
 
 ## URI Resolution
 
-URIs are relative paths from your `models/` directory, without the `.md` extension:
+For default Markdown output, use the path relative to `models/`, including the `.md` extension:
 
 | File | URI to Reference |
 | :--- | :--------------- |
-| `models/overview.md` | `ref('overview')` |
-| `models/team/leads.md` | `ref('team/leads')` |
-| `models/reports/2024/q1.md` | `ref('reports/2024/q1')` |
+| `models/overview.md` | `ref('overview.md')` |
+| `models/team/leads.md` | `ref('team/leads.md')` |
+| `models/reports/2024/q1.md` | `ref('reports/2024/q1.md')` |
+
+For other output formats or a custom output path, use the exact compiled output filename, such as `ref('config.json')`. Colin does not add an extension automatically.
 
 Colin validates that referenced documents are compiled before they're used. A reference to a document that hasn't been compiled yet fails with a clear error:
 
 ```
-RefNotCompiledError: ref('missing-doc') failed - document not compiled.
-Add 'depends_on: [missing-doc]' to ensure compilation order,
-or use ref('missing-doc', allow_stale=True) to accept stale/missing data.
+RefNotCompiledError: ref('missing-doc.md') failed - document not compiled.
+Add 'depends_on: [missing-doc.md]' to ensure compilation order,
+or use ref('missing-doc.md', allow_stale=True) to accept stale/missing data.
 ```
 
 ## Referencing Provider Objects
