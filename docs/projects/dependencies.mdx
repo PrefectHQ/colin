@@ -36,7 +36,7 @@ description: Auto-generated index of all context documents
 
 # Available Context
 
-{% for doc_uri in ['company', 'products/overview', 'team/structure'] %}
+{% for doc_uri in ['company.md', 'products/overview.md', 'team/structure.md'] %}
 {% set doc = ref(doc_uri) %}
 ## {{ doc.name }}
 
@@ -63,7 +63,7 @@ name: Documentation Style Guide
 
 Here's an example of how we structure product documents:
 
-{{ ref('products/widget').template }}
+{{ ref('products/widget.md').template }}
 
 Notice how the template uses ref() to pull in company context...
 ```
@@ -87,7 +87,7 @@ Acme Corp builds developer tools for CI/CD pipelines.
 name: Product Overview
 ---
 
-{{ ref('company').content }}
+{{ ref('company.md').content }}
 
 ## Our Products
 
@@ -99,11 +99,11 @@ We offer three main product lines...
 name: Sales Pitch
 ---
 
-{{ ref('products/overview').content }}
+{{ ref('products/overview.md').content }}
 
 ## Why Choose Us
 
-{{ ref('company').content }}
+{{ ref('company.md').content }}
 ```
 
 Colin sees that `products/overview` depends on `company`, and `sales/pitch` depends on both `products/overview` and `company`. The resulting graph:
@@ -195,9 +195,9 @@ name: Weekly Report
 
 # Weekly Status
 
-{{ ref('context/project-health').content }}
+{{ ref('context/project-health.md').content }}
 
-{{ ref('shared/disclaimer').content }}
+{{ ref('shared/disclaimer.md').content }}
 ```
 
 ```markdown models/reports/monthly.md
@@ -207,10 +207,10 @@ name: Monthly Summary
 
 # Monthly Summary
 
-{{ ref('context/project-health').content }}
-{{ ref('context/customer-sentiment').content }}
+{{ ref('context/project-health.md').content }}
+{{ ref('context/customer-sentiment.md').content }}
 
-{{ ref('shared/disclaimer').content }}
+{{ ref('shared/disclaimer.md').content }}
 ```
 
 Updating the disclaimer automatically updates both reports on the next compile.
@@ -225,10 +225,10 @@ name: Conditional Report
 ---
 
 {% if include_financials %}
-{{ ref('context/financials').content }}
+{{ ref('context/financials.md').content }}
 {% endif %}
 
-{{ ref('context/operations').content }}
+{{ ref('context/operations.md').content }}
 ```
 
 Both `context/financials` and `context/operations` appear in the dependency graph regardless of the `include_financials` value. This ensures Colin can correctly order compilation even when conditional branches might activate in future compiles.
@@ -246,7 +246,7 @@ name: Project Status
 {{ ref(colin.mcp.linear.resource('projects?team=engineering')).content }}
 
 {# Local document also tracked #}
-{{ ref('context/team-members').content }}
+{{ ref('context/team-members.md').content }}
 ```
 
 The manifest records both types of dependencies:

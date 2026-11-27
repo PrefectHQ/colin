@@ -88,10 +88,10 @@ The referenced document is compiled first, and its output becomes the system pro
 Override instructions on individual calls when needed:
 
 ```markdown
-{{ ref('data') | llm_extract('summary', instructions='Respond in Spanish.') }}
+{{ ref('data.md') | llm_extract('summary', instructions='Respond in Spanish.') }}
 
 {% llm instructions='Write in a casual, friendly tone.' %}
-Explain this concept: {{ ref('topic').content }}
+Explain this concept: {{ ref('topic.md').content }}
 {% endllm %}
 ```
 
@@ -122,13 +122,13 @@ The `extract()` function pulls specific information from content using an LLM. P
 name: Key Points
 ---
 
-{{ extract(ref('sources/report').content, 'the top 5 key findings') }}
+{{ colin.llm.extract(ref('sources/report.md').content, 'the top 5 key findings') }}
 ```
 
 The function works as a filter for more readable chaining:
 
 ```markdown
-{{ ref('sources/report') | llm_extract('the top 5 key findings') }}
+{{ ref('sources/report.md') | llm_extract('the top 5 key findings') }}
 ```
 
 Both syntaxes are equivalent. The filter syntax reads more naturally when working with refs.
@@ -141,13 +141,13 @@ name: Executive Brief
 ---
 
 ## Summary
-{{ ref('sources/report') | llm_extract('a one-paragraph executive summary') }}
+{{ ref('sources/report.md') | llm_extract('a one-paragraph executive summary') }}
 
 ## Risks
-{{ ref('sources/report') | llm_extract('identified risks and mitigation strategies') }}
+{{ ref('sources/report.md') | llm_extract('identified risks and mitigation strategies') }}
 
 ## Action Items
-{{ ref('sources/report') | llm_extract('immediate action items with owners') }}
+{{ ref('sources/report.md') | llm_extract('immediate action items with owners') }}
 ```
 
 When you pass a `RefResult` to `extract()`, Colin includes document metadata in the prompt context. The LLM sees the document name, description, URI, and content—helping it understand the source material.
@@ -157,7 +157,7 @@ When you pass a `RefResult` to `extract()`, Colin includes document metadata in 
 The `classify()` function categorizes content into predefined labels:
 
 ```markdown
-{% set sentiment = colin.llm.classify(ref('feedback').content, ['positive', 'negative', 'neutral']) %}
+{% set sentiment = colin.llm.classify(ref('feedback.md').content, ['positive', 'negative', 'neutral']) %}
 
 Customer sentiment: {{ sentiment }}
 ```
@@ -167,7 +167,7 @@ The function returns a single label from the provided list.
 For yes/no decisions, use boolean labels:
 
 ```markdown
-{% set urgent = colin.llm.classify(ref('ticket').content, [true, false]) %}
+{% set urgent = colin.llm.classify(ref('ticket.md').content, [true, false]) %}
 
 {% if urgent %}
 **URGENT**: This ticket requires immediate attention.
@@ -177,7 +177,7 @@ For yes/no decisions, use boolean labels:
 Enable multiple labels with `multi=True`:
 
 ```markdown
-{% set tags = colin.llm.classify(ref('article').content, ['technical', 'business', 'tutorial', 'news'], multi=true) %}
+{% set tags = colin.llm.classify(ref('article.md').content, ['technical', 'business', 'tutorial', 'news'], multi=true) %}
 
 Tags: {{ tags | join(', ') }}
 ```
@@ -198,7 +198,7 @@ For multi-line prompts and complex generation, use `{% llm %}` blocks instead:
 {% llm %}
 Write a professional summary of this technical document:
 
-{{ ref('sources/spec').content }}
+{{ ref('sources/spec.md').content }}
 
 Focus on practical implications for developers.
 {% endllm %}
@@ -208,7 +208,7 @@ Override the model for specific completions:
 
 ```markdown
 {% llm model="anthropic:claude-haiku-4-5" %}
-Quick summary: {{ ref('data').content }}
+Quick summary: {{ ref('data.md').content }}
 {% endllm %}
 ```
 
@@ -242,7 +242,7 @@ colin run context/analysis.md --no-cache
 LLM calls have associated costs. Colin's caching minimizes redundant calls, but you can further optimize by using cheaper models for simple tasks:
 
 ```markdown
-{{ ref('data') | llm_extract('word count', model='anthropic:claude-haiku-4-5') }}
+{{ ref('data.md') | llm_extract('word count', model='anthropic:claude-haiku-4-5') }}
 ```
 
 Structure documents to avoid redundant extraction. Extract once into an intermediate document:
@@ -252,11 +252,11 @@ Structure documents to avoid redundant extraction. Extract once into an intermed
 name: Extracted Data
 ---
 
-{{ ref('sources/raw') | llm_extract('structured summary') }}
+{{ ref('sources/raw.md') | llm_extract('structured summary') }}
 ```
 
 Other documents can then reference the extracted content without re-running the LLM:
 
 ```markdown
-{{ ref('context/extracted').content }}
+{{ ref('context/extracted.md').content }}
 ```

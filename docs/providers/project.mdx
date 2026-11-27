@@ -4,7 +4,7 @@ sidebarTitle: Project
 icon: folder-tree
 ---
 
-The project provider handles references between documents within a Colin project. When you write `ref('other-doc')`, the project provider fetches the compiled output of that document while establishing a dependency edge. This is the foundation of Colin's dependency system—every internal reference flows through the project provider.
+The project provider handles references between documents within a Colin project. When you write `ref('other-doc.md')`, the project provider fetches the compiled output of that document while establishing a dependency edge. This is the foundation of Colin's dependency system—every internal reference flows through the project provider.
 
 The project provider is always registered automatically. No configuration is needed.
 
@@ -20,11 +20,11 @@ In practice, you'll rarely write full URIs. Colin's shorthand notation handles t
 
 | Shorthand | Full URI |
 | :-------- | :------- |
-| `greeting` | `project://greeting.md` |
-| `sources/data` | `project://sources/data.md` |
-| `reports/2024/q1` | `project://reports/2024/q1.md` |
+| `greeting.md` | `project://greeting.md` |
+| `sources/data.md` | `project://sources/data.md` |
+| `reports/2024/q1.md` | `project://reports/2024/q1.md` |
 
-Document paths are relative to your `models/` directory. A file at `models/context/analysis.md` becomes `ref('context/analysis')`.
+For default Markdown output, paths are relative to your `models/` directory and include the `.md` extension. A file at `models/context/analysis.md` becomes `ref('context/analysis.md')`. For another output format or a custom output path, use the exact compiled output filename, such as `ref('config.json')`.
 
 ## Using ref()
 
@@ -37,11 +37,11 @@ name: Product Brief
 
 # Company Overview
 
-{{ ref('company').content }}
+{{ ref('company.md').content }}
 
 # Products
 
-{{ ref('products/overview').content }}
+{{ ref('products/overview.md').content }}
 ```
 
 When this document compiles, Colin ensures `company` and `products/overview` compile first. The `.content` property contains each document's full compiled output.
@@ -67,7 +67,7 @@ Access metadata alongside content:
 name: Document Index
 ---
 
-{% for doc_uri in ['company', 'products', 'team'] %}
+{% for doc_uri in ['company.md', 'products.md', 'team.md'] %}
 {% set doc = ref(doc_uri) %}
 ## {{ doc.name }}
 
@@ -81,7 +81,7 @@ name: Document Index
 Using a `RefResult` directly in a string context returns a placeholder, not the content:
 
 ```markdown
-{{ ref('company') }}
+{{ ref('company.md') }}
 ```
 
 Outputs: `Ref('project://company.md')`
@@ -89,7 +89,7 @@ Outputs: `Ref('project://company.md')`
 Always use `.content` to get the actual content:
 
 ```markdown
-{{ ref('company').content }}
+{{ ref('company.md').content }}
 ```
 
 ## Dependency Tracking
@@ -136,10 +136,10 @@ Transform referenced content using filters:
 name: Executive Summary
 ---
 
-{{ ref('full-report') | llm_extract('the 3 most important findings') }}
+{{ ref('full-report.md') | llm_extract('the 3 most important findings') }}
 ```
 
-The `extract()` filter passes the `RefResult` through an LLM with your prompt. Since `RefResult` carries metadata, the LLM sees the document name and description alongside its content.
+The `llm_extract()` filter passes the `RefResult` through an LLM with your prompt. Since `RefResult` carries metadata, the LLM sees the document name and description alongside its content.
 
 Build complex analyses by combining multiple refs:
 
@@ -151,8 +151,8 @@ name: Quarterly Comparison
 {% llm %}
 Compare these two reports and identify trends:
 
-Q1: {{ ref('reports/q1').content }}
-Q2: {{ ref('reports/q2').content }}
+Q1: {{ ref('reports/q1.md').content }}
+Q2: {{ ref('reports/q2.md').content }}
 
 Focus on revenue changes and customer growth.
 {% endllm %}
@@ -166,7 +166,7 @@ References point to compiled outputs, not source files. When you reference a doc
 2. The compiled output is stored in `output/`
 3. `ref()` reads from the compiled output
 
-This means a reference to `ref('data')` returns the result of compiling `models/data.md`, including any template expansions, LLM calls, and nested references that document performed.
+This means a reference to `ref('data.md')` returns the result of compiling `models/data.md`, including any template expansions, LLM calls, and nested references that document performed.
 
 ## Path Resolution
 
@@ -185,9 +185,9 @@ models/
 References use paths relative to `models/`:
 
 ```markdown
-{{ ref('company').content }}
-{{ ref('products/main').content }}
-{{ ref('context/market-analysis').content }}
+{{ ref('company.md').content }}
+{{ ref('products/main.md').content }}
+{{ ref('context/market-analysis.md').content }}
 ```
 
 Colin validates references at compile time. A reference to a document that hasn't been compiled yet fails with a clear error:
