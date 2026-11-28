@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 import frontmatter as fm_parser
 from jinja2 import TemplateSyntaxError, nodes
 
+from colin.api.project import create_output_target
 from colin.compiler.cache import set_used_cache_keys
 from colin.compiler.graph import DependencyGraph
 from colin.compiler.jinja_env import create_jinja_environment
@@ -39,6 +40,7 @@ from colin.renders import get_renderer
 
 if TYPE_CHECKING:
     from colin.api.project import ProjectConfig
+    from colin.output.base import Target
 
 
 class CompileEngine:
@@ -847,13 +849,14 @@ class CompileEngine:
             compiled_outputs: In-memory compiled docs, preferred over disk cache.
         """
         output_path = self.config.output_path
+        target = self._get_output_target()
 
         # Create output directory (never delete - use `colin clean` for that)
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Copy public files from .colin/compiled/ to output/
         build_compiled = self.config.build_path / "compiled"
-        for doc_meta in self.manifest.documents.values():
+        for uri, doc_meta in self.manifest.documents.items():
             # Publish main output if document is published
             if doc_meta.is_published and doc_meta.output_path is not None:
                 src = build_compiled / doc_meta.output_path
@@ -862,9 +865,18 @@ class CompileEngine:
 
                 if compiled_outputs and doc_meta.output_path in compiled_outputs:
                     # Prefer in-memory compiled output (freshly compiled this run)
-                    dst.write_text(compiled_outputs[doc_meta.output_path].output, encoding="utf-8")
+                    compiled_doc = compiled_outputs[doc_meta.output_path]
+                    content = target.format_content(
+                        compiled_doc.output, doc_meta.output_path, compiled_doc.frontmatter.metadata
+                    )
+                    dst.write_text(content, encoding="utf-8")
                 elif src.exists():
-                    shutil.copy2(src, dst)
+                    source = self.config.model_path / uri.removeprefix("project://")
+                    metadata = self._load_document(source).frontmatter.metadata
+                    content = target.format_content(
+                        src.read_text(encoding="utf-8"), doc_meta.output_path, metadata
+                    )
+                    dst.write_text(content, encoding="utf-8")
 
             # Publish file outputs from {% file %} blocks
             # (even if main doc is private, file outputs can be explicitly published)
@@ -933,22 +945,15 @@ class CompileEngine:
         if not published_files:
             return
 
-        # Get manifest locations from output target
-        from colin.api.project import create_output_target
+        # Ownership hashes describe the published bytes, including target formatting.
+        for file_path in published_files:
+            published_path = self.config.output_path / file_path
+            if published_path.is_file():
+                published_files[file_path] = hashlib.sha256(
+                    published_path.read_bytes()
+                ).hexdigest()[:16]
 
-        target_kwargs: dict[str, Any] = {}
-        # Use explicit output.path if set, otherwise fall back to resolved output_path
-        if self.config.output.path:
-            target_kwargs["path"] = self.config.output.path
-        else:
-            target_kwargs["path"] = str(self.config.output_path)
-        if self.config.output.scope:
-            target_kwargs["scope"] = self.config.output.scope
-        if self.config.output.model_extra:
-            for key, value in self.config.output.model_extra.items():
-                target_kwargs[key] = value
-
-        target = create_output_target(self.config.output.target, **target_kwargs)
+        target = self._get_output_target()
         locations = target.get_manifest_locations(list(published_files.keys()))
 
         output_path = self.config.output_path
@@ -987,3 +992,9 @@ class CompileEngine:
             manifest_path.write_text(
                 json.dumps(manifest_data, indent=2, sort_keys=True), encoding="utf-8"
             )
+
+    def _get_output_target(self) -> Target:
+        """Instantiate the configured publication target."""
+        target_kwargs = self.config.output.model_dump(exclude={"target"}, exclude_none=True)
+        target_kwargs["path"] = self.config.output.path or str(self.config.output_path)
+        return create_output_target(self.config.output.target, **target_kwargs)

@@ -80,6 +80,15 @@ description: How to deploy code to staging and production
 
 At startup, agents pre-load skill names and descriptions. This metadata is enough to know when each skill applies. The body loads only when the skill is invoked.
 
+With the `skill` and `claude-skill` output targets, Colin preserves the source
+metadata in published `SKILL.md` files, including `name`, `description` and
+optional fields such as `allowed-tools` and `license`. The internal `colin:`
+configuration stays out of the published frontmatter. Metadata explicitly
+rendered in the skill body takes precedence over matching source fields.
+
+This also applies to cached and ephemeral builds. Supporting documents and
+ordinary local output retain their existing body-only behavior.
+
 ## Output to Skills Directories
 
 Configure Colin to write directly to your agent's skills folder:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,10 @@ class Target(ABC):
 
     #: Target name used in config (e.g., "local", "skill", "claude-skill")
     name: ClassVar[str]
+
+    def format_content(self, content: str, filename: str, metadata: dict[str, Any]) -> str:
+        """Prepare compiled content for publication to this target."""
+        return content
 
     @abstractmethod
     def resolve_path(self, project_root: Path) -> Path:
