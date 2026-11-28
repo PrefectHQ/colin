@@ -134,7 +134,7 @@ class CompileEngine:
         self,
         doc: ColinDocument,
         provider_manager: ProviderManager,
-        recompiled_uris: set[str],
+        changed_uris: set[str],
     ) -> tuple[bool, str]:
         """Check if a document needs recompilation.
 
@@ -146,7 +146,7 @@ class CompileEngine:
         Args:
             doc: The document to check.
             provider_manager: For looking up ref timestamps.
-            recompiled_uris: URIs recompiled in this compilation run.
+            changed_uris: URIs whose output or metadata changed in this run.
 
         Returns:
             Tuple of (is_stale, reason_string).
@@ -190,13 +190,15 @@ class CompileEngine:
         if policy == "always":
             return (False, "cache=always (cached)")
 
-        # Upstream dependency recompiled this run
+        # Upstream output or metadata changed this run
         for ref in doc_meta.refs:
-            # Check if this ref's path matches a recompiled URI
+            # Refs use output paths; invalidation tracks their source URIs.
             if ref.provider == "project":
-                ref_uri = f"project://{ref.args.get('path', '')}"
-                if ref_uri in recompiled_uris:
-                    return (True, f"upstream recompiled: {ref_uri}")
+                ref_path = ref.args.get("path", "")
+                source_meta = self.manifest.get_document_by_output_path(ref_path)
+                ref_uri = source_meta.uri if source_meta else f"project://{ref_path}"
+                if ref_uri in changed_uris:
+                    return (True, f"upstream output changed: {ref_uri}")
 
         # Check ref versions
         stale, reason = await self._check_ref_staleness(doc_meta, provider_manager)
@@ -306,7 +308,7 @@ class CompileEngine:
         errors: dict[str, list[Exception]] = {}
         failed_uris: set[str] = set()  # Track failed URIs for skipping dependents
         skipped_uris: set[str] = set()  # Track skipped URIs
-        recompiled_uris: set[str] = set()  # Track URIs recompiled this run
+        changed_uris: set[str] = set()  # Track changed outputs for downstream invalidation
 
         def get_failed_dependency(uri: str) -> str | None:
             """Check if any dependency of uri has failed."""
@@ -338,7 +340,7 @@ class CompileEngine:
             doc = doc_map[uri]
 
             # Check staleness
-            is_stale, reason = await self._is_document_stale(doc, provider_manager, recompiled_uris)
+            is_stale, reason = await self._is_document_stale(doc, provider_manager, changed_uris)
             if not is_stale:
                 # Load cached doc so downstream refs work
                 cached = await self._load_cached_document(doc)
@@ -380,11 +382,18 @@ class CompileEngine:
                         # Freshly compiled - write output and update manifest
                         compiled.append(result)
                         compiled_outputs[result.output_path] = result
-                        recompiled_uris.add(uri)
+                        previous_meta = self.manifest.get_document(uri)
                         doc = doc_map[uri]
                         publish = self._should_publish(doc)
                         await self._write_output(result)
                         self._update_manifest(result, publish=publish)
+                        current_meta = self.manifest.documents[uri]
+                        if (
+                            previous_meta is None
+                            or previous_meta.dependency_hash is None
+                            or previous_meta.dependency_hash != current_meta.dependency_hash
+                        ):
+                            changed_uris.add(uri)
                     else:
                         # Cached - just add to compiled_outputs for downstream refs
                         compiled_outputs[result.output_path] = result
@@ -812,9 +821,28 @@ class CompileEngine:
             doc: The compiled document.
             publish: Whether this document should be published to output/.
         """
+        name = doc.frontmatter.metadata.get("name")
+        description = doc.frontmatter.metadata.get("description")
+        dependency_data = {
+            "output_hash": doc.output_hash,
+            "output_path": doc.output_path,
+            "name": name if isinstance(name, str) else None,
+            "description": description if isinstance(description, str) else None,
+            "format": doc.frontmatter.colin.output.format,
+            "publish": publish,
+            "sections": doc.sections,
+            "file_outputs": {
+                path: metadata.model_dump(mode="json")
+                for path, metadata in doc.file_output_meta.items()
+            },
+        }
+        dependency_hash = hashlib.sha256(
+            json.dumps(dependency_data, sort_keys=True).encode()
+        ).hexdigest()[:16]
         meta = DocumentMeta(
             uri=doc.uri,
             source_hash=doc.source_hash,
+            dependency_hash=dependency_hash,
             output_hash=doc.output_hash,
             output_path=doc.output_path,
             is_published=publish,

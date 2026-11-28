@@ -308,6 +308,9 @@ class DocumentMeta(BaseModel):
     source_hash: str
     """Hash of the source file content."""
 
+    dependency_hash: str | None = None
+    """Hash of output and metadata visible to dependent documents."""
+
     output_hash: str | None = None
     """Hash of the rendered output (used for versioning and content-addressed writes)."""
 
