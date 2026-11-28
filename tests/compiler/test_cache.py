@@ -169,6 +169,123 @@ class TestStalenessDetection:
         result2 = await engine.compile_all()
         assert len(result2) == 0  # Both fresh
 
+    @pytest.mark.parametrize("change", ["comment", "never"])
+    async def test_unchanged_upstream_output_keeps_downstream_cached(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path], change: str
+    ) -> None:
+        engine, source_dir, _, output_dir = engine_setup
+        prefix = "---\ncolin:\n  cache: never\n---\n" if change == "never" else ""
+        (source_dir / "a.md").write_text(prefix + "Stable content", encoding="utf-8")
+        (source_dir / "b.md").write_text("{{ ref('a.md').content }}", encoding="utf-8")
+        (source_dir / "c.md").write_text("{{ ref('b.md').content }}", encoding="utf-8")
+        await engine.compile_all()
+        before = engine.manifest.documents["project://b.md"].compiled_at
+
+        if change == "comment":
+            (source_dir / "a.md").write_text("{# New comment #}Stable content", encoding="utf-8")
+        result = await engine.compile_all()
+
+        assert [doc.uri for doc in result] == ["project://a.md"]
+        assert engine.manifest.documents["project://b.md"].compiled_at == before
+        assert (output_dir / "c.md").read_text(encoding="utf-8") == "Stable content"
+
+    async def test_unchanged_intermediate_output_stops_propagation(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        engine, source_dir, _, output_dir = engine_setup
+        (source_dir / "a.md").write_text("hello", encoding="utf-8")
+        (source_dir / "b.md").write_text("{{ ref('a.md').content | lower }}", encoding="utf-8")
+        (source_dir / "c.md").write_text("{{ ref('b.md').content }}", encoding="utf-8")
+        await engine.compile_all()
+
+        (source_dir / "a.md").write_text("HELLO", encoding="utf-8")
+        result = await engine.compile_all()
+
+        assert {doc.uri for doc in result} == {"project://a.md", "project://b.md"}
+        assert (output_dir / "c.md").read_text(encoding="utf-8") == "hello"
+
+    @pytest.mark.parametrize("output_path", ["a.md", "custom.md"])
+    async def test_metadata_change_still_recompiles_dependents(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path], output_path: str
+    ) -> None:
+        engine, source_dir, _, output_dir = engine_setup
+        settings = f"\ncolin:\n  output:\n    path: {output_path}\n---\nStable"
+        (source_dir / "a.md").write_text("---\nname: Before" + settings, encoding="utf-8")
+        (source_dir / "b.md").write_text("{{ ref('" + output_path + "').name }}", encoding="utf-8")
+        await engine.compile_all()
+
+        (source_dir / "a.md").write_text("---\nname: After" + settings, encoding="utf-8")
+        result = await engine.compile_all()
+
+        assert len(result) == 2
+        assert (output_dir / "b.md").read_text(encoding="utf-8") == "After"
+
+    async def test_section_change_still_recompiles_dependents(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        engine, source_dir, _, output_dir = engine_setup
+        (source_dir / "a.md").write_text("{% section before %}Stable{% endsection %}")
+        (source_dir / "b.md").write_text("{{ ref('a.md').sections.keys() | list | join }}")
+        await engine.compile_all()
+
+        (source_dir / "a.md").write_text("{% section after %}Stable{% endsection %}")
+        result = await engine.compile_all()
+
+        assert len(result) == 2
+        assert (output_dir / "b.md").read_text() == "after"
+
+    async def test_legacy_manifest_conservatively_invalidates_before_optimization(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        engine, source_dir, _, _ = engine_setup
+        (source_dir / "a.md").write_text("Stable")
+        (source_dir / "b.md").write_text("{{ ref('a.md').content }}")
+        await engine.compile_all()
+        saved = engine.manifest.model_dump(mode="json")
+        for metadata in saved["documents"].values():
+            metadata.pop("dependency_hash")
+        engine.manifest = Manifest.model_validate(saved)
+        engine._project_provider.manifest = engine.manifest
+
+        (source_dir / "a.md").write_text("{# First edit #}Stable")
+        assert len(await engine.compile_all()) == 2
+
+        engine.manifest = Manifest.model_validate_json(engine.manifest.model_dump_json())
+        engine._project_provider.manifest = engine.manifest
+        (source_dir / "a.md").write_text("{# Second edit #}Stable")
+        result = await engine.compile_all()
+        assert [doc.uri for doc in result] == ["project://a.md"]
+
+    async def test_file_output_change_still_recompiles_consumer(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        engine, source_dir, _, output_dir = engine_setup
+        (source_dir / "a.md").write_text('Stable{% file "data.txt" %}Before{% endfile %}')
+        (source_dir / "b.md").write_text(
+            "---\ncolin:\n  depends_on: [a.md]\n---\n{{ ref('data.txt').content }}"
+        )
+        await engine.compile_all()
+        old_hash = engine.manifest.documents["project://a.md"].output_hash
+
+        (source_dir / "a.md").write_text('Stable{% file "data.txt" %}After{% endfile %}')
+        result = await engine.compile_all()
+
+        assert len(result) == 2
+        assert engine.manifest.documents["project://a.md"].output_hash == old_hash
+        assert (output_dir / "b.md").read_text() == "After"
+
+    async def test_unrelated_binary_metadata_does_not_break_dependency_hashing(
+        self, engine_setup: tuple[CompileEngine, Path, Path, Path]
+    ) -> None:
+        engine, source_dir, _, _ = engine_setup
+        (source_dir / "a.md").write_text("---\nextra: !!binary /w==\n---\nStable")
+        (source_dir / "b.md").write_text("{{ ref('a.md').content }}")
+        assert len(await engine.compile_all()) == 2
+
+        (source_dir / "a.md").write_text("---\nextra: !!binary /w==\n---\n{# Edit #}Stable")
+        result = await engine.compile_all()
+        assert [doc.uri for doc in result] == ["project://a.md"]
+
     async def test_upstream_recompiled_triggers_downstream(
         self, engine_setup: tuple[CompileEngine, Path, Path, Path]
     ) -> None:

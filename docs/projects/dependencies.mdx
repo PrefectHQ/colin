@@ -6,7 +6,7 @@ icon: diagram-project
 
 The `ref()` function does more than fetch content. It builds a dependency graph that Colin uses to compile documents in the correct order and recompile only what changes. Every `ref()` call registers an edge in this graph, connecting the current document to the referenced one.
 
-This dependency tracking is Colin's core mechanism for incremental compilation. When you modify a document, Colin traces all documents that depend on it and recompiles them automatically. The graph ensures that parent documents always compile before their dependents.
+This dependency tracking is Colin's core mechanism for incremental compilation. Colin compiles dependencies before their dependents, then checks whether their output or metadata changed. Dependents can stay cached when an upstream document recompiles to the same result.
 
 ## RefResult Properties
 
@@ -122,36 +122,26 @@ Colin uses topological sorting to determine compilation order. Documents with no
 
 ## Dependency Propagation
 
-When a document changes, Colin traces its dependents through the graph and marks them for recompilation. This propagation is transitive: if A depends on B and B depends on C, changing C triggers recompilation of both B and A.
+When a document recompiles, Colin compares its output and metadata with the previous result before invalidating dependents. A source edit that changes only a Jinja comment can recompile that document while leaving its dependents cached. The same applies to a document with `cache: never` that produces an unchanged result.
 
-The manifest tracks each document's `refs_evaluated` list, recording which documents were actually referenced during the last compilation. This list drives propagation decisions.
+The manifest records actual references in `refs`, their versions in `ref_versions`, and a `dependency_hash` for the compiled result. The dependency hash includes names, descriptions, named sections, output paths, formats, publication status and file-block output metadata as well as the main output hash. A changed name or description can therefore invalidate an index that uses it even when the compiled body stays the same.
 
-```json
-{
-  "documents": {
-    "sales/pitch": {
-      "refs_evaluated": ["products/overview", "company"],
-      "source_hash": "abc123",
-      "output_hash": "def456"
-    }
-  }
-}
-```
+Older manifests without a dependency hash remain readable. The first recompilation of an entry without that hash conservatively invalidates its dependents; subsequent runs can use the optimization.
 
 ### Change Detection
 
 Colin detects changes by comparing hashes:
 
 1. **Source hash** - Has the template file itself changed?
-2. **Output hash of dependencies** - Has any referenced document's output changed?
+2. **Dependencies** - Has a referenced document's output or metadata changed, or has an external reference changed version?
 
-If either condition is true, the document recompiles. This means that editing `company.md` triggers recompilation of `products/overview.md` because its dependency changed, even though its own source file remains unchanged.
+With the default `auto` cache policy, either condition triggers recompilation. A document's own cache policy, expiration and missing compiled artifacts still determine whether it needs to compile independently.
 
-### Downstream Closure
+### Propagation Through a Chain
 
-When you run `colin run`, Colin computes the "downstream closure" of all changed documents. Starting from each changed document, it walks the graph to find every document that transitively depends on the changed ones.
+Changes propagate through each level of the graph. If C changes and B references C, B recompiles. If B produces the same output and metadata as before, A can stay cached even though it references B. If B's result changes, A recompiles too.
 
-For the example graph above:
+For the example graph above, when each recompilation changes the result:
 - Change `company.md` → recompile `company`, `products/overview`, `sales/pitch`
 - Change `products/overview.md` → recompile `products/overview`, `sales/pitch`
 - Change `sales/pitch.md` → recompile only `sales/pitch`
