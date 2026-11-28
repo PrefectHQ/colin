@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
+
+import frontmatter
 
 from colin.output.base import Target
 
@@ -24,6 +26,14 @@ class SkillTarget(Target):
     """
 
     name: ClassVar[str] = "skill"
+
+    def format_content(self, content: str, filename: str, metadata: dict[str, Any]) -> str:
+        """Preserve skill discovery metadata in published SKILL.md files."""
+        if Path(filename).name != "SKILL.md" or not metadata:
+            return content
+        post = frontmatter.loads(content)
+        post.metadata = {**metadata, **post.metadata}
+        return frontmatter.dumps(post) + "\n"
 
     def __init__(self, path: str) -> None:
         """Initialize skill target.

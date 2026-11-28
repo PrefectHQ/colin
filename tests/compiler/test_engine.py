@@ -2,19 +2,93 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import frontmatter
 import pytest
 
-from colin.api.project import ProjectConfig
+from colin.api.project import ProjectConfig, ProjectOutputConfig
 from colin.compiler import CompileEngine
 from colin.exceptions import MultipleCompilationErrors
 from colin.providers.storage.file import FileStorage
 
 
 class TestCompileEngine:
+    @pytest.mark.parametrize("target", ["skill", "claude-skill"])
+    @pytest.mark.parametrize("template", [True, False])
+    async def test_skill_frontmatter_survives_fresh_and_cached_publication(
+        self, engine_setup: tuple[CompileEngine, Path, Path], target: str, template: bool
+    ) -> None:
+        engine, source_dir, output_dir = engine_setup
+        engine.config.output = ProjectOutputConfig(target=target, path=str(output_dir))
+        (source_dir / "SKILL.md").write_text(
+            "---\nname: invoice-helper\ndescription: 'Invoices: validate and generate'\n"
+            "allowed-tools: [Read, Bash]\ncolin:\n"
+            f"  template: {str(template).lower()}\n---\n\n# Invoice Helper\n",
+            encoding="utf-8",
+        )
+        (source_dir / "notes.md").write_text(
+            "---\nname: Notes\n---\n\nSupporting notes\n", encoding="utf-8"
+        )
+
+        await engine.compile_all()
+        published = frontmatter.loads((output_dir / "SKILL.md").read_text(encoding="utf-8"))
+        assert published.metadata == {
+            "name": "invoice-helper",
+            "description": "Invoices: validate and generate",
+            "allowed-tools": ["Read", "Bash"],
+        }
+        assert published.content == "# Invoice Helper"
+        assert not (output_dir / "notes.md").read_text(encoding="utf-8").startswith("---")
+        cached = (engine.config.build_path / "compiled" / "SKILL.md").read_text(encoding="utf-8")
+        assert not cached.startswith("---")
+
+        (output_dir / "SKILL.md").unlink()
+        assert await engine.compile_all() == []
+        restored = (output_dir / "SKILL.md").read_text(encoding="utf-8")
+        assert frontmatter.loads(restored).metadata == published.metadata
+        manifest = json.loads((output_dir / ".colin-manifest.json").read_text(encoding="utf-8"))
+        assert manifest["files"]["SKILL.md"] == hashlib.sha256(restored.encode()).hexdigest()[:16]
+
+    async def test_switching_cached_output_to_skill_preserves_metadata(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        engine, source_dir, output_dir = engine_setup
+        (source_dir / "SKILL.md").write_text(
+            "---\nname: invoice-helper\ndescription: Invoice validation\n---\n\n# Invoices\n",
+            encoding="utf-8",
+        )
+        await engine.compile_all()
+        assert not (output_dir / "SKILL.md").read_text(encoding="utf-8").startswith("---")
+
+        engine.config.output = ProjectOutputConfig(target="skill", path=str(output_dir))
+        assert await engine.compile_all() == []
+        published = frontmatter.loads((output_dir / "SKILL.md").read_text(encoding="utf-8"))
+        assert published.metadata["name"] == "invoice-helper"
+
+        (output_dir / "SKILL.md").unlink()
+        await engine._publish_outputs()
+        restored = frontmatter.loads((output_dir / "SKILL.md").read_text(encoding="utf-8"))
+        assert restored.metadata == published.metadata
+
+    async def test_ephemeral_skill_output_preserves_frontmatter(
+        self, engine_setup: tuple[CompileEngine, Path, Path]
+    ) -> None:
+        engine, source_dir, output_dir = engine_setup
+        engine.ephemeral = True
+        engine.config.output = ProjectOutputConfig(target="skill", path=str(output_dir))
+        (source_dir / "SKILL.md").write_text(
+            "---\nname: invoices\ndescription: Validate invoices\n---\n\n# Invoices\n",
+            encoding="utf-8",
+        )
+        await engine.compile_all()
+        published = frontmatter.loads((output_dir / "SKILL.md").read_text(encoding="utf-8"))
+        assert published.metadata == {"name": "invoices", "description": "Validate invoices"}
+        assert not (engine.config.build_path / "compiled" / "SKILL.md").exists()
+
     @pytest.fixture
     def engine_setup(
         self, tmp_path: Path, mock_agent: MagicMock
